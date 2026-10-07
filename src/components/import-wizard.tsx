@@ -161,19 +161,30 @@ export function ImportWizard() {
     };
   }, [combinedInfo, table, kind, natureza, importMode, referenceDate, mapping]);
 
-  async function validar() {
-    const payload = payloadCommum();
-    if (!payload) return;
+  function validar() {
+    if (!table) return;
     setValidando(true);
     setErroEtapa(null);
     try {
-      const res = await fetch("/api/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phase: "validate", ...payload }),
-      });
-      const data = (await res.json()) as ValidateResponse;
-      if (!res.ok || data.erro) throw new Error(data.erro ?? "Falha ao validar.");
+      // Validação client-side (módulo isomórfico — mesmo código do servidor).
+      const defaultArea =
+        kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
+      const result = transformAndValidate(table.rows, mapping, { defaultArea });
+      const data: ValidateResponse = {
+        ok: true,
+        resumo: {
+          validos: result.records.length,
+          ignoradas: result.skipped,
+          duplicadas: result.duplicates,
+          avisos: result.warnings,
+          valorTotal: result.records.reduce((a, r) => a + (r.valor ?? 0), 0),
+          itensTotal: result.records.reduce((a, r) => a + (r.quantidade ?? 0), 0),
+          valorCobertura: result.records.filter((r) => r.valor !== null).length,
+          itensCobertura: result.records.filter((r) => r.quantidade !== null).length,
+          issuesAmostra: result.issues.slice(0, 300),
+          issuesTotal: result.issues.length,
+        },
+      };
       setValidacao(data);
       setStep(4);
       announce(
@@ -187,26 +198,14 @@ export function ImportWizard() {
     }
   }
 
-  async function confirmar() {
-    const payload = payloadCommum();
-    if (!payload) return;
+  function confirmar() {
+    if (!validacao?.resumo) return;
     setConfirmando(true);
     setErroEtapa(null);
     try {
-      const res = await fetch("/api/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phase: "commit", ...payload }),
-      });
-      const data = (await res.json()) as ValidateResponse;
-      if (!res.ok || data.erro) throw new Error(data.erro ?? "Falha ao importar.");
-      setValidacao(data);
+      // Modo de teste (GitHub Pages): sem servidor/banco — dados não são persistidos.
       setStep(5);
-      notifyBaseUpdated();
-      announce(`Importação concluída. ${data.resumo?.validos.toLocaleString("pt-BR")} linhas importadas.`);
-    } catch (e) {
-      setErroEtapa(e instanceof Error ? e.message : "Falha ao importar.");
-      announce("Falha na importação.");
+      announce(`Validação concluída. ${validacao.resumo.validos.toLocaleString("pt-BR")} linhas processadas (modo de teste).`);
     } finally {
       setConfirmando(false);
     }
@@ -250,7 +249,7 @@ export function ImportWizard() {
       <PageHeader
         overline="Dados"
         title="Importar planilha"
-        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura acontece no seu navegador — o conteúdo só é gravado no banco após a sua confirmação.`}
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura e a validação acontecem no seu navegador. Modo de teste: os dados não são persistidos (sem servidor/banco).`}
       />
 
       <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
@@ -719,6 +718,16 @@ export function ImportWizard() {
             </p>
           )}
 
+          {/* Aviso de modo de teste */}
+          <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/40 p-4 text-[12.5px] leading-relaxed text-warn-700" role="status">
+            <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <p>
+              <strong>Modo de teste (GitHub Pages):</strong> a validação abaixo foi executada no seu navegador.
+              Os dados não serão gravados em banco — não há servidor nesta versão. Use a versão completa
+              (branch <code className="font-mono">main</code> + Vercel) para persistir importações.
+            </p>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
@@ -736,14 +745,12 @@ export function ImportWizard() {
               aria-describedby="confirm-hint"
             >
               {confirmando ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}
-              {confirmando ? "Importando…" : `Confirmar importação de ${fmtInt(validacao.resumo.validos)} linhas`}
+              {confirmando ? "Processando…" : `Confirmar validação de ${fmtInt(validacao.resumo.validos)} linhas`}
             </button>
           </div>
           <p id="confirm-hint" className="text-right text-[12px] text-ink-soft">
-            {importMode === "replace"
-              ? `A base ativa de ${KIND_LABEL[kind]} será substituída (mantida no histórico).`
-              : "As linhas serão somadas às bases ativas."}{" "}
-            A operação é atômica: ou importa tudo, ou nada é alterado.
+            Modo de teste: os dados validados não são persistidos. Na versão completa (Vercel), a operação
+            seria atômica — ou importa tudo, ou nada é alterado.
           </p>
         </section>
       )}
@@ -755,10 +762,11 @@ export function ImportWizard() {
             <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-ok-100 text-ok-700">
               <CircleCheckBig size={32} />
             </span>
-            <h2 className="font-display text-[22px] font-bold text-navy-950">Importação concluída</h2>
+            <h2 className="font-display text-[22px] font-bold text-navy-950">Validação concluída (modo de teste)</h2>
             <p className="max-w-lg text-[14px] leading-relaxed text-ink-soft">
               <strong className="tnum text-ink">{fmtInt(validacao.resumo.validos)}</strong> registros foram
-              processados e agora alimentam os indicadores e a busca.
+              validados com sucesso. Como este é um ambiente de teste (GitHub Pages), os dados não são
+              persistidos em banco.
               {validacao.resumo.ignoradas > 0 && (
                 <>
                   {" "}
@@ -768,27 +776,20 @@ export function ImportWizard() {
               )}
             </p>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5">
-              <Link
-                href="/"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
-              >
-                Ver panorama atualizado
-                <ArrowRight size={16} aria-hidden="true" />
-              </Link>
-              <Link
-                href="/processos"
-                className="inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-              >
-                Pesquisar processos
-              </Link>
               <button
                 type="button"
                 onClick={recomeçar}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
               >
                 <FileUp size={16} aria-hidden="true" />
                 Importar outro arquivo
               </button>
+              <Link
+                href="/processos"
+                className="inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              >
+                Ver página de processos
+              </Link>
             </div>
           </div>
         </section>
