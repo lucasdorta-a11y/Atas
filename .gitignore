@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+build/
+dist/
+
+# production
+*.tsbuildinfo
+
+# environment
+.env
+.env.*
+!.env.example
+
+# drizzle
+drizzle/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# os
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# misc
+*.local
