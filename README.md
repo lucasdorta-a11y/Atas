@@ -50,9 +50,12 @@ O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que correspo
 O workflow `.github/workflows/deploy.yml` executa automaticamente em cada push na branch `main`:
 
 1. instala as dependências;
-2. executa `npm run build`;
-3. publica `out/` com o Pages artifact;
-4. faz o deploy com `actions/deploy-pages`.
+2. remove, de forma defensiva, arquivos antigos de PostgreSQL/API caso tenham ficado no checkout;
+3. executa `npm run build`;
+4. publica `out/` com o Pages artifact;
+5. faz o deploy com `actions/deploy-pages`.
+
+Ao atualizar um repositório que antes usava a versão com PostgreSQL, não basta copiar arquivos novos por cima: remova também `src/db/`, `src/app/api/`, `src/lib/dashboard-data.ts` e `drizzle.config.json`. O workflow verifica que a página está usando `getStaticDashboardData` e interrompe com uma mensagem clara se a versão antiga ainda estiver no checkout.
 
 No GitHub, configure **Settings → Pages → Source: GitHub Actions**. O endereço esperado é:
 

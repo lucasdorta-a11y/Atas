@@ -23,10 +23,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Enforce static Pages source
+        run: |
+          # This repository must never type-check or export the old PostgreSQL/API tree.
+          # The cleanup is defensive for repositories updated by copying files over an
+          # older checkout, where deleted files can otherwise remain in GitHub.
+          rm -rf src/db src/app/api
+          rm -f src/lib/dashboard-data.ts drizzle.config.json
+          if grep -R "getDashboardData" -n src/app src/lib 2>/dev/null; then
+            echo "The checkout still contains the server-backed dashboard. Replace it with the static GitHub Pages source."
+            exit 1
+          fi
       - name: Build static site
         run: npm run build
       - name: Upload Pages artifact
