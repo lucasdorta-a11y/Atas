@@ -931,6 +931,113 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
   if (found) addFound(payload, "evolucao");
 }
 
+function evolutionPairFromCell(value: unknown): { atas: number | null; itens: number | null } {
+  const text = cellText(value);
+  if (!text) return { atas: null, itens: null };
+  const atasMatch = text.match(/(-?\d[\d.\s]*(?:,\d+)?)\s*ATAS?/i);
+  const itensMatch = text.match(/(-?\d[\d.\s]*(?:,\d+)?)\s*ITENS?/i);
+  let atas = atasMatch ? integerValue(atasMatch[1]) : null;
+  let itens = itensMatch ? integerValue(itensMatch[1]) : null;
+  if (atas === null || itens === null) {
+    const numbers = text.match(/-?\d[\d.\s]*(?:,\d+)?/g) ?? [];
+    if (atas === null && numbers[0]) atas = integerValue(numbers[0]);
+    if (itens === null && numbers[1]) itens = integerValue(numbers[1]);
+  }
+  return { atas, itens };
+}
+
+/**
+ * Estrutura da tabela mostrada no Excel: uma linha por área e métricas em
+ * células compostas, por exemplo “4 ATAS / 216 ITENS”. Ela não usa os títulos
+ * horizontais “ATA CAPEX” da estrutura antiga, por isso é tratada
+ * explicitamente antes de finalizar o snapshot.
+ */
+function extractEvolutionStatusTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type Candidate = Record<SnapshotArea, { atas: number | null; itens: number | null }>;
+  let best: Candidate | null = null;
+  let bestScore = -1;
+
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const titleRows = findHeaderRows(matrix, (row) => row.some((value) => {
+      const label = exact(value);
+      return label.includes("EVOLUCAO POR AREA") && label.includes("STATUS ATUAL");
+    }));
+    for (const titleRow of titleRows) {
+      let headerRow = -1;
+      for (let rowIndex = titleRow + 1; rowIndex < Math.min(matrix.length, titleRow + 8); rowIndex += 1) {
+        const values = matrix[rowIndex] ?? [];
+        const labels = values.map(exact);
+        const hasArea = labels.some((label) => label === "AREAS" || label === "AREA");
+        const hasConcluded = labels.some((label) => label.includes("CONCLUID") && label.includes("ATAS"));
+        const hasVencidas = labels.some((label) => label.includes("VENCIDAS"));
+        const hasAVencer = labels.some((label) => label.includes("A VENCER"));
+        if (hasArea && hasConcluded && hasVencidas && hasAVencer) {
+          headerRow = rowIndex;
+          break;
+        }
+      }
+      if (headerRow < 0) continue;
+
+      const header = matrix[headerRow] ?? [];
+      const columnWith = (...parts: string[]) => header.findIndex((value) => {
+        const label = exact(value);
+        return parts.every((part) => label.includes(part));
+      });
+      const areaCol = header.findIndex((value) => {
+        const label = exact(value);
+        return label === "AREAS" || label === "AREA";
+      });
+      const concludedCol = columnWith("CONCLUID", "ATAS");
+      const andamentoCol = columnWith("ANDAMENTO");
+      const saldoCol = columnWith("ITENS COM", "SALDO");
+      const semSaldoCol = columnWith("ITENS SEM", "SALDO");
+      const vencidasCol = columnWith("VENCIDAS");
+      const aVencerCol = columnWith("A VENCER");
+      if (areaCol < 0 || concludedCol < 0) continue;
+
+      const candidate: Candidate = makeAreaRecord(() => ({ atas: null, itens: null }));
+      let score = 0;
+      for (let rowIndex = headerRow + 1; rowIndex < Math.min(matrix.length, headerRow + 12); rowIndex += 1) {
+        const row = matrix[rowIndex] ?? [];
+        if (isBlank(row)) break;
+        const area = isArea(row[areaCol]) ?? row.slice(0, 3).map(isArea).find(Boolean) ?? null;
+        if (!area) continue;
+        const pair = evolutionPairFromCell(row[concludedCol]);
+        if (pair.atas !== null || pair.itens !== null) {
+          candidate[area] = pair;
+          score += 10;
+        }
+        // Só preenche outras métricas quando a tabela realmente traz números;
+        // a célula “ND SEM CAMPO” não deve substituir o quadro separado de
+        // EM ANDAMENTO já extraído da planilha.
+        const andamento = andamentoCol >= 0 ? evolutionPairFromCell(row[andamentoCol]) : { atas: null, itens: null };
+        if (andamento.atas !== null || andamento.itens !== null) setEvolutionPair(payload.evolucao[area], "andamento", andamento.atas, andamento.itens);
+        const saldo = saldoCol >= 0 ? integerValue(row[saldoCol]) : null;
+        if (saldo !== null) payload.evolucao[area].saldoItens = saldo;
+        const semSaldo = semSaldoCol >= 0 ? integerValue(row[semSaldoCol]) : null;
+        if (semSaldo !== null) payload.evolucao[area].semSaldoItens = semSaldo;
+        const vencidas = vencidasCol >= 0 ? evolutionPairFromCell(row[vencidasCol]) : { atas: null, itens: null };
+        if (vencidas.atas !== null || vencidas.itens !== null) setEvolutionPair(payload.evolucao[area], "vencidas", vencidas.atas, vencidas.itens);
+        const aVencer = aVencerCol >= 0 ? evolutionPairFromCell(row[aVencerCol]) : { atas: null, itens: null };
+        if (aVencer.atas !== null || aVencer.itens !== null) setEvolutionPair(payload.evolucao[area], "aVencer", aVencer.atas, aVencer.itens);
+      }
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+  }
+
+  if (best && bestScore > 0) {
+    for (const area of SNAPSHOT_AREAS) {
+      const pair = best[area];
+      if (pair.atas !== null || pair.itens !== null) setEvolutionPair(payload.evolucao[area], "concluidas", pair.atas, pair.itens);
+    }
+    addFound(payload, "evolucao");
+  }
+}
+
 /* ------------------------- faixas de previsão -------------------- */
 
 function bandFromLabel(value: unknown): ForecastBand | null {
@@ -1329,6 +1436,7 @@ export function extractSnapshotPayload(
   extractTopBuyers(payload, sheets);
   extractSuppliers(payload, sheets);
   extractEvolution(payload, sheets);
+  extractEvolutionStatusTable(payload, sheets);
   extractForecastBandTable(payload, sheets);
   extractForecastBandFallback(payload, sheets);
   extractMonthlyForecastTable(payload, sheets);
