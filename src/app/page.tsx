@@ -4,12 +4,17 @@ import Link from "next/link";
 import { FileStack, FileUp, RefreshCw } from "lucide-react";
 import { getStaticDashboardData, type StaticDashboardData } from "@/lib/static-dashboard";
 import { STATIC_DATA_EVENT } from "@/lib/static-store";
-import type { ForecastBand, SnapshotArea } from "@/lib/dashboard-snapshot";
+import type { ForecastBand, SnapshotArea, SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
 import clsx from "clsx";
+
+const MONTH_NAMES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+] as const;
 
 export default function PanoramaPage() {
   const [data, setData] = useState<StaticDashboardData | null>(null);
@@ -150,6 +155,31 @@ export default function PanoramaPage() {
     };
   };
 
+  const monthlyForArea = (area: string) => {
+    const key = area.toUpperCase() as SnapshotArea;
+    const sourceRows: SnapshotMonthlyForecastRow[] = currentSnapshot?.previsaoMeses?.[key]?.rows ?? [];
+    const reference = currentSnapshot?.referenceDate ?? hoje;
+    const [year, month] = reference.split("-").map(Number);
+    const baseDate = new Date(year || new Date().getFullYear(), (month || new Date().getMonth() + 1) - 1, 1);
+
+    const sumRows = (rows: SnapshotMonthlyForecastRow[]) => ({
+      atas: rows.reduce((sum, row) => sum + Number(row.atas ?? 0), 0),
+      itens: rows.reduce((sum, row) => sum + Number(row.itens ?? 0), 0),
+    });
+    const buckets = [0, 1, 2].map((offset) => {
+      const date = new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1);
+      const monthNumber = date.getMonth() + 1;
+      const rows = sourceRows.filter((row) => row.month === monthNumber && row.year === date.getFullYear());
+      return {
+        label: `${MONTH_NAMES_PT[monthNumber - 1]}/${date.getFullYear()}`,
+        ...sumRows(rows),
+      };
+    });
+    const explicitLast = sumRows(sourceRows.filter((row) => row.month === null));
+    const overdue = explicitLast.atas || explicitLast.itens ? explicitLast : prevByBand(area, "vencidas");
+    return [...buckets, { label: "Vencida/Sem Previsão", ...overdue }];
+  };
+
   const areaPercent = (area: string) => {
     const ordered = ["INDIRETOS", "DIRETOS", "CAPEX"];
     const index = ordered.indexOf(area);
@@ -187,7 +217,7 @@ export default function PanoramaPage() {
       <section aria-labelledby="comparacao-semanal" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="comparacao-semanal" className="text-[20px] font-display text-navy-900">Leitura dos gráficos</h2>
+            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Leitura dos gráficos</h2>
             <p className="mt-1 text-[12.5px] text-ink-soft">A semana anterior é preservada no IndexedDB deste navegador e substituída pela leitura imediatamente anterior após uma nova importação.</p>
           </div>
           <span className="rounded-full bg-navy-50 px-3 py-1 text-[12px] font-semibold text-navy-700">
@@ -214,7 +244,7 @@ export default function PanoramaPage() {
       <section className="card overflow-hidden text-[13px]">
         <div className="grid items-stretch lg:grid-cols-2 divide-x divide-line">
           <div className="flex h-full min-h-full flex-col">
-            <h3 className="flex min-h-[58px] items-center px-5 py-3 text-[18px] text-navy-900 font-display">Valor Contratado Por Área</h3>
+            <h3 className="flex min-h-[58px] items-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Valor Contratado Por Área</h3>
             <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold">
@@ -237,7 +267,7 @@ export default function PanoramaPage() {
             </table>
           </div>
           <div className="flex h-full min-h-full flex-col">
-            <h3 className="flex min-h-[58px] flex-col justify-center px-5 py-3 text-[18px] text-navy-900 font-display">Saving <span className="text-[14px] text-danger-700 block mt-1 font-sans">Mapeamento iniciado em abr.2026</span></h3>
+            <h3 className="flex min-h-[58px] flex-col justify-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Saving <span className="text-[14px] text-danger-700 block mt-1 font-sans">Mapeamento iniciado em abr.2026</span></h3>
             <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold text-[11px] text-center">
@@ -284,7 +314,7 @@ export default function PanoramaPage() {
       {/* Bloco 3: Distribuição de Volume & Fornecedores (Ref: Screenshot 3 & 13) */}
       <section className="space-y-6">
         <div>
-          <h2 className="text-[20px] font-display text-navy-900 mb-4">Distribuição de Volume por Área (% Atas)</h2>
+          <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Distribuição de Volume por Área (% Atas)</h2>
           <div className="grid gap-4 md:grid-cols-3">
             {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
               const areaStats = (porArea as any[]).find(a => a.area.toUpperCase() === area) || { processos: 0 };
@@ -316,7 +346,7 @@ export default function PanoramaPage() {
         </div>
 
         <div>
-          <h2 className="text-[20px] font-display text-navy-900 mb-4">Representatividade Fornecedores</h2>
+          <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Representatividade Fornecedores</h2>
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
             <h3 className="bg-[#111c75] px-3 py-3 text-center font-bold text-white">FORNECEDORES GERAL</h3>
             <table className="w-full min-w-[720px] text-left">
@@ -353,7 +383,7 @@ export default function PanoramaPage() {
 
       {/* Bloco 4: Evolução Por Área (Ref: Screenshot 4 & 14) */}
       <section>
-        <h2 className="text-[20px] font-display text-navy-900 mb-4">Evolução Por Área (Por Status Atual)</h2>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Evolução Por Área (Por Status Atual)</h2>
         <div className="card overflow-x-auto text-[12px]">
           <table className="w-full text-center">
             <thead>
@@ -388,7 +418,7 @@ export default function PanoramaPage() {
 
       {/* Bloco 5: Status de Renovações (Ref: Screenshots 5, 6, 7 & 15, 16, 17) */}
       <section>
-        <h2 className="text-[24px] font-display text-accent-500 mb-6 font-bold">Status de Renovações</h2>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Status de Renovações</h2>
         <div className="space-y-8">
           {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
             const naoIniciado = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Iniciado");
@@ -415,8 +445,8 @@ export default function PanoramaPage() {
 
       {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
       <section>
-        <h2 className="text-[24px] font-display text-accent-500 mb-6 font-bold">Indicadores - Atas em andamento</h2>
-        <h3 className="text-[18px] text-navy-900 mb-4 font-display">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Indicadores - Atas em andamento</h2>
+        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
         
         <div className="space-y-8">
           <FaixaPrevisao title="Previsões para concluir acima de 60 dias" areaStats={[
@@ -439,16 +469,6 @@ export default function PanoramaPage() {
             { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_60") },
             { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_60") },
           ]}/>
-          <FaixaPrevisao title="Previsões canceladas" titleClass="bg-[#eee1a6] text-navy-950" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "canceladas") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "canceladas") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "canceladas") },
-          ]}/>
-          <FaixaPrevisao title="Previsões finalizadas" titleClass="bg-[#d7ead1] text-navy-950" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "finalizadas") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "finalizadas") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "finalizadas") },
-          ]}/>
           <FaixaPrevisao
             title="Previsões vencidas"
             titleClass="bg-[#b42318] text-white border-danger-700"
@@ -456,6 +476,14 @@ export default function PanoramaPage() {
               { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "vencidas") },
               { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "vencidas") },
               { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "vencidas") },
+            ]}
+          />
+
+          <PrevisaoMensal
+            areas={[
+              { area: "INDIRETOS", bg: "bg-[#0b7c7b]", buckets: monthlyForArea("Indiretos") },
+              { area: "DIRETOS", bg: "bg-[#008cff]", buckets: monthlyForArea("Diretos") },
+              { area: "CAPEX", bg: "bg-[#fca500]", buckets: monthlyForArea("CAPEX") },
             ]}
           />
         </div>
@@ -604,7 +632,7 @@ function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaS
         {areaStats.map(s => (
           <div key={s.area}>
             <div className={clsx("py-1 text-center text-white text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
-            <div className="text-[#0d952e] font-display mb-6">
+            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-[#0d952e]">
               <div className="text-[18px] font-bold">{String(s.atas).padStart(2, '0')} ATAS</div>
               <div className="text-[18px] font-bold">{String(s.itens).padStart(2, '0')} ITENS</div>
             </div>
@@ -621,5 +649,37 @@ function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaS
         ))}
       </div>
     </div>
+  );
+}
+
+function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; buckets: Array<{ label: string; atas: number; itens: number }> }> }) {
+  const bucketColors = ["bg-[#e2e2e2]", "bg-[#f9dfa8]", "bg-[#edf8df]", "bg-[#f7e7e7]"];
+  return (
+    <section className="space-y-6 border-t border-line pt-2" aria-labelledby="previsao-por-mes">
+      <h3 id="previsao-por-mes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">
+        Previsão de Conclusão por Mês
+      </h3>
+      <div className="space-y-7">
+        {areas.map(({ area, bg, buckets }) => (
+          <div key={area}>
+            <div className={clsx("mb-3 border border-navy-900 py-2 text-center text-[16px] font-bold text-white", bg)}>{area}</div>
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              {buckets.map((bucket, index) => (
+                <div key={`${area}-${bucket.label}`} className="relative min-w-0">
+                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index])}>
+                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.atas).padStart(2, "0")} ATAS</span>
+                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.itens).padStart(2, "0")} ITENS</span>
+                  </div>
+                  <div className="mt-2 flex min-h-7 items-start justify-center text-center text-[11px] font-sans leading-tight tracking-normal text-ink-soft">
+                    <span>{bucket.label}</span>
+                    {index < buckets.length - 1 && <span className="ml-2 hidden font-bold text-navy-900 sm:inline" aria-hidden="true">→</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { BookOpen, LayoutDashboard, Table2, Upload } from "lucide-react";
+import { BookOpen, LayoutDashboard, Maximize2, Minimize2, Table2, Upload } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate } from "@/lib/format";
 import { getStaticBaseSummary } from "@/lib/static-dashboard";
@@ -86,11 +86,20 @@ function BaseChip() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const isPanorama = pathname === "/" || pathname === "/Atas" || pathname === "/Atas/";
   const onImport = pathname.startsWith("/importar");
+  const [panoramaFocus, setPanoramaFocus] = useState(false);
+
+  useEffect(() => {
+    // A visualização limpa é exclusiva do panorama; as demais rotas mantêm a navegação.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isPanorama) setPanoramaFocus(false);
+  }, [isPanorama, pathname]);
 
   return (
-    <div className="min-h-dvh">
+    <div className={clsx("min-h-dvh", panoramaFocus && isPanorama && "bg-canvas")}>
       {/* ================= Sidebar (desktop) ================= */}
+      {!panoramaFocus && (
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col bg-navy-950 lg:flex"
         aria-label="Navegação principal"
@@ -134,8 +143,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
         </div>
       </aside>
+      )}
 
       {/* ================= Topbar ================= */}
+      {!panoramaFocus && (
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm lg:pl-[248px]">
         <div className="flex h-[60px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-3 lg:hidden">
@@ -147,7 +158,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="hidden items-center gap-2 lg:flex" aria-hidden="true">
             <span className="text-[13px] font-medium text-ink-soft">Painel de Compras e Atas de Registro de Preços</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {isPanorama && (
+              <button
+                type="button"
+                onClick={() => setPanoramaFocus(true)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-navy-200 bg-white px-3 text-[12.5px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50"
+                aria-label="Abrir o panorama em tela cheia, sem navegação"
+              >
+                <Maximize2 size={16} aria-hidden="true" />
+                <span className="hidden sm:inline">Tela cheia</span>
+              </button>
+            )}
             <BaseChip />
             {!onImport && (
               <Link
@@ -162,13 +184,36 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      )}
 
       {/* ================= Conteúdo ================= */}
-      <main id="conteudo" tabIndex={-1} className="anim-fade-up mx-auto w-full max-w-[1280px] px-4 pb-28 pt-6 sm:px-6 lg:pl-[272px] lg:pr-8 lg:pt-8 lg:pb-14 lg:max-w-none">
+      <main
+        id="conteudo"
+        tabIndex={-1}
+        className={clsx(
+          "anim-fade-up mx-auto w-full",
+          panoramaFocus && isPanorama
+            ? "max-w-none px-5 pb-14 pt-8 sm:px-8 lg:px-12"
+            : "max-w-[1280px] px-4 pb-28 pt-6 sm:px-6 lg:pl-[272px] lg:pr-8 lg:pt-8 lg:pb-14 lg:max-w-none",
+        )}
+      >
         {children}
       </main>
 
+      {panoramaFocus && isPanorama && (
+        <button
+          type="button"
+          onClick={() => setPanoramaFocus(false)}
+          className="fixed right-4 top-4 z-50 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/20 bg-navy-950/90 px-3 text-[12.5px] font-semibold text-white shadow-pop backdrop-blur-sm transition-colors hover:bg-navy-800"
+          aria-label="Sair da tela cheia e restaurar a navegação"
+        >
+          <Minimize2 size={16} aria-hidden="true" />
+          <span className="hidden sm:inline">Sair da tela cheia</span>
+        </button>
+      )}
+
       {/* ================= Navegação inferior (mobile) ================= */}
+      {!panoramaFocus && (
       <nav
         className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
         aria-label="Navegação principal (móvel)"
@@ -202,6 +247,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </ul>
       </nav>
+      )}
     </div>
   );
 }

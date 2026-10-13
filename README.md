@@ -7,7 +7,7 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
 - lê automaticamente todas as abas com dados e consolida as linhas;
 - trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
-- sugere e permite revisar o mapeamento das colunas;
+- inicia o mapeamento operacional com todos os campos como `não importar`, permitindo selecionar apenas o que será usado;
 - valida identificadores, objetos, datas, quantidades, valores, duplicidades e links;
 - alimenta o panorama, a busca, filtros, paginação e exportação CSV com os dados confirmados;
 - preserva colunas não mapeadas nos detalhes dos registros;
@@ -69,7 +69,7 @@ https://lucasdorta-a11y.github.io/Atas/
 2. Selecione ou arraste até dois arquivos.
 3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
 4. Escolha a área, a natureza da base e a data de referência.
-5. Revise o mapeamento sugerido; campos obrigatórios são identificador e objeto.
+5. Revise o mapeamento; os campos operacionais começam como `não importar` e os campos essenciais são validados funcionalmente, sem marcadores visuais de “obrigatório”.
 6. Confira o resumo e as ocorrências.
 7. Baixe o relatório de validação, se necessário, e confirme a importação.
 8. Escolha **Substituir** para arquivar a base ativa daquela área ou **Combinar** para manter bases diferentes ativas.
@@ -106,7 +106,9 @@ A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as co
 
 A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status de renovações** permanece visível e não tem alteração funcional nesta versão.
 
-As faixas do painel seguem a ordem da planilha: acima de 60 dias, até 15, até 30, até 60, canceladas, finalizadas e previsões vencidas, quando presentes. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+As faixas exibidas no painel seguem a ordem principal da planilha: acima de 60 dias, até 15, até 30, até 60 e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+
+No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 
 A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de mapeamento, os campos operacionais começam como **não importar**; os blocos específicos do panorama são detectados automaticamente e não precisam ser associados manualmente.
 

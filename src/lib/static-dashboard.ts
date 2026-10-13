@@ -323,36 +323,19 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     })));
   }
 
-  const genericSupplierGroups = new Map<string, { area: string; fornecedor: string; atas: number; itens: number; concentracao: number; analise: string | null }>();
-  for (const row of rows) {
-    const fornecedor = row.fornecedor?.trim();
-    if (!fornecedor) continue;
-    const area = row.area ?? "Não informado";
-    const key = groupKey(area, fornecedor);
-    const current = genericSupplierGroups.get(key) ?? { area, fornecedor, atas: 0, itens: 0, concentracao: 0, analise: null };
-    current.atas += 1;
-    current.itens += n(row.quantidade);
-    genericSupplierGroups.set(key, current);
-  }
-  const genericSuppliers = [...genericSupplierGroups.values()];
-  const totalSupplierItems = genericSuppliers.reduce((sum, item) => sum + item.itens, 0);
-  let fornecedores = genericSuppliers
-    .map((item) => ({ ...item, concentracao: totalSupplierItems ? (item.itens / totalSupplierItems) * 100 : 0 }))
-    .sort((a, b) => b.itens - a.itens)
-    .slice(0, 20);
-  if (currentSnapshot && snapshotHas(currentSnapshot, "fornecedores")) {
-    // O panorama usa somente FORNECEDORES GERAL. Não fazer fallback para os
-    // quadros por área, pois isso mistura linhas de Evolução na tabela geral.
-    const geral = currentSnapshot.fornecedoresGeral ?? [];
-    fornecedores = geral.map((item) => ({
-      area: "Geral",
-      fornecedor: item.fornecedor,
-      atas: item.qtdAtas ?? 0,
-      itens: item.qtdItens ?? 0,
-      concentracao: item.concentracaoPct ?? 0,
-      analise: item.analise,
-    }));
-  }
+  // O panorama usa exclusivamente a tabela FORNECEDORES GERAL. Não há
+  // fallback para agrupar fornecedores dos registros operacionais, pois isso
+  // troca a base consolidada da planilha por uma contagem parcial/por área.
+  const fornecedores: StaticDashboardData["fornecedores"] = currentSnapshot && snapshotHas(currentSnapshot, "fornecedores")
+    ? (currentSnapshot.fornecedoresGeral ?? []).map((item) => ({
+        area: "Geral",
+        fornecedor: item.fornecedor,
+        atas: item.qtdAtas ?? 0,
+        itens: item.qtdItens ?? 0,
+        concentracao: item.concentracaoPct ?? 0,
+        analise: item.analise,
+      }))
+    : [];
 
   const renewalGroups = new Map<string, { area: string; status: string; atas: number; itens: number }>();
   for (const row of rows) {
@@ -377,7 +360,9 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   let previsoes = [...forecastGroups.values()].sort((a, b) => a.dias - b.dias);
   if (currentSnapshot && (snapshotHas(currentSnapshot, "previsao-faixas") || snapshotHas(currentSnapshot, "previsoes-cruzadas"))) {
     const snapshotForecast: typeof previsoes = [];
-    for (const band of ["acima_60", "ate_15", "ate_30", "ate_60", "canceladas", "finalizadas", "vencidas"] as ForecastBand[]) {
+    // O panorama não exibe previsões canceladas ou finalizadas, mesmo quando
+    // essas faixas existirem no snapshot importado.
+    for (const band of ["acima_60", "ate_15", "ate_30", "ate_60", "vencidas"] as ForecastBand[]) {
       for (const area of SNAPSHOT_AREAS) {
         const source = currentSnapshot.previsoes[band][area];
         const totalAtas = source.atas ?? 0;

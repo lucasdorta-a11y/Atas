@@ -86,6 +86,19 @@ export interface SnapshotForecastArea {
   buyers: SnapshotForecastBuyer[];
 }
 
+/** Uma linha do pivô “PREVISÃO DE CONCLUSÃO POR MÊS”. */
+export interface SnapshotMonthlyForecastRow {
+  label: string;
+  month: number | null;
+  year: number | null;
+  atas: number | null;
+  itens: number | null;
+}
+
+export interface SnapshotMonthlyForecastArea {
+  rows: SnapshotMonthlyForecastRow[];
+}
+
 export interface SnapshotCoverage {
   found: string[];
   missing: string[];
@@ -104,6 +117,7 @@ export interface DashboardSnapshotPayload {
   fornecedoresGeral: SnapshotSupplierGeneral[];
   evolucao: Record<SnapshotArea, SnapshotEvolution>;
   previsoes: Record<ForecastBand, Record<SnapshotArea, SnapshotForecastArea>>;
+  previsaoMeses: Record<SnapshotArea, SnapshotMonthlyForecastArea>;
   coverage: SnapshotCoverage;
   notes: string[];
 }
@@ -180,6 +194,10 @@ function makeForecastRecord(): Record<ForecastBand, Record<SnapshotArea, Snapsho
   };
 }
 
+function makeMonthlyForecastRecord(): Record<SnapshotArea, SnapshotMonthlyForecastArea> {
+  return makeAreaRecord(() => ({ rows: [] }));
+}
+
 export function emptyDashboardSnapshot(referenceDate: string | null = null, sourceFiles: string[] = []): DashboardSnapshotPayload {
   return {
     schemaVersion: 2,
@@ -198,6 +216,7 @@ export function emptyDashboardSnapshot(referenceDate: string | null = null, sour
     fornecedoresGeral: [],
     evolucao: makeAreaRecord(emptyEvolution),
     previsoes: makeForecastRecord(),
+    previsaoMeses: makeMonthlyForecastRecord(),
     coverage: { found: [], missing: [] },
     notes: [],
   };
@@ -558,7 +577,12 @@ function extractTopBuyers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
 /* -------------------------- fornecedores -------------------------- */
 
 function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
-  const generalCandidates: SnapshotSupplierGeneral[] = [];
+  type GeneralBlock = {
+    items: SnapshotSupplierGeneral[];
+    totalAtas: number | null;
+    totalItens: number | null;
+  };
+  const generalBlocks: GeneralBlock[] = [];
 
   const isSupplierHeader = (row: unknown[]) => {
     const values = row.map(exact);
@@ -615,8 +639,8 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
           const analiseNormalized = exact(analise);
           const validAnalysis = !analiseNormalized
             || ["ALTA CONCENTRACAO", "VOLUME MEDIO", "PULVERIZADO"].includes(analiseNormalized);
-          // Linhas do bloco de evolução que vazam para o cabeçalho de
-          // fornecedores têm ANÁLISE = QTD ATA ou um número (58, 3, 9).
+          // Linhas de outros pivôs que vazam para o cabeçalho de fornecedores
+          // têm ANÁLISE = QTD ATA ou um número. Elas não pertencem ao bloco.
           if (!validAnalysis || /^\d+(?:[.,]\d+)?$/.test(analiseNormalized) || analiseNormalized === "QTD ATA" || analiseNormalized === "QTD ITENS") continue;
           if (supplier.length > 120) continue;
           if (qtdAtas === null && qtdItens === null && !analise) continue;
@@ -625,14 +649,23 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
           } else if (area) {
             items.push({ area, fornecedor: supplier, qtdAtas, qtdItens, concentracaoPct: concentration, analise });
           }
-          // TOTAL encerra o bloco. Nunca atravessar para Evolução, critérios
-          // ou notas que estejam logo abaixo na matriz exportada.
+          // O primeiro TOTAL encerra a seção. Nunca atravessar para outro
+          // bloco da mesma aba, mesmo que ele tenha o mesmo cabeçalho.
           if (supplierNormalized === "TOTAL" || supplierNormalized === "TOTAL GERAL") break;
         }
 
         if (items.length === 0) continue;
         if (isGeneral) {
-          generalCandidates.push(...(items as SnapshotSupplierGeneral[]));
+          const generalItems = items as SnapshotSupplierGeneral[];
+          const total = generalItems.find((item) => {
+            const label = exact(item.fornecedor);
+            return label === "TOTAL" || label === "TOTAL GERAL";
+          });
+          generalBlocks.push({
+            items: generalItems,
+            totalAtas: total?.qtdAtas ?? null,
+            totalItens: total?.qtdItens ?? null,
+          });
         } else if (area) {
           payload.fornecedores[area] = [...payload.fornecedores[area], ...(items as SnapshotSupplier[])];
         }
@@ -640,12 +673,29 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
     }
   }
 
-  // “FORNECEDORES GERAL” é a única tabela exibida no panorama. Preserve a
-  // ordem original e force o contrato visual: exatamente Top 4, OUTROS e TOTAL.
-  if (generalCandidates.length > 0) {
+  // Pode existir mais de uma tabela com o mesmo cabeçalho em arquivos/abas
+  // diferentes. A tabela geral correta é a que fecha com a leitura principal
+  // do painel; na ausência desse KPI, preferimos o bloco mais completo (maior
+  // TOTAL de itens). Assim um quadro parcial/antigo não substitui a tabela
+  // “FORNECEDORES GERAL” da base ativa.
+  if (generalBlocks.length > 0) {
+    const expectedAtas = payload.kpis.concluidasAtas;
+    const expectedItens = payload.kpis.concluidasItens;
+    const score = (block: GeneralBlock) => {
+      const hasTotal = block.totalAtas !== null || block.totalItens !== null;
+      const hasOthers = block.items.some((item) => exact(item.fornecedor) === "OUTROS FORNECEDORES");
+      return (hasTotal ? 100 : 0)
+        + (hasOthers ? 50 : 0)
+        + (expectedAtas !== null && block.totalAtas === expectedAtas ? 100000 : 0)
+        + (expectedItens !== null && block.totalItens === expectedItens ? 100000 : 0)
+        + (block.totalItens ?? 0)
+        + (block.totalAtas ?? 0)
+        + block.items.length;
+    };
+    const selected = [...generalBlocks].sort((a, b) => score(b) - score(a))[0];
     const deduped: SnapshotSupplierGeneral[] = [];
     const seen = new Set<string>();
-    for (const item of generalCandidates) {
+    for (const item of selected.items) {
       const key = `${exact(item.fornecedor)}|${item.qtdAtas ?? ""}|${item.qtdItens ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -658,12 +708,11 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       return label !== "OUTROS FORNECEDORES" && label !== "TOTAL" && label !== "TOTAL GERAL";
     }).slice(0, 4);
     payload.fornecedoresGeral = [...top, ...(others ? [others] : []), ...(total ? [total] : [])];
-    addFound(payload, "fornecedores");
+    if (payload.fornecedoresGeral.length > 0) addFound(payload, "fornecedores");
   }
-  // Sem a tabela nomeada FORNECEDORES GERAL, não sinalizar o bloco como
+  // Sem uma tabela nomeada FORNECEDORES GERAL, não sinalizar o bloco como
   // reconhecido: os quadros por área não atendem ao contrato visual do painel.
 }
-
 /* ----------------------------- evolução --------------------------- */
 
 function setEvolutionPair(target: SnapshotEvolution, kind: "concluidas" | "andamento" | "vencidas" | "aVencer", atas: number | null, itens: number | null) {
@@ -914,6 +963,133 @@ function daysUntilISO(iso: string): number {
   return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
 
+const MONTH_NUMBERS: Record<string, number> = {
+  JANEIRO: 1,
+  FEVEREIRO: 2,
+  MARCO: 3,
+  ABRIL: 4,
+  MAIO: 5,
+  JUNHO: 6,
+  JULHO: 7,
+  AGOSTO: 8,
+  SETEMBRO: 9,
+  OUTUBRO: 10,
+  NOVEMBRO: 11,
+  DEZEMBRO: 12,
+};
+
+function monthlyLabel(value: unknown, referenceDate: string | null): { label: string; month: number | null; year: number | null } | null {
+  const label = exact(value);
+  if (!label) return null;
+  if (label.includes("VENCIDA") || label.includes("SEM PREVISAO") || label.includes("SEM PREVISÃO")) {
+    return { label: cellText(value), month: null, year: null };
+  }
+  const monthName = Object.keys(MONTH_NUMBERS).find((name) => new RegExp(`\\b${name}\\b`).test(label));
+  if (!monthName) return null;
+  const yearMatch = label.match(/\b(20\d{2})\b/);
+  const referenceYear = referenceDate ? Number(referenceDate.slice(0, 4)) : new Date().getFullYear();
+  return {
+    label: cellText(value),
+    month: MONTH_NUMBERS[monthName],
+    year: yearMatch ? Number(yearMatch[1]) : referenceYear,
+  };
+}
+
+/**
+ * Extrai o pivô vertical “PREVISÃO DE CONCLUSÃO POR MÊS”. A tabela de origem
+ * possui uma linha de grupos (CAPEX/DIRETOS/INDIRETOS), outra linha com pares
+ * QTD ATAS/QTD ITENS e uma linha por mês. O pareamento é feito pela ordem dos
+ * grupos, como no Excel, para não deslocar os números entre áreas.
+ */
+function extractMonthlyForecastTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type Candidate = Record<SnapshotArea, SnapshotMonthlyForecastArea>;
+  let best: Candidate | null = null;
+  let bestScore = -1;
+
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const titleRows = findHeaderRows(matrix, (row) => row.some((value) => exact(value).includes("PREVISAO DE CONCLUSAO POR MES")));
+    for (const titleRow of titleRows) {
+      let quantityHeaderIndex = -1;
+      for (let candidate = titleRow + 1; candidate < Math.min(matrix.length, titleRow + 16); candidate += 1) {
+        const values = matrix[candidate] ?? [];
+        const atasCount = values.filter((value) => exact(value) === "QTD ATAS").length;
+        const itensCount = values.filter((value) => exact(value) === "QTD ITENS").length;
+        if (atasCount >= 2 && itensCount >= 2) {
+          quantityHeaderIndex = candidate;
+          break;
+        }
+      }
+      if (quantityHeaderIndex < 0) continue;
+
+      let groupRowIndex = -1;
+      for (let candidate = quantityHeaderIndex - 1; candidate > titleRow; candidate -= 1) {
+        const areas = (matrix[candidate] ?? []).filter((value) => Boolean(isArea(value)));
+        if (areas.length >= 2) {
+          groupRowIndex = candidate;
+          break;
+        }
+      }
+      if (groupRowIndex < 0) continue;
+
+      const groupRow = matrix[groupRowIndex] ?? [];
+      const groups = groupRow
+        .map((value, column) => ({ area: isArea(value), column }))
+        .filter((item): item is { area: SnapshotArea; column: number } => Boolean(item.area))
+        .sort((a, b) => a.column - b.column);
+      const quantityHeader = matrix[quantityHeaderIndex] ?? [];
+      const qtdAtasColumns = quantityHeader
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value === "QTD ATAS")
+        .map((item) => item.column);
+      const qtdItensColumns = quantityHeader
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value === "QTD ITENS")
+        .map((item) => item.column);
+      if (groups.length === 0 || qtdAtasColumns.length === 0 || qtdItensColumns.length === 0) continue;
+
+      const labelCol = quantityHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA") >= 0
+        ? quantityHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA")
+        : 0;
+      const candidate: Candidate = makeMonthlyForecastRecord();
+      let score = 0;
+      for (let rowIndex = quantityHeaderIndex + 1; rowIndex < Math.min(matrix.length, quantityHeaderIndex + 80); rowIndex += 1) {
+        const row = matrix[rowIndex] ?? [];
+        if (isBlank(row)) break;
+        const parsedLabel = monthlyLabel(row[labelCol], payload.referenceDate);
+        if (!parsedLabel) continue;
+        for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+          const atasCol = qtdAtasColumns[groupIndex];
+          const itensCol = qtdItensColumns[groupIndex] ?? (atasCol !== undefined ? atasCol + 1 : -1);
+          const atas = atasCol === undefined ? null : integerValue(row[atasCol]);
+          const itens = itensCol < 0 ? null : integerValue(row[itensCol]);
+          if (atas === null && itens === null) continue;
+          const area = groups[groupIndex].area;
+          const existing = candidate[area].rows.find((item) => (
+            item.month === parsedLabel.month && item.year === parsedLabel.year && item.label === parsedLabel.label
+          ));
+          if (existing) {
+            existing.atas = (existing.atas ?? 0) + (atas ?? 0);
+            existing.itens = (existing.itens ?? 0) + (itens ?? 0);
+          } else {
+            candidate[area].rows.push({ ...parsedLabel, atas, itens });
+          }
+          score += 1;
+        }
+      }
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+  }
+
+  if (best && bestScore > 0) {
+    payload.previsaoMeses = best;
+    addFound(payload, "previsao-meses");
+  }
+}
+
 function extractForecastBandTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
   let found = false;
   for (const sheet of sheets) {
@@ -1155,6 +1331,7 @@ export function extractSnapshotPayload(
   extractEvolution(payload, sheets);
   extractForecastBandTable(payload, sheets);
   extractForecastBandFallback(payload, sheets);
+  extractMonthlyForecastTable(payload, sheets);
   extractForecastRows(payload, sheets);
 
   const allKnown = [
@@ -1165,6 +1342,7 @@ export function extractSnapshotPayload(
     "fornecedores",
     "evolucao",
     "previsao-faixas",
+    "previsao-meses",
     "previsoes-cruzadas",
   ];
   payload.coverage.missing = allKnown.filter((key) => !payload.coverage.found.includes(key));
@@ -1196,7 +1374,7 @@ export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
     vencidasItens: 334,
   };
   payload.coverage.found = ["kpis-leitura"];
-  payload.coverage.missing = ["valores-por-area", "saving", "top-compradores", "fornecedores", "evolucao", "previsao-faixas", "previsoes-cruzadas"];
+  payload.coverage.missing = ["valores-por-area", "saving", "top-compradores", "fornecedores", "evolucao", "previsao-faixas", "previsao-meses", "previsoes-cruzadas"];
   payload.notes.push("Referência inicial fixa apenas para a comparação dos três gráficos; será substituída pelo snapshot imediatamente anterior após novas importações.");
   return payload;
 }

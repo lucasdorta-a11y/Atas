@@ -63,7 +63,9 @@
 
   /* Fontes locais/sistema: o site estático não depende de CDN nem de rede para renderizar. */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Arial Narrow", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  /* A tipografia de títulos não usa Arial Narrow: em alguns navegadores ela
+     comprime/estica os caracteres e prejudica a leitura do panorama. */
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-pop: 0 12px 32px -8px rgba(7, 24, 43, 0.18);
@@ -79,6 +81,11 @@ body {
   color: var(--color-ink);
   font-feature-settings: "cv11", "ss01";
   text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-stretch: normal;
+  letter-spacing: normal;
 }
 
 ::selection {
