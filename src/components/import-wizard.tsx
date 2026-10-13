@@ -153,16 +153,14 @@ export function ImportWizard() {
     [table],
   );
 
-  // Aplica a sugestão quando o arquivo/aba/cabeçalho muda (respeitando edições do usuário)
+  // Os blocos do panorama são automáticos e não dependem deste formulário.
+  // Deixe o mapeamento operacional limpo por padrão; o usuário escolhe apenas
+  // os campos que deseja gravar na busca de processos.
   useEffect(() => {
-    if (!suggestion) return;
-    if (!mappingTocado) {
+    if (!suggestion || mappingTocado) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMapping(suggestion.mapping);
-      setAvisoEstrutura(null);
-    } else {
-      setAvisoEstrutura("A linha de cabeçalho mudou. Revise o mapeamento — suas escolhas foram mantidas.");
-    }
+    setMapping({});
+    setAvisoEstrutura(null);
   }, [suggestion, mappingTocado]);
 
   const obrigatoriosOk = Boolean(mapping.numero && mapping.objeto);
@@ -615,14 +613,7 @@ export function ImportWizard() {
                 return (
                   <li key={f.key} className="grid gap-2 px-5 py-4 md:grid-cols-[240px_1fr] md:items-center md:gap-5">
                     <div>
-                      <p className="text-[13.5px] font-bold text-ink">
-                        {f.label}
-                        {f.required && (
-                          <span className="ml-1.5 rounded bg-accent-100 px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-accent-700">
-                            obrigatório
-                          </span>
-                        )}
-                      </p>
+                      <p className="text-[13.5px] font-bold text-ink">{f.label}</p>
                       <p className="mt-0.5 text-[12px] text-ink-soft">{f.hint}</p>
                       {confianca === "partial" && selecionada && (
                         <p className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-semibold text-warn-700">
@@ -642,11 +633,7 @@ export function ImportWizard() {
                           setMappingTocado(true);
                           setMapping((m) => ({ ...m, [f.key]: e.target.value || null }));
                         }}
-                        className={clsx(
-                          "min-h-11 w-full rounded-xl border bg-surface px-3 text-[13.5px] font-medium text-ink",
-                          f.required && !selecionada ? "border-danger-600/60 bg-danger-100/20" : "border-line",
-                        )}
-                        aria-invalid={f.required && !selecionada}
+                        className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[13.5px] font-medium text-ink"
                       >
                         <option value="">— não importar este campo —</option>
                         {table.headers.map((h) => (
@@ -670,7 +657,7 @@ export function ImportWizard() {
           {!canValidate && (
             <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
               <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Para continuar, associe os campos obrigatórios de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
+              Para continuar, associe os campos essenciais de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
             </div>
           )}
           {canValidate && !obrigatoriosOk && snapshotMeaningful && (
@@ -700,7 +687,7 @@ export function ImportWizard() {
         <section aria-label="Revisão da importação" className="space-y-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Linhas válidas" value={fmtInt(validacao.resumo.validos)} tone="ok" />
-            <Stat label="Ignoradas (obrigatórios/duplic.)" value={fmtInt(validacao.resumo.ignoradas)} tone={validacao.resumo.ignoradas > 0 ? "warn" : "neutral"} />
+            <Stat label="Ignoradas (campos essenciais/duplic.)" value={fmtInt(validacao.resumo.ignoradas)} tone={validacao.resumo.ignoradas > 0 ? "warn" : "neutral"} />
             <Stat label="Duplicadas removidas" value={fmtInt(validacao.resumo.duplicadas)} tone={validacao.resumo.duplicadas > 0 ? "warn" : "neutral"} />
             <Stat label="Avisos de interpretação" value={fmtInt(validacao.resumo.avisos)} tone={validacao.resumo.avisos > 0 ? "navy" : "neutral"} />
           </div>
@@ -788,7 +775,7 @@ export function ImportWizard() {
               <p className="text-[13.5px] leading-relaxed text-ok-700">
                 {validacao.resumo.validos === 0 && validacao.snapshotMeaningful
                   ? "Nenhuma linha operacional foi criada; a validação reconheceu somente os blocos específicos do snapshot."
-                  : "Nenhuma ocorrência: todos os campos obrigatórios estão preenchidos, sem duplicidades e sem avisos de interpretação."}
+                  : "Nenhuma ocorrência: os campos essenciais estão preenchidos, sem duplicidades e sem avisos de interpretação."}
               </p>
             </div>
           )}

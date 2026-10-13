@@ -96,7 +96,10 @@ export async function parseFile(file: File): Promise<ParsedFile> {
       header: 1,
       raw: true,
       defval: null,
-      blankrows: false,
+      // Preserve separators between independent pivot tables. The operational
+      // extractor ignores empty records, while the dashboard extractor uses
+      // them to avoid crossing from fornecedores into evolução/previsões.
+      blankrows: true,
     }) as unknown[][];
     return { name, headerRowIndex: guessHeaderRow(matrix), matrix };
   });

@@ -429,40 +429,72 @@ function extractAreaValues(payload: DashboardSnapshotPayload, sheets: SnapshotSo
 
 function headerValueIndex(row: unknown[], aliases: string[]): number {
   const normalized = aliases.map(exact);
-  return row.findIndex((value) => normalized.includes(exact(value)));
+  const exactIndex = row.findIndex((value) => normalized.includes(exact(value)));
+  if (exactIndex >= 0) return exactIndex;
+  // Tabelas dinâmicas do Excel às vezes acrescentam “/ %”, quebras de linha,
+  // unidades ou uma coluna duplicada ao título. O nome base continua sendo
+  // suficiente para identificar a métrica.
+  return row.findIndex((value) => normalized.some((alias) => {
+    const current = exact(value);
+    return current.includes(alias) || alias.includes(current);
+  }));
+}
+
+function savingNumber(value: unknown): number | null {
+  const direct = numberValue(value);
+  if (direct !== null) return direct;
+  const text = cellText(value);
+  const match = text.match(/-?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?|-?\d+(?:[.,]\d+)?/);
+  return match ? numberValue(match[0]) : null;
+}
+
+function savingPercent(value: unknown): number | null {
+  const direct = percentValue(value);
+  if (direct !== null) return direct;
+  const text = cellText(value);
+  const match = text.match(/(-?\d+(?:[.,]\d+)?)\s*%/);
+  if (!match) return null;
+  return percentValue(`${match[1]}%`);
 }
 
 function extractSaving(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
   let found = false;
-  const required = ["VALOR CONTRATADO R$", "SAVING HISTÓRICO R$"];
   for (const sheet of sheets) {
     const headerRows = findHeaderRows(sheet.matrix, (row) => {
       const values = row.map(exact);
-      return required.every((item) => values.includes(exact(item))) && values.some((item) => item.includes("REDUCAO"));
+      const hasContracted = values.some((value) => value.includes("VALOR CONTRATADO"));
+      const savingCount = values.filter((value) => value.includes("SAVING")).length;
+      const hasReduction = values.some((value) => value.includes("REDUCAO"));
+      // Aceita tanto cinco colunas separadas quanto títulos combinados como
+      // “SAVING HISTÓRICO R$ / %”.
+      return hasContracted && savingCount >= 1 && (hasReduction || savingCount >= 2);
     });
     for (const headerRow of headerRows) {
       const headers = sheet.matrix[headerRow] ?? [];
       const contractedCol = headerValueIndex(headers, ["VALOR CONTRATADO R$"]);
-      const historicCol = headerValueIndex(headers, ["SAVING HISTÓRICO R$"]);
-      const proposalCol = headerValueIndex(headers, ["SAVING PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA R$"]);
-      const reductionHistoricCol = headerValueIndex(headers, ["REDUÇÃO HISTÓRICO %"]);
-      const reductionProposalCol = headerValueIndex(headers, ["REDUÇÃO PROPOSTA INICIAL %", "REDUÇÃO SOB PROPOSTA INICIAL %"]);
-      for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 12); r += 1) {
+      const historicCol = headerValueIndex(headers, ["SAVING HISTÓRICO R$", "SAVING HISTORICO"]);
+      const proposalCol = headerValueIndex(headers, ["SAVING PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA R$", "SAVING PROPOSTA"]);
+      const reductionHistoricCol = headerValueIndex(headers, ["REDUÇÃO HISTÓRICO %", "REDUCAO HISTORICO", "REDUÇÃO HISTÓRICO"]);
+      const reductionProposalCol = headerValueIndex(headers, ["REDUÇÃO PROPOSTA INICIAL %", "REDUCAO PROPOSTA INICIAL", "REDUÇÃO SOB PROPOSTA INICIAL", "REDUCAO PROPOSTA"]);
+      if (contractedCol < 0) continue;
+      for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 16); r += 1) {
         const row = sheet.matrix[r] ?? [];
-        const area = isArea(row[0]) ?? row.map(isArea).find(Boolean) ?? null;
-        const totalRow = exact(row[0]).startsWith("TOTAL");
+        const area = row.map(isArea).find(Boolean) ?? null;
+        const totalRow = row.some((value) => exact(value) === "TOTAL" || exact(value).startsWith("TOTAL GERAL"));
         if (!area && !totalRow) {
           if (isBlank(row)) break;
           continue;
         }
         const target = area ? payload.valueAreas[area] : payload.savingTotal;
-        const contracted = contractedCol >= 0 ? metricAt(row, contractedCol, numberValue) : null;
+        const contracted = savingNumber(row[contractedCol]);
         target.valorSaving = contracted;
         if (target.valor === null && contracted !== null) target.valor = contracted;
-        target.savingHist = historicCol >= 0 ? metricAt(row, historicCol, numberValue) : null;
-        target.savingProp = proposalCol >= 0 ? metricAt(row, proposalCol, numberValue) : null;
-        target.reducaoHistPct = reductionHistoricCol >= 0 ? metricAt(row, reductionHistoricCol, percentValue) : null;
-        target.reducaoPropPct = reductionProposalCol >= 0 ? metricAt(row, reductionProposalCol, percentValue) : null;
+        target.savingHist = historicCol >= 0 ? savingNumber(row[historicCol]) : null;
+        target.savingProp = proposalCol >= 0 ? savingNumber(row[proposalCol]) : null;
+        target.reducaoHistPct = (reductionHistoricCol >= 0 ? savingPercent(row[reductionHistoricCol]) : null)
+          ?? (historicCol >= 0 ? savingPercent(row[historicCol]) : null);
+        target.reducaoPropPct = (reductionProposalCol >= 0 ? savingPercent(row[reductionProposalCol]) : null)
+          ?? (proposalCol >= 0 ? savingPercent(row[proposalCol]) : null);
         found = true;
       }
     }
@@ -526,7 +558,6 @@ function extractTopBuyers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
 /* -------------------------- fornecedores -------------------------- */
 
 function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
-  let found = false;
   const generalCandidates: SnapshotSupplierGeneral[] = [];
 
   const isSupplierHeader = (row: unknown[]) => {
@@ -541,7 +572,7 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
   const isStopLabel = (value: string) => {
     // A exportação da planilha pode juntar os quadros seguintes à tabela de
     // fornecedores quando as linhas vazias são removidas pelo SheetJS.
-    return /^(ATA |ATAS |ITEM |VENCIDAS|A VENCER|EVOLU|PREVISAO|ROTULOS|RÓTULOS)/.test(value);
+    return /^(ATA |ATAS |ITEM |VENCIDAS|A VENCER|EVOLU|PREVISAO|ROTULOS|RÓTULOS|CRITERIO|CRITÉRIO|ATUALIZACAO|ATUALIZAÇÃO|FORNECEDORES)/.test(value);
   };
 
   for (const sheet of sheets) {
@@ -555,8 +586,9 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       for (let groupIndex = 0; groupIndex < supplierColumns.length; groupIndex += 1) {
         const group = supplierColumns[groupIndex];
         const nextGroupColumn = supplierColumns[groupIndex + 1]?.column ?? header.length;
-        const titleContext = previousContext(sheet.matrix, headerRow, 10);
-        const isGeneral = titleContext.some((value) => value.includes("FORNECEDORES GERAL"));
+        const titleContext = previousContext(sheet.matrix, headerRow, 24);
+        const isGeneral = titleContext.some((value) => value.includes("FORNECEDORES GERAL"))
+          || header.some((value) => exact(value).includes("FORNECEDORES GERAL"));
         const area = areaFromHorizontalContext(sheet.matrix, headerRow, group.column)
           ?? areaFromContext(sheet.matrix, headerRow);
         const findInGroup = (wanted: string) => header.findIndex(
@@ -580,16 +612,25 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
           const qtdItens = integerValue(row[itensCol]);
           const concentration = percentValue(row[concentrationCol]);
           const analise = cellText(row[analysisCol]) || null;
+          const analiseNormalized = exact(analise);
+          const validAnalysis = !analiseNormalized
+            || ["ALTA CONCENTRACAO", "VOLUME MEDIO", "PULVERIZADO"].includes(analiseNormalized);
+          // Linhas do bloco de evolução que vazam para o cabeçalho de
+          // fornecedores têm ANÁLISE = QTD ATA ou um número (58, 3, 9).
+          if (!validAnalysis || /^\d+(?:[.,]\d+)?$/.test(analiseNormalized) || analiseNormalized === "QTD ATA" || analiseNormalized === "QTD ITENS") continue;
+          if (supplier.length > 120) continue;
           if (qtdAtas === null && qtdItens === null && !analise) continue;
           if (isGeneral) {
             items.push({ area: "GERAL", fornecedor: supplier, qtdAtas, qtdItens, concentracaoPct: concentration, analise });
           } else if (area) {
             items.push({ area, fornecedor: supplier, qtdAtas, qtdItens, concentracaoPct: concentration, analise });
           }
+          // TOTAL encerra o bloco. Nunca atravessar para Evolução, critérios
+          // ou notas que estejam logo abaixo na matriz exportada.
+          if (supplierNormalized === "TOTAL" || supplierNormalized === "TOTAL GERAL") break;
         }
 
         if (items.length === 0) continue;
-        found = true;
         if (isGeneral) {
           generalCandidates.push(...(items as SnapshotSupplierGeneral[]));
         } else if (area) {
@@ -618,9 +659,9 @@ function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSou
     }).slice(0, 4);
     payload.fornecedoresGeral = [...top, ...(others ? [others] : []), ...(total ? [total] : [])];
     addFound(payload, "fornecedores");
-  } else if (found) {
-    addFound(payload, "fornecedores");
   }
+  // Sem a tabela nomeada FORNECEDORES GERAL, não sinalizar o bloco como
+  // reconhecido: os quadros por área não atendem ao contrato visual do painel.
 }
 
 /* ----------------------------- evolução --------------------------- */
@@ -645,6 +686,8 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
   type EvolutionKind = "concluidas" | "andamento" | "vencidas" | "aVencer";
   let found = false;
   let explicitAndamentoTableFound = false;
+  let bestConcludedScore = -1;
+  let bestConcluded: Record<SnapshotArea, { atas: number | null; itens: number | null }> | null = null;
 
   function headerInfo(value: unknown): { area: SnapshotArea; kind: EvolutionKind } | null {
     const label = exact(value);
@@ -677,29 +720,24 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
     return area && kind ? { area, kind } : null;
   }
 
-  function numericNear(matrix: unknown[][], row: number, column: number): number | null {
-    const direct = integerValue(matrix[row]?.[column]);
-    if (direct !== null) return direct;
-    // Algumas planilhas deixam a etiqueta na primeira coluna e deslocam o
-    // valor para a célula seguinte; a posição da área continua sendo a âncora.
-    for (let c = column + 1; c < Math.min((matrix[row] ?? []).length, column + 3); c += 1) {
-      const value = integerValue(matrix[row]?.[c]);
-      if (value !== null) return value;
-    }
-    return null;
+  function numericAt(matrix: unknown[][], row: number, column: number): number | null {
+    // A posição de cada área é significativa na estrutura vertical. Não
+    // procurar números em colunas vizinhas: isso desloca CAPEX/DIRETOS e pode
+    // transformar o TOTAL de uma área em valor de todas as áreas.
+    return integerValue(matrix[row]?.[column]);
   }
 
   function verticalPair(matrix: unknown[][], headerRow: number, column: number): { atas: number | null; itens: number | null } {
     let atas: number | null = null;
     let itens: number | null = null;
-    const end = Math.min(matrix.length, headerRow + 10);
+    const end = Math.min(matrix.length, headerRow + 8);
     for (let r = headerRow + 1; r < end; r += 1) {
       const label = exact(matrix[r]?.[column]);
       if (label === "QTD ATA" || label === "QTD ATAS") {
-        atas = numericNear(matrix, r + 1, column) ?? atas;
+        atas = numericAt(matrix, r + 1, column) ?? atas;
       }
       if (label === "QTD ITEM" || label === "QTD ITENS") {
-        itens = numericNear(matrix, r + 1, column) ?? itens;
+        itens = numericAt(matrix, r + 1, column) ?? itens;
       }
       // O próximo quadro começa antes de outra métrica ser encontrada.
       if (r > headerRow + 1 && headerInfo(matrix[r]?.[column])) break;
@@ -716,16 +754,14 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       if (label === "QTD ATA" || label === "QTD ATAS") atasCol = c;
       if (label === "QTD ITEM" || label === "QTD ITENS") itensCol = c;
     }
+    // Só usar o caminho wide quando o próprio cabeçalho declara as métricas.
+    // Sem isso, linhas de uma tabela seguinte não podem preencher o bloco.
+    if (atasCol < 0 && itensCol < 0) return { atas: null, itens: null };
     for (let r = headerRow + 1; r < Math.min(matrix.length, headerRow + 4); r += 1) {
       const row = matrix[r] ?? [];
       const atas = atasCol >= 0 ? integerValue(row[atasCol]) : null;
       const itens = itensCol >= 0 ? integerValue(row[itensCol]) : null;
       if (atas !== null || itens !== null) return { atas, itens };
-      // Wide exports sometimes have no QTD labels in the same row; the two
-      // cells immediately following the area title are then the pair.
-      const positionalAtas = integerValue(row[column + 1]);
-      const positionalItens = integerValue(row[column + 2]);
-      if (positionalAtas !== null || positionalItens !== null) return { atas: positionalAtas, itens: positionalItens };
     }
     return { atas: null, itens: null };
   }
@@ -751,6 +787,12 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
         list.push({ area: item.area, column: item.column });
         areaColumnsByKind.set(item.kind, list);
       }
+      const concludedCandidate: Record<SnapshotArea, { atas: number | null; itens: number | null }> = {
+        INDIRETOS: { atas: null, itens: null },
+        DIRETOS: { atas: null, itens: null },
+        CAPEX: { atas: null, itens: null },
+      };
+      let concludedCount = 0;
       for (const [kind, columns] of areaColumnsByKind) {
         for (let index = 0; index < columns.length; index += 1) {
           const item = columns[index];
@@ -759,10 +801,26 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
           const wide = widePair(matrix, headerRow, item.column, nextColumn);
           const atas = vertical.atas ?? wide.atas;
           const itens = vertical.itens ?? wide.itens;
-          if (atas !== null || itens !== null) {
+          if (kind === "concluidas") {
+            concludedCandidate[item.area] = { atas, itens };
+            if (atas !== null || itens !== null) concludedCount += 1;
+          } else if (atas !== null || itens !== null) {
+            // Vencidas e a vencer têm cabeçalhos próprios; não podem sobrescrever
+            // a coluna de concluídas nem ser confundidas com andamento.
             setEvolutionPair(payload.evolucao[item.area], kind, atas, itens);
             found = true;
           }
+        }
+      }
+      if (concludedCount > 0) {
+        const context = previousContext(matrix, headerRow, 12);
+        const contextScore = context.some((value) => value.includes("STATUS ATUAL") || value.includes("EVOLUCAO POR AREA"))
+          ? 3
+          : context.some((value) => value.includes("ANDAMENTO")) ? -3 : 0;
+        const score = concludedCount * 10 + contextScore;
+        if (score > bestConcludedScore) {
+          bestConcludedScore = score;
+          bestConcluded = concludedCandidate;
         }
       }
     }
@@ -814,6 +872,12 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       }
       if (tableFound && explicit) explicitAndamentoTableFound = true;
     }
+  }
+  if (bestConcluded) {
+    for (const area of SNAPSHOT_AREAS) {
+      setEvolutionPair(payload.evolucao[area], "concluidas", bestConcluded[area].atas, bestConcluded[area].itens);
+    }
+    found = true;
   }
   if (found) addFound(payload, "evolucao");
 }
@@ -894,22 +958,19 @@ function extractForecastBandTable(payload: DashboardSnapshotPayload, sheets: Sna
             }
           }
           if (!band) continue;
-          for (const item of areaColumns) {
-            // Em um pivot do Excel o nome da área fica na primeira coluna do
-            // grupo e QTD ATAS/QTD ITENS ocupam essa coluna e a seguinte.
-            // Se o título mesclado estiver deslocado, o cabeçalho de quantidade
-            // fornece a posição correta.
-            let atasCol = item.column;
-            let itensCol = item.column + 1;
-            const nextArea = areaColumns.find((candidate) => candidate.column > item.column)?.column ?? row.length;
-            const areaHeaderPos = item.column;
-            for (let c = areaHeaderPos; c < Math.min(nextArea, labelHeader.length); c += 1) {
-              if (exact(labelHeader[c]) === "QTD ATAS") {
-                atasCol = c;
-                itensCol = c + 1;
-                break;
-              }
-            }
+          const areaColumnsOrdered = [...areaColumns].sort((a, b) => a.column - b.column);
+          const qtdAtasColumns = labelHeader
+            .map((value, column) => ({ value: exact(value), column }))
+            .filter((item) => item.value === "QTD ATAS")
+            .map((item) => item.column);
+          for (const item of areaColumnsOrdered) {
+            // Em células mescladas o rótulo CAPEX pode estar uma coluna antes
+            // da primeira QTD ATAS (ou até na coluna do rótulo da linha). O
+            // pareamento por ordem dos grupos é estável e evita deslocar os
+            // itens de uma área para a próxima.
+            const areaIndex = areaColumnsOrdered.findIndex((candidate) => candidate.column === item.column);
+            let atasCol = qtdAtasColumns[areaIndex] ?? item.column;
+            let itensCol = atasCol + 1;
             const atas = integerValue(row[atasCol]);
             const itens = integerValue(row[itensCol]);
             if (atas !== null || itens !== null) {
@@ -924,6 +985,89 @@ function extractForecastBandTable(payload: DashboardSnapshotPayload, sheets: Sna
         // Um título de faixa corresponde a um único pivot; não interpretar a
         // tabela “por mês” que vem mais abaixo como se fosse outra faixa.
         break;
+      }
+    }
+  }
+  if (found) addFound(payload, "previsao-faixas");
+}
+
+/** Fallback para exports em que o SheetJS transforma os cabeçalhos mesclados
+ * em “CAPEX QTD ATAS”, “DIRETOS QTD ATAS” etc. sem manter a linha de grupos. */
+function extractForecastBandFallback(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex += 1) {
+      const row = matrix[rowIndex] ?? [];
+      let band: ForecastBand | null = null;
+      for (let c = 0; c < Math.min(row.length, 4); c += 1) {
+        band = bandFromLabel(row[c]);
+        if (band) break;
+      }
+      if (!band) continue;
+
+      let quantityHeaderIndex = -1;
+      for (let h = rowIndex - 1; h >= Math.max(0, rowIndex - 8); h -= 1) {
+        const values = matrix[h] ?? [];
+        if (values.filter((value) => exact(value) === "QTD ATAS").length > 0
+          && values.filter((value) => exact(value) === "QTD ITENS").length > 0) {
+          quantityHeaderIndex = h;
+          break;
+        }
+      }
+      if (quantityHeaderIndex < 0) continue;
+      const quantityHeader = matrix[quantityHeaderIndex] ?? [];
+
+      const combinedColumns = new Map<SnapshotArea, { atas: number; itens: number }>();
+      for (let c = 0; c < quantityHeader.length; c += 1) {
+        const label = exact(quantityHeader[c]);
+        for (const area of SNAPSHOT_AREAS) {
+          if (!label.includes(area)) continue;
+          const current = combinedColumns.get(area) ?? { atas: -1, itens: -1 };
+          if (label.includes("QTD ATA")) current.atas = c;
+          if (label.includes("QTD ITEM")) current.itens = c;
+          combinedColumns.set(area, current);
+        }
+      }
+
+      // Caso clássico do pivot: uma linha de grupos CAPEX/DIRETOS/INDIRETOS
+      // acima de uma linha que repete QTD ATAS/QTD ITENS.
+      const groupRowIndex = (() => {
+        for (let h = quantityHeaderIndex - 1; h >= Math.max(0, quantityHeaderIndex - 4); h -= 1) {
+          const count = (matrix[h] ?? []).filter((value) => Boolean(isArea(value))).length;
+          if (count >= 2) return h;
+        }
+        return -1;
+      })();
+      if (groupRowIndex >= 0) {
+        const groupRow = matrix[groupRowIndex] ?? [];
+        const groups = groupRow
+          .map((value, column) => ({ area: isArea(value), column }))
+          .filter((item): item is { area: SnapshotArea; column: number } => Boolean(item.area))
+          .sort((a, b) => a.column - b.column);
+        const qtdAtasColumns = quantityHeader
+          .map((value, column) => ({ value: exact(value), column }))
+          .filter((item) => item.value === "QTD ATAS")
+          .map((item) => item.column);
+        for (let i = 0; i < groups.length; i += 1) {
+          const current = combinedColumns.get(groups[i].area) ?? { atas: -1, itens: -1 };
+          if (qtdAtasColumns[i] !== undefined) {
+            current.atas = qtdAtasColumns[i];
+            current.itens = qtdAtasColumns[i] + 1;
+          }
+          combinedColumns.set(groups[i].area, current);
+        }
+      }
+
+      for (const area of SNAPSHOT_AREAS) {
+        const columns = combinedColumns.get(area);
+        if (!columns) continue;
+        const target = payload.previsoes[band][area];
+        const atas = columns.atas >= 0 ? integerValue(row[columns.atas]) : null;
+        const itens = columns.itens >= 0 ? integerValue(row[columns.itens]) : null;
+        if (target.atas === null && atas !== null) target.atas = atas;
+        if (target.itens === null && itens !== null) target.itens = itens;
+        if (atas !== null || itens !== null) found = true;
       }
     }
   }
@@ -1010,6 +1154,7 @@ export function extractSnapshotPayload(
   extractSuppliers(payload, sheets);
   extractEvolution(payload, sheets);
   extractForecastBandTable(payload, sheets);
+  extractForecastBandFallback(payload, sheets);
   extractForecastRows(payload, sheets);
 
   const allKnown = [

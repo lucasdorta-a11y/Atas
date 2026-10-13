@@ -105,7 +105,7 @@ A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS
 
 As faixas do painel seguem a ordem da planilha: acima de 60 dias, até 15, até 30, até 60, canceladas, finalizadas e previsões vencidas, quando presentes. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
 
-A busca dos blocos do panorama percorre todas as linhas de todas as abas, permitindo que vários pivôs estejam na mesma planilha mesmo quando cada bloco tem um cabeçalho próprio. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend.
+A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de mapeamento, os campos operacionais começam como **não importar**; os blocos específicos do panorama são detectados automaticamente e não precisam ser associados manualmente.
 
 ## Snapshots no GitHub Pages
 

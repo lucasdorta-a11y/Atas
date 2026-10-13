@@ -341,11 +341,10 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     .sort((a, b) => b.itens - a.itens)
     .slice(0, 20);
   if (currentSnapshot && snapshotHas(currentSnapshot, "fornecedores")) {
+    // O panorama usa somente FORNECEDORES GERAL. Não fazer fallback para os
+    // quadros por área, pois isso mistura linhas de Evolução na tabela geral.
     const geral = currentSnapshot.fornecedoresGeral ?? [];
-    const sourceRows = geral.length > 0
-      ? geral
-      : SNAPSHOT_AREAS.flatMap((area) => currentSnapshot.fornecedores[area] ?? []);
-    fornecedores = sourceRows.map((item) => ({
+    fornecedores = geral.map((item) => ({
       area: "Geral",
       fornecedor: item.fornecedor,
       atas: item.qtdAtas ?? 0,
