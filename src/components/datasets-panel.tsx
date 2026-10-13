@@ -5,6 +5,7 @@ import { Database, FileSpreadsheet, Trash2, CircleAlert } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 import { KIND_LABEL } from "@/lib/domain";
+import { deleteDataset, formatStoredDataset, listDatasets, notifyStaticDataChanged } from "@/lib/static-store";
 
 interface DatasetItem {
   id: number;
@@ -22,10 +23,12 @@ interface DatasetItem {
   dup_count: number;
   warning_count: number;
   registros: number;
+  has_snapshot?: boolean;
+  snapshot_coverage?: { found: string[]; missing: string[] } | null;
 }
 
 function notifyBaseUpdated() {
-  window.dispatchEvent(new Event("giro:base-updated"));
+  notifyStaticDataChanged();
 }
 
 export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
@@ -38,16 +41,16 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/datasets", { cache: "no-store" });
-      const data = await res.json();
-      setItems(data.datasets ?? []);
+      const data = await listDatasets();
+      setItems(data.map(formatStoredDataset));
       setErro(null);
     } catch {
-      setErro("Não foi possível carregar a lista de bases.");
+      setErro("Não foi possível carregar as bases deste navegador.");
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -62,11 +65,7 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
     if (confirmId === null) return;
     setExcluindo(true);
     try {
-      const res = await fetch(`/api/datasets?id=${confirmId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.erro ?? "Falha ao excluir.");
-      }
+      await deleteDataset(confirmId);
       dialogRef.current?.close();
       setConfirmId(null);
       await load();
@@ -165,6 +164,11 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
                     {d.warning_count > 0 && (
                       <span className="tnum rounded-full bg-navy-100 px-2 py-0.5 font-medium text-navy-700">
                         {fmtInt(d.warning_count)} avisos
+                      </span>
+                    )}
+                    {d.has_snapshot && (
+                      <span className="rounded-full bg-accent-100 px-2 py-0.5 font-medium text-accent-700" title={d.snapshot_coverage?.found.join(", ") || "Snapshot local"}>
+                        snapshot local{d.snapshot_coverage?.found.length ? ` · ${d.snapshot_coverage.found.length} blocos` : ""}
                       </span>
                     )}
                   </div>

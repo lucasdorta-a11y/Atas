@@ -1,114 +1,123 @@
-# Giro de Atas — Painel de Compras · Fundação Butantan
+# Giro de Atas — versão estática para GitHub Pages
 
-Painel interno para acompanhar compras e Atas de Registro de Preços a partir de planilhas
-operacionais (`.xlsx`, `.xls`, `.csv`) exportadas do SharePoint ou mantidas pela equipe.
+Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. Esta versão foi adaptada para funcionar sem API, servidor ou PostgreSQL, usando processamento local de planilhas e IndexedDB no navegador.
 
-**Princípio central: nenhum número é inventado.** Todos os indicadores, gráficos, listas e
-tabelas derivam exclusivamente das planilhas importadas pela equipe e marcadas como **ativas**.
-Sem dados importados, o painel exibe um estado inicial orientando a importação — nunca
-números fictícios.
+## O que esta versão faz
 
----
+- aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
+- lê automaticamente todas as abas com dados e consolida as linhas;
+- trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
+- sugere e permite revisar o mapeamento das colunas;
+- valida identificadores, objetos, datas, quantidades, valores, duplicidades e links;
+- alimenta o panorama, a busca, filtros, paginação e exportação CSV com os dados confirmados;
+- preserva colunas não mapeadas nos detalhes dos registros;
+- mantém o histórico de bases substituídas no armazenamento local;
+- apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
+- oferece a seção de documentos e regras de preenchimento;
+- gera um site estático em `out/` para GitHub Pages.
 
-## Stack
+## Limitação importante
 
-| Camada | Tecnologia | Motivo |
-| --- | --- | --- |
-| App | Next.js 16 (App Router) + React 19 + TypeScript | SSR rápido, rotas de API no mesmo projeto, tipagem ponta a ponta |
-| Banco | PostgreSQL + Drizzle ORM | Persistência multiusuário das bases importadas, com histórico (`active`/`superseded`) |
-| Leitura de planilhas | SheetJS (`xlsx`) **no navegador** | Pré-visualização imediata, múltiplas abas, encodings (UTF-8/Windows-1252) e separadores (`;`/`,`/tab). O arquivo só vai ao servidor na confirmação |
-| Estilo | Tailwind CSS 4 + tokens CSS próprios | Design system enxuto (azul-marinho, laranja, cores de área) |
-| Ícones | Lucide | Consistentes e discretos |
-| Gráficos | SVG próprio + alternativa tabular | Acessibilidade real (todo gráfico tem tabela equivalente em `<details>`) |
+GitHub Pages serve apenas arquivos estáticos. Os dados importados ficam no **IndexedDB do navegador em que a importação foi feita**. Portanto:
 
-## Como executar
+- não há sincronização entre usuários, máquinas ou navegadores;
+- não há atualização automática do SharePoint;
+- limpar os dados do site ou trocar de navegador pode remover as bases locais;
+- documentos e bases não são enviados para um serviço externo pelo painel.
 
-```bash
-npm install
-cp .env.example .env   # configure DATABASE_URL
-npx drizzle-kit push   # cria as tabelas (datasets, records, documents)
-npm run dev            # desenvolvimento
-# ou
-npm run build && npm run start   # produção
-```
+Para uma base compartilhada e multiusuário, use a versão `main` original com Next.js, API e PostgreSQL em Vercel, Railway, Render ou outro ambiente com servidor. Esta branch prioriza a publicação direta no GitHub Pages.
 
-Requisitos: Node.js 20+, PostgreSQL acessível via `DATABASE_URL`.
+## Desenvolvimento local
 
-## Como importar e atualizar as bases
-
-1. **Exporte a planilha** do SharePoint (ou abra a planilha operacional) em `.xlsx` ou `.csv`.
-2. Acesse **Importar** e arraste o arquivo (ou selecione). A leitura acontece no seu navegador;
-   nada é enviado a serviços externos.
-3. **Escolha a aba** (se o Excel tiver várias) e ajuste a **linha do cabeçalho**, se necessário.
-4. Informe o **tipo de base** (Indiretos, Diretos, CAPEX ou outro), a **natureza**
-   (base operacional ou snapshot semanal), o **modo** (substituir a base ativa da mesma área ou
-   combinar) e a **data de referência**.
-5. Revise o **mapeamento de colunas**. O painel sugere correspondências por nome (exatas e
-   aproximadas — estas últimas vêm sinalizadas para confirmação). Colunas não mapeadas ficam
-   preservadas nos detalhes do registro; nada é descartado.
-6. Na **revisão**, veja linhas válidas, ignoradas (obrigatórios vazios ou duplicadas) e avisos de
-   interpretação. Baixe o **relatório completo em CSV** se quiser auditar linha a linha.
-7. **Confirme**. A gravação é transacional (ou importa tudo, ou nada é alterado). Os indicadores,
-   gráficos e a busca passam a refletir exatamente o que foi importado.
-
-**Substituir × combinar:** substituir arquiva a base anterior como “substituída” (ela sai dos
-números, mas fica no histórico e alimenta o painel de **variação entre bases**). Combinar soma os
-registros às bases ativas — use apenas quando os arquivos cobrirem recortes diferentes.
-
-**Regras de interpretação (conservadoras, sempre sinalizadas):**
-- Obrigatórios: identificador do processo e objeto/descrição. Linhas sem eles são ignoradas e listadas.
-- Datas: `dd/mm/aaaa` e `aaaa-mm-dd` (Excel nativo também). Anos de 2 dígitos e formatos
-  irreconhecíveis geram aviso e a linha é mantida sem a data.
-- Números: `1.234,56` (pt-BR) e `1,234.56`. `3.054` em campo de quantidade é tratado como milhar
-  **com aviso registrado** — divergências desse tipo devem ser validadas por uma pessoa.
-- Situação “Concluído/Cancelado” só é inferida de textos claros (*concluído, finalizado, cancelado,
-  anulado, revogado*). Vencido/a vencer/no prazo é **sempre calculado em relação a hoje**, nunca
-  gravado fixo.
-- Duplicadas (mesmo processo + objeto + área + prazo + fornecedor) são removidas dentro do mesmo
-  arquivo, com a primeira ocorrência mantida e a remoção listada no relatório.
-
-## Integridade e origem dos dados
-
-- Cada registro carrega a **origem completa**: arquivo, aba, linha da planilha, tipo e natureza da
-  base, data de referência e data de importação (visível em “Detalhes”).
-- O cabeçalho do painel mostra a base de referência ativa; a página inicial lista todas as bases,
-  contagens e avisos, com opção de excluir (com confirmação).
-- **Não há sincronização automática com o SharePoint.** O painel reflete a última importação
-  confirmada — a data dela fica sempre visível para não parecer dado “ao vivo”.
-- Divergências (linhas ignoradas, avisos, bases de naturezas diferentes ativas, possível
-  sobreposição de áreas) aparecem como **verificações de consistência** no panorama e nunca são
-  “corrigidas” automaticamente.
-
-## Testes
+Requisitos: Node.js 20+.
 
 ```bash
-npm run build && npm run start   # sobe a app
-node scripts/e2e-test.mjs         # testa importação, busca, filtros, exportação, documentos
+npm ci
+npm run dev
 ```
 
-O script `scripts/e2e-test.mjs` cobre: xlsx multi-abas com título antes do cabeçalho, CSV `;` com
-acentos e vírgula decimal, mapeamento, validação, duplicadas, `3.054` como milhar, substituição de
-base com variação, busca sem acento, filtros combinados, ordenação, paginação, exportação CSV
-(BOM/`;`/anti-injeção de fórmula) e CRUD de documentos. Os dados de teste são marcados e removidos
-ao final.
+Abra `http://localhost:3000`. Para validar a exportação estática:
 
-## Segurança e privacidade
+```bash
+npm run typecheck
+npm run build
+```
 
-- Leitura do arquivo 100% local (navegador); nenhum serviço de terceiros recebe a planilha.
-- Validação de tipo/tamanho de arquivo e teto de 60.000 linhas por importação.
-- A validação é **refeita no servidor** — o cliente nunca é fonte confiável.
-- Valores importados são renderizados como texto (React escapa HTML por padrão); links externos
-  usam `rel="noopener noreferrer"` e só aceitam `http(s)`.
-- Exportação CSV com proteção contra injeção de fórmula (`=`, `+`, `-`, `@` no início da célula).
-- Sem telemetria/rastreamento. Segredos apenas em variáveis de ambiente do servidor.
+O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que corresponde ao repositório `lucasdorta-a11y/Atas`; no servidor de desenvolvimento o projeto roda na raiz.
 
-## Limitações conhecidas / pontos de decisão
+## Publicação no GitHub Pages
 
-- A soma de diferentes tipos de base no panorama é intencional quando você opta por “combinar”;
-  o painel avisa quando naturezas diferentes (snapshot × operacional) estão ativas juntas.
-- “Variação em relação à base anterior” compara apenas a **quantidade de processos** entre bases do
-  mesmo tipo — não é um fechamento contábil.
-- Impressão reproduz a tela atual; para listas completas use a exportação CSV (teto de 5.000 linhas
-  por arquivo, com aviso embutido quando há corte).
-- Sem autenticação por enquanto: em produção interna, coloque atrás da camada de acesso da fundação
-  (ex.: SSO/reverse proxy) antes de publicar.
+O workflow `.github/workflows/deploy.yml` executa automaticamente em cada push na branch `main`:
+
+1. instala as dependências;
+2. executa `npm run build`;
+3. publica `out/` com o Pages artifact;
+4. faz o deploy com `actions/deploy-pages`.
+
+No GitHub, configure **Settings → Pages → Source: GitHub Actions**. O endereço esperado é:
+
+```text
+https://lucasdorta-a11y.github.io/Atas/
+```
+
+## Atualização das bases
+
+1. Abra **Importar**.
+2. Selecione ou arraste até dois arquivos.
+3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
+4. Escolha a área, a natureza da base e a data de referência.
+5. Revise o mapeamento sugerido; campos obrigatórios são identificador e objeto.
+6. Confira o resumo e as ocorrências.
+7. Baixe o relatório de validação, se necessário, e confirme a importação.
+8. Escolha **Substituir** para arquivar a base ativa daquela área ou **Combinar** para manter bases diferentes ativas.
+
+A origem, a data de referência, as linhas válidas, ignoradas, duplicadas e os avisos ficam visíveis na auditoria das bases.
+
+## Mapeamento exato do painel consolidado
+
+A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica.
+
+### Três gráficos e KPIs
+
+Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situação apresentada`, `ATAS` e `ITENS`. Os rótulos aceitos são:
+
+- `ATA CONCLUÍDAS (VÁLIDAS)` + `VÁLIDAS` → atas e itens concluídos;
+- `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e consumidos;
+- `ATAS VENCIDAS E A VENCER` + `A VENCER (RENOVAR)` ou `VENCIDAS` → atas/itens a vencer e vencidos.
+
+A comparação semanal mostra os três gráficos da semana anterior acima dos três da semana atual. A primeira referência exibida é 28/09, com os valores da captura fornecida (58/956, 877/80, 58/1.215 e 48/334). Depois de uma nova importação, a leitura anterior permanece no histórico e passa a ser automaticamente a semana anterior.
+
+### Valores, saving e redução
+
+- Os valores principais devem estar nos rótulos exatos `VALOR DIRETOS`, `VALOR INDIRETOS` e `VALOR CAPEX`.
+- O bloco de saving deve ter `Rótulos de Linha` (com `CAPEX`, `DIRETOS`, `INDIRETOS` e, se disponível, `Total Geral`), `VALOR CONTRATADO R$`, `SAVING HISTÓRICO R$`, `SAVING PROPOSTA INICIAL R$`, `REDUÇÃO HISTÓRICO %` e `REDUÇÃO PROPOSTA INICIAL %`.
+- O painel preserva os percentuais fornecidos pela planilha; não recalcula silenciosamente um percentual divergente.
+
+### Top 5 e representatividade
+
+Os três blocos de compradores são identificados por `TOP COMP INDIRETOS`, `TOP COMP DIRETOS` e `TOP COMP CAPEX`, com `ITENS`, `ATAS` e `TOTAL ATAS ÁREA`. O painel ordena os cinco compradores por itens, exibe a soma das atas dos cinco e calcula a participação das áreas usando os totais de atas — as três áreas totalizam 100%.
+
+A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as colunas `FORNECEDOR`, `QTD ATAS`, `QTD ITENS`, `% CONCENTRAÇÃO DE ITENS` e `ANÁLISE`. O panorama exibe exatamente Top 4, `OUTROS FORNECEDORES` e `TOTAL`, preservando os números e a análise textual da planilha.
+
+### Evolução e previsões
+
+A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status de renovações** permanece visível e não tem alteração funcional nesta versão.
+
+As faixas do painel seguem a ordem da planilha: acima de 60 dias, até 15, até 30, até 60, canceladas, finalizadas e previsões vencidas, quando presentes. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+
+A busca dos blocos do panorama percorre todas as linhas de todas as abas, permitindo que vários pivôs estejam na mesma planilha mesmo quando cada bloco tem um cabeçalho próprio. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend.
+
+## Snapshots no GitHub Pages
+
+Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB local. Eles **não são compartilhados entre usuários, máquinas ou dispositivos**, não sincronizam com SharePoint e não são enviados para uma API. Para substituir a leitura atual, importe a planilha consolidada com o modo **Substituir**; o snapshot anterior continua arquivado localmente para a comparação.
+
+## Testes realizados
+
+- `npm run typecheck`
+- `npm run build` com export estático
+- smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no servidor de desenvolvimento
+- validação local compartilhada entre preview e gravação, incluindo múltiplos arquivos e abas
+
+## Decisões de dados
+
+O painel não inventa números nem corrige divergências silenciosamente. Datas e números ambíguos geram avisos, linhas sem identificador ou objeto são ignoradas com justificativa e colunas extras permanecem acessíveis nos detalhes.

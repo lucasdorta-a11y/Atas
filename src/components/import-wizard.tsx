@@ -9,16 +9,22 @@ import {
 import clsx from "clsx";
 import { PageHeader, SectionTitle } from "@/components/ui";
 import {
-  parseMultipleFiles, ParseError, MAX_FILE_MB, type SheetTable
+  parseMultipleFiles, ParseError, MAX_FILE_MB, type SheetTable, type SourceSheet
 } from "@/lib/client-parse";
 import { suggestMapping, type Suggestion } from "@/lib/mapping";
 import {
   CANONICAL_FIELDS, KIND_LABEL, transformAndValidate,
-  type DatasetKind, type DatasetNatureza, type ImportMode, type Issue, type Mapping,
+  type DatasetKind, type DatasetNatureza, type ImportMode, type Issue, type Mapping, type ValidationResult,
 } from "@/lib/domain";
 import { buildCsv } from "@/lib/csv";
 import { fmtCurrency, fmtInt, todayISO } from "@/lib/format";
 import { notifyBaseUpdated } from "@/components/datasets-panel";
+import { saveDataset } from "@/lib/static-store";
+import {
+  extractSnapshotPayload,
+  hasSnapshotPayloadMeaningfulData,
+  type DashboardSnapshotPayload,
+} from "@/lib/dashboard-snapshot";
 
 /* ------------------------------------------------------------------ */
 
@@ -45,6 +51,8 @@ interface ValidateResponse {
     issuesAmostra: Issue[];
     issuesTotal: number;
   };
+  snapshotCoverage?: { found: string[]; missing: string[] };
+  snapshotMeaningful?: boolean;
   datasetId?: number;
 }
 
@@ -52,7 +60,13 @@ export function ImportWizard() {
   const [step, setStep] = useState(1);
   
   // Agora armazenamos a tabela combinada de TODOS os arquivos/abas selecionados
-  const [combinedInfo, setCombinedInfo] = useState<{ names: string[]; filesCount: number; sheetsCount: number; combinedTable: SheetTable } | null>(null);
+  const [combinedInfo, setCombinedInfo] = useState<{
+    names: string[];
+    filesCount: number;
+    sheetsCount: number;
+    combinedTable: SheetTable;
+    sourceSheets: SourceSheet[];
+  } | null>(null);
   
   const [parseErro, setParseErro] = useState<{ msg: string; code: string } | null>(null);
   const [lendo, setLendo] = useState(false);
@@ -67,6 +81,8 @@ export function ImportWizard() {
   const [mappingTocado, setMappingTocado] = useState(false);
 
   const [validacao, setValidacao] = useState<ValidateResponse | null>(null);
+  const [resultadoValidacao, setResultadoValidacao] = useState<ValidationResult | null>(null);
+  const [resultadoSnapshot, setResultadoSnapshot] = useState<DashboardSnapshotPayload | null>(null);
   const [validando, setValidando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [erroEtapa, setErroEtapa] = useState<string | null>(null);
@@ -93,6 +109,11 @@ export function ImportWizard() {
   const processarArquivos = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return;
+      if (files.length > 2) {
+        setParseErro({ msg: "Selecione no máximo duas planilhas por lote. Faça uma nova importação para outros arquivos.", code: "estrutura" });
+        announce("São permitidos no máximo dois arquivos por lote.");
+        return;
+      }
       setLendo(true);
       setParseErro(null);
       setValidacao(null);
@@ -136,6 +157,7 @@ export function ImportWizard() {
   useEffect(() => {
     if (!suggestion) return;
     if (!mappingTocado) {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
       setMapping(suggestion.mapping);
       setAvisoEstrutura(null);
     } else {
@@ -145,67 +167,98 @@ export function ImportWizard() {
 
   const obrigatoriosOk = Boolean(mapping.numero && mapping.objeto);
 
-  /* ---------------- Validação (servidor) ---------------- */
+  /* ---------------- Validação local (GitHub Pages) ---------------- */
 
-  const payloadCommum = useCallback(() => {
-    if (!combinedInfo || !table) return null;
+  const defaultArea = kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
+  const snapshotPreview = useMemo(
+    () => combinedInfo
+      ? extractSnapshotPayload(combinedInfo.sourceSheets, {
+          fileNames: combinedInfo.names,
+          referenceDate: referenceDate || null,
+        })
+      : null,
+    [combinedInfo, referenceDate],
+  );
+  const snapshotMeaningful = hasSnapshotPayloadMeaningfulData(snapshotPreview);
+  const canValidate = obrigatoriosOk || snapshotMeaningful;
+
+  function resumoDaValidacao(result: ValidationResult) {
     return {
-      fileName: combinedInfo.names.join(", ").slice(0, 290), // concat names to fit db field
-      sheetName: `${combinedInfo.sheetsCount} abas processadas`,
-      kind,
-      natureza,
-      importMode,
-      referenceDate: referenceDate || null,
-      mapping,
-      rows: table.rows,
+      validos: result.records.length,
+      ignoradas: result.skipped,
+      duplicadas: result.duplicates,
+      avisos: result.warnings,
+      valorTotal: result.records.reduce((sum, row) => sum + (row.valor ?? 0), 0),
+      itensTotal: result.records.reduce((sum, row) => sum + (row.quantidade ?? 0), 0),
+      valorCobertura: result.records.filter((row) => row.valor !== null).length,
+      itensCobertura: result.records.filter((row) => row.quantidade !== null).length,
+      issuesAmostra: result.issues.slice(0, 300),
+      issuesTotal: result.issues.length,
     };
-  }, [combinedInfo, table, kind, natureza, importMode, referenceDate, mapping]);
+  }
 
   function validar() {
-    if (!table) return;
+    if (!table || !combinedInfo) return;
     setValidando(true);
     setErroEtapa(null);
     try {
-      // Validação client-side (módulo isomórfico — mesmo código do servidor).
-      const defaultArea =
-        kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
-      const result = transformAndValidate(table.rows, mapping, { defaultArea });
-      const data: ValidateResponse = {
+      const snapshot = extractSnapshotPayload(combinedInfo.sourceSheets, {
+        fileNames: combinedInfo.names,
+        referenceDate: referenceDate || null,
+      });
+      const result: ValidationResult = obrigatoriosOk
+        ? transformAndValidate(table.rows, mapping, { defaultArea })
+        : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
+      const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
+      if (result.records.length === 0 && !meaningful) {
+        throw new Error("Nenhum registro operacional ou bloco específico do painel foi reconhecido. Revise os nomes exatos das colunas e o mapeamento.");
+      }
+      setResultadoValidacao(result);
+      setResultadoSnapshot(snapshot);
+      const resumo = resumoDaValidacao(result);
+      setValidacao({
         ok: true,
-        resumo: {
-          validos: result.records.length,
-          ignoradas: result.skipped,
-          duplicadas: result.duplicates,
-          avisos: result.warnings,
-          valorTotal: result.records.reduce((a, r) => a + (r.valor ?? 0), 0),
-          itensTotal: result.records.reduce((a, r) => a + (r.quantidade ?? 0), 0),
-          valorCobertura: result.records.filter((r) => r.valor !== null).length,
-          itensCobertura: result.records.filter((r) => r.quantidade !== null).length,
-          issuesAmostra: result.issues.slice(0, 300),
-          issuesTotal: result.issues.length,
-        },
-      };
-      setValidacao(data);
+        resumo,
+        snapshotCoverage: snapshot.coverage,
+        snapshotMeaningful: meaningful,
+      });
       setStep(4);
       announce(
-        `Validação concluída: ${data.resumo?.validos.toLocaleString("pt-BR")} linhas válidas, ${data.resumo?.ignoradas.toLocaleString("pt-BR")} ignoradas, ${data.resumo?.avisos.toLocaleString("pt-BR")} avisos.`,
+        `Validação concluída: ${resumo.validos.toLocaleString("pt-BR")} linhas operacionais e ${snapshot.coverage.found.length.toLocaleString("pt-BR")} blocos específicos reconhecidos.`,
       );
     } catch (e) {
-      setErroEtapa(e instanceof Error ? e.message : "Falha ao validar.");
+      setErroEtapa(e instanceof Error ? e.message : "Falha ao validar os dados.");
       announce("Falha na validação.");
     } finally {
       setValidando(false);
     }
   }
 
-  function confirmar() {
-    if (!validacao?.resumo) return;
+  async function confirmar() {
+    if (!combinedInfo || !table || !resultadoValidacao) return;
+    const meaningfulSnapshot = hasSnapshotPayloadMeaningfulData(resultadoSnapshot);
+    if (resultadoValidacao.records.length === 0 && !meaningfulSnapshot) return;
     setConfirmando(true);
     setErroEtapa(null);
     try {
-      // Modo de teste (GitHub Pages): sem servidor/banco — dados não são persistidos.
+      const dataset = await saveDataset({
+        kind,
+        natureza,
+        fileName: combinedInfo.names.join(", ").slice(0, 290),
+        sheetName: `${combinedInfo.sheetsCount} abas processadas`,
+        referenceDate: referenceDate || null,
+        importMode,
+        rowCount: table.totalRows,
+        result: resultadoValidacao,
+        snapshot: meaningfulSnapshot ? resultadoSnapshot : null,
+      });
+      setValidacao((current) => current ? { ...current, datasetId: dataset.id } : current);
       setStep(5);
-      announce(`Validação concluída. ${validacao.resumo.validos.toLocaleString("pt-BR")} linhas processadas (modo de teste).`);
+      notifyBaseUpdated();
+      announce(`Importação concluída. ${resultadoValidacao.records.length.toLocaleString("pt-BR")} linhas operacionais e ${meaningfulSnapshot ? "leitura do painel" : "nenhum snapshot"} salvos neste navegador.`);
+    } catch (e) {
+      setErroEtapa(e instanceof Error ? e.message : "Falha ao salvar a importação neste navegador.");
+      announce("Falha na importação.");
     } finally {
       setConfirmando(false);
     }
@@ -213,10 +266,10 @@ export function ImportWizard() {
 
   function baixarRelatorio() {
     if (!table) return;
-    const defaultArea =
-      kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
-    // Mesma validação do servidor (módulo isomórfico) — aqui para gerar o relatório integral.
-    const result = transformAndValidate(table.rows, mapping, { defaultArea });
+    // Mesma validação do preview — aqui para gerar o relatório integral.
+    const result = resultadoValidacao ?? (obrigatoriosOk
+      ? transformAndValidate(table.rows, mapping, { defaultArea })
+      : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 });
     const csv = buildCsv(
       ["Linha na planilha", "Coluna", "Tipo", "Ocorrência"],
       result.issues.map((i) => [i.row, i.column, i.severity === "error" ? "linha ignorada" : "aviso", i.message]),
@@ -235,6 +288,8 @@ export function ImportWizard() {
     setCombinedInfo(null);
     setParseErro(null);
     setValidacao(null);
+    setResultadoValidacao(null);
+    setResultadoSnapshot(null);
     setErroEtapa(null);
     setAvisoEstrutura(null);
     setMapping({});
@@ -249,7 +304,7 @@ export function ImportWizard() {
       <PageHeader
         overline="Dados"
         title="Importar planilha"
-        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura e a validação acontecem no seu navegador. Modo de teste: os dados não são persistidos (sem servidor/banco).`}
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura, a validação e o armazenamento acontecem no seu navegador — os dados ficam neste navegador após a sua confirmação.`}
       />
 
       <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
@@ -521,6 +576,27 @@ export function ImportWizard() {
             </p>
           </div>
 
+          <div className="card border-navy-200 bg-navy-50/70 p-5" aria-label="Mapeamento específico das tabelas do dashboard">
+            <h3 className="text-[14.5px] font-bold text-navy-950">Leitura específica do painel</h3>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">
+              Além do mapeamento operacional abaixo, o Giro de Atas procura somente os nomes exatos da planilha para montar o snapshot semanal. Nenhuma coluna parecida é usada por inferência.
+            </p>
+            <ul className="mt-3 grid gap-2 text-[12px] leading-relaxed text-ink sm:grid-cols-2">
+              <li><strong>Leitura dos gráficos:</strong> <code>Gráfico</code>, <code>Situação apresentada</code>, <code>ATAS</code>, <code>ITENS</code>.</li>
+              <li><strong>Valores:</strong> <code>VALOR DIRETOS</code>, <code>VALOR INDIRETOS</code>, <code>VALOR CAPEX</code>.</li>
+              <li><strong>Saving:</strong> <code>Rótulos de Linha</code> (CAPEX/DIRETOS/INDIRETOS/TOTAL), <code>VALOR CONTRATADO R$</code>, <code>SAVING HISTÓRICO R$</code>, <code>SAVING PROPOSTA INICIAL R$</code>, reduções.</li>
+              <li><strong>Compradores:</strong> <code>TOP COMP INDIRETOS</code>, <code>TOP COMP DIRETOS</code>, <code>TOP COMP CAPEX</code>, <code>ITENS</code>, <code>ATAS</code>.</li>
+              <li><strong>Fornecedores:</strong> <code>FORNECEDOR</code>, <code>QTD ATAS</code>, <code>QTD ITENS</code>, <code>% CONCENTRAÇÃO DE ITENS</code>, <code>ANÁLISE</code>.</li>
+              <li><strong>Evolução:</strong> <code>ATA INDIRETOS</code>, <code>ATA DIRETOS</code>, <code>ATA CAPEX</code>, <code>ITEM SALDO V ...</code>, <code>ITEM S/SALDO ...</code>, <code>VENCIDAS ...</code>, <code>A VENCER ...</code>.</li>
+              <li><strong>Previsões:</strong> em outra planilha, <code>COMPRADOR</code>, <code>AREA</code>, <code>PRAZO CONCLUSÃO</code>.</li>
+            </ul>
+            {snapshotPreview && (
+              <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-[12px] font-semibold text-navy-700" role="status">
+                Blocos reconhecidos nesta leitura: {snapshotPreview.coverage.found.length ? snapshotPreview.coverage.found.join(", ") : "nenhum ainda"}.
+              </p>
+            )}
+          </div>
+
           {avisoEstrutura && (
             <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/50 p-4 text-[13px] leading-relaxed text-warn-700" role="status">
               <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -591,10 +667,16 @@ export function ImportWizard() {
             </ul>
           </div>
 
-          {!obrigatoriosOk && (
+          {!canValidate && (
             <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
               <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Para continuar, associe ao menos os campos obrigatórios: identificador do processo e objeto/descrição.
+              Para continuar, associe os campos obrigatórios de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
+            </div>
+          )}
+          {canValidate && !obrigatoriosOk && snapshotMeaningful && (
+            <div className="card flex items-start gap-2.5 border-ok-600/30 bg-ok-100/60 p-4 text-[13px] leading-relaxed text-ok-700" role="status">
+              <ShieldCheck size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              Blocos do dashboard reconhecidos. O mapeamento operacional é opcional para uma importação somente de métricas; os registros de processos não serão criados.
             </div>
           )}
 
@@ -602,7 +684,7 @@ export function ImportWizard() {
             onBack={() => setStep(2)}
             onNext={validar}
             nextLabel={validando ? "Validando…" : "Validar dados"}
-            nextDisabled={!obrigatoriosOk || validando}
+            nextDisabled={!canValidate || validando}
             nextBusy={validando}
           />
           {erroEtapa && (
@@ -637,6 +719,10 @@ export function ImportWizard() {
               <ResumoItem label="Itens">
                 {fmtInt(validacao.resumo.itensTotal)}{" "}
                 <span className="text-ink-soft">(presente em {fmtInt(validacao.resumo.itensCobertura)} linhas)</span>
+              </ResumoItem>
+              <ResumoItem label="Blocos específicos do dashboard">
+                {validacao.snapshotCoverage?.found.length ?? 0} reconhecidos
+                {validacao.snapshotCoverage?.found.length ? <span className="text-ink-soft"> · {validacao.snapshotCoverage.found.join(", ")}</span> : null}
               </ResumoItem>
             </dl>
           </div>
@@ -700,15 +786,21 @@ export function ImportWizard() {
             <div className="card flex items-start gap-3 border-ok-600/30 bg-ok-100/60 p-5" role="status">
               <ShieldCheck size={20} className="mt-0.5 shrink-0 text-ok-700" aria-hidden="true" />
               <p className="text-[13.5px] leading-relaxed text-ok-700">
-                Nenhuma ocorrência: todos os campos obrigatórios estão preenchidos, sem duplicidades e sem avisos de
-                interpretação.
+                {validacao.resumo.validos === 0 && validacao.snapshotMeaningful
+                  ? "Nenhuma linha operacional foi criada; a validação reconheceu somente os blocos específicos do snapshot."
+                  : "Nenhuma ocorrência: todos os campos obrigatórios estão preenchidos, sem duplicidades e sem avisos de interpretação."}
               </p>
             </div>
           )}
 
-          {validacao.resumo.validos === 0 && (
+          {validacao.resumo.validos === 0 && !validacao.snapshotMeaningful && (
             <div className="card border-danger-600/30 bg-danger-100/40 p-5 text-[13.5px] font-semibold text-danger-700" role="alert">
               Nenhuma linha válida para importar. Volte e ajuste o mapeamento ou corrija a planilha na origem.
+            </div>
+          )}
+          {validacao.resumo.validos === 0 && validacao.snapshotMeaningful && (
+            <div className="card border-ok-600/30 bg-ok-100/60 p-5 text-[13.5px] font-semibold text-ok-700" role="status">
+              Esta importação contém somente métricas/tabelas do dashboard. Os blocos reconhecidos serão salvos como snapshot e não exigem identificador de processo.
             </div>
           )}
 
@@ -717,16 +809,6 @@ export function ImportWizard() {
               {erroEtapa}
             </p>
           )}
-
-          {/* Aviso de modo de teste */}
-          <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/40 p-4 text-[12.5px] leading-relaxed text-warn-700" role="status">
-            <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-            <p>
-              <strong>Modo de teste (GitHub Pages):</strong> a validação abaixo foi executada no seu navegador.
-              Os dados não serão gravados em banco — não há servidor nesta versão. Use a versão completa
-              (branch <code className="font-mono">main</code> + Vercel) para persistir importações.
-            </p>
-          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
@@ -740,17 +822,19 @@ export function ImportWizard() {
             <button
               type="button"
               onClick={confirmar}
-              disabled={confirmando || validacao.resumo.validos === 0}
+              disabled={confirmando || (validacao.resumo.validos === 0 && !validacao.snapshotMeaningful)}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-accent-600 px-6 text-[14.5px] font-bold text-white transition-colors hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
               aria-describedby="confirm-hint"
             >
               {confirmando ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}
-              {confirmando ? "Processando…" : `Confirmar validação de ${fmtInt(validacao.resumo.validos)} linhas`}
+              {confirmando ? "Importando…" : `Confirmar importação${validacao.resumo.validos > 0 ? ` de ${fmtInt(validacao.resumo.validos)} linhas` : " do snapshot"}`}
             </button>
           </div>
           <p id="confirm-hint" className="text-right text-[12px] text-ink-soft">
-            Modo de teste: os dados validados não são persistidos. Na versão completa (Vercel), a operação
-            seria atômica — ou importa tudo, ou nada é alterado.
+            {importMode === "replace"
+              ? `A base ativa de ${KIND_LABEL[kind]} será substituída (mantida no histórico).`
+              : "As linhas serão somadas às bases ativas."}{" "}
+            A gravação local é atômica: ou o dataset é salvo completo, ou nada é alterado.
           </p>
         </section>
       )}
@@ -762,11 +846,13 @@ export function ImportWizard() {
             <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-ok-100 text-ok-700">
               <CircleCheckBig size={32} />
             </span>
-            <h2 className="font-display text-[22px] font-bold text-navy-950">Validação concluída (modo de teste)</h2>
+            <h2 className="font-display text-[22px] font-bold text-navy-950">Importação concluída</h2>
             <p className="max-w-lg text-[14px] leading-relaxed text-ink-soft">
-              <strong className="tnum text-ink">{fmtInt(validacao.resumo.validos)}</strong> registros foram
-              validados com sucesso. Como este é um ambiente de teste (GitHub Pages), os dados não são
-              persistidos em banco.
+              <strong className="tnum text-ink">{fmtInt(validacao.resumo.validos)}</strong> registros operacionais foram
+              processados e agora alimentam os indicadores e a busca.
+              {validacao.snapshotMeaningful && (
+                <> Os blocos específicos do dashboard também foram salvos como snapshot local.</>
+              )}
               {validacao.resumo.ignoradas > 0 && (
                 <>
                   {" "}
@@ -776,20 +862,27 @@ export function ImportWizard() {
               )}
             </p>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5">
-              <button
-                type="button"
-                onClick={recomeçar}
+              <Link
+                href="/"
                 className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
               >
-                <FileUp size={16} aria-hidden="true" />
-                Importar outro arquivo
-              </button>
+                Ver panorama atualizado
+                <ArrowRight size={16} aria-hidden="true" />
+              </Link>
               <Link
                 href="/processos"
                 className="inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
               >
-                Ver página de processos
+                Pesquisar processos
               </Link>
+              <button
+                type="button"
+                onClick={recomeçar}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              >
+                <FileUp size={16} aria-hidden="true" />
+                Importar outro arquivo
+              </button>
             </div>
           </div>
         </section>

@@ -1,7 +1,7 @@
 /**
  * Leitura de arquivos .xlsx/.csv **no navegador** (nada é enviado a
- * serviços de terceiros; o arquivo só sai da máquina do usuário quando a
- * importação é confirmada, e vai para o nosso próprio backend).
+ * serviços de terceiros; o o arquivo é processado localmente e, após a confirmação, os dados ficam no
+ * IndexedDB deste navegador; não há envio automático para terceiros).
  */
 import * as XLSX from "xlsx";
 
@@ -122,12 +122,19 @@ export async function parseFile(file: File): Promise<ParsedFile> {
 }
 
 /** Lê múltiplos arquivos e converte todas as abas (com dados) em um único array consolidado de linhas. */
-export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: number; sheetsCount: number; combinedTable: SheetTable; names: string[] }> {
+export async function parseMultipleFiles(files: File[]): Promise<{
+  filesCount: number;
+  sheetsCount: number;
+  combinedTable: SheetTable;
+  names: string[];
+  sourceSheets: SourceSheet[];
+}> {
   let combinedRows: Record<string, unknown>[] = [];
   const allHeaders = new Set<string>();
   let filesCount = 0;
   let sheetsCount = 0;
   const names: string[] = [];
+  const sourceSheets: SourceSheet[] = [];
 
   for (const f of files) {
     const parsed = await parseFile(f);
@@ -135,6 +142,12 @@ export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: n
     names.push(parsed.fileName);
     for (const sheet of parsed.sheets) {
       if (sheet.matrix.length === 0) continue;
+      sourceSheets.push({
+        fileName: parsed.fileName,
+        sheetName: sheet.name,
+        headerRowIndex: sheet.headerRowIndex,
+        matrix: sheet.matrix,
+      });
       const t = extractTable(sheet, sheet.headerRowIndex);
       if (t.rows.length > 0) {
         sheetsCount++;
@@ -149,7 +162,13 @@ export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: n
     throw new ParseError("estrutura", `A combinação das planilhas gerou ${combinedRows.length.toLocaleString("pt-BR")} linhas — acima do limite.`);
   }
 
-  return { filesCount, sheetsCount, names, combinedTable: { headers: Array.from(allHeaders), rows: combinedRows, totalRows: combinedRows.length } };
+  return {
+    filesCount,
+    sheetsCount,
+    names,
+    sourceSheets,
+    combinedTable: { headers: Array.from(allHeaders), rows: combinedRows, totalRows: combinedRows.length },
+  };
 }
 
 /** Heurística: a linha de cabeçalho tende a ser a linha com mais células de texto nas primeiras 12 linhas. */
@@ -174,6 +193,14 @@ export interface SheetTable {
   headers: string[];
   rows: Record<string, unknown>[];
   totalRows: number;
+}
+
+/** Matriz preservada para os blocos específicos do painel (múltiplas tabelas por aba). */
+export interface SourceSheet {
+  fileName: string;
+  sheetName: string;
+  headerRowIndex: number;
+  matrix: unknown[][];
 }
 
 /** Extrai cabeçalho + linhas como objetos. Cabeçalhos duplicados recebem sufixo. */

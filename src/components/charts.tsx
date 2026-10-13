@@ -71,29 +71,28 @@ export interface Segment {
 export function Donut({ segments, total }: { segments: Segment[]; total: number }) {
   const R = 54;
   const C = 2 * Math.PI * R;
-  let acc = 0;
-  const arcs = segments
-    .filter((s) => s.value > 0)
-    .map((s) => {
-      const frac = total > 0 ? s.value / total : 0;
-      const dash = frac * C;
-      const el = (
-        <circle
-          key={s.label}
-          cx="70"
-          cy="70"
-          r={R}
-          fill="none"
-          stroke={s.color}
-          strokeWidth="20"
-          strokeDasharray={`${dash} ${C - dash}`}
-          strokeDashoffset={-acc}
-          transform="rotate(-90 70 70)"
-        />
-      );
-      acc += dash;
-      return el;
-    });
+  const visibleSegments = segments.filter((s) => s.value > 0);
+  const arcs = visibleSegments.map((s, index) => {
+    const frac = total > 0 ? s.value / total : 0;
+    const dash = frac * C;
+    const offset = visibleSegments.slice(0, index).reduce((sum, item) => {
+      return sum + (total > 0 ? item.value / total : 0) * C;
+    }, 0);
+    return (
+      <circle
+        key={s.label}
+        cx="70"
+        cy="70"
+        r={R}
+        fill="none"
+        stroke={s.color}
+        strokeWidth="20"
+        strokeDasharray={`${dash} ${C - dash}`}
+        strokeDashoffset={-offset}
+        transform="rotate(-90 70 70)"
+      />
+    );
+  });
 
   return (
     <div className="mt-3 flex flex-col items-center gap-5 sm:flex-row sm:gap-8">

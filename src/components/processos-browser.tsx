@@ -8,13 +8,15 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { AreaTag, PageHeader, StatusBadge, situacaoChave } from "@/components/ui";
-import { KIND_LABEL, SITUACAO_LABEL, type SituacaoChave } from "@/lib/domain";
+import { KIND_LABEL, SITUACAO_LABEL, normText, type SituacaoChave } from "@/lib/domain";
 import { fmtCurrency, fmtDate, fmtDateTime, fmtInt, prazoRelativo } from "@/lib/format";
+import { buildCsv } from "@/lib/csv";
+import { listActiveProcessRows, STATIC_DATA_EVENT } from "@/lib/static-store";
 
 /* ------------------------------------------------------------------ */
 
 interface Row {
-  id: number;
+  id: string | number;
   dataset_id: number;
   area: string | null;
   numero: string;
@@ -89,17 +91,12 @@ export function ProcessosBrowser() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [allRows, setAllRows] = useState<Row[] | null>(null);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const facetsLoaded = useRef(false);
-
   const [detalhe, setDetalhe] = useState<Row | null>(null);
 
-  // Debounce da busca (300 ms)
   useEffect(() => {
     const t = setTimeout(() => setQDebounced(q), 300);
     return () => clearTimeout(t);
@@ -109,34 +106,76 @@ export function ProcessosBrowser() {
     setLoading(true);
     setErro(null);
     try {
-      const params = new URLSearchParams({
-        q: qDebounced, area, situacao, etapa, sort, dir,
-        page: String(page), pageSize: String(pageSize),
-      });
-      if (!facetsLoaded.current) params.set("facets", "1");
-      const res = await fetch(`/api/processos?${params}`, { cache: "no-store" });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro ?? "Erro ao carregar.");
-      const data = await res.json();
-      setRows(data.rows);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-      if (data.facets) {
-        setFacets(data.facets);
-        facetsLoaded.current = true;
+      const data = await listActiveProcessRows();
+      setAllRows(data);
+      const areaCount = new Map<string, number>();
+      const etapaCount = new Map<string, number>();
+      for (const row of data) {
+        const rowArea = row.area ?? "Não informado";
+        areaCount.set(rowArea, (areaCount.get(rowArea) ?? 0) + 1);
+        if (row.etapa) etapaCount.set(row.etapa, (etapaCount.get(row.etapa) ?? 0) + 1);
       }
+      setFacets({
+        areas: [...areaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([area, total]) => ({ area, total })),
+        etapas: [...etapaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([etapa, total]) => ({ etapa, total })),
+      });
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Erro ao carregar processos.");
-      setRows(null);
+      setErro(e instanceof Error ? e.message : "Erro ao carregar processos locais.");
+      setAllRows([]);
     } finally {
       setLoading(false);
     }
-  }, [qDebounced, area, situacao, etapa, sort, dir, page, pageSize]);
+  }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     carregar();
+    const onUpdate = () => carregar();
+    window.addEventListener(STATIC_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
   }, [carregar]);
 
-  // Atualiza a URL (compartilhável) sem recarregar
+  const filteredRows = useMemo(() => {
+    if (!allRows) return [];
+    const query = normText(qDebounced);
+    const filtered = allRows.filter((row) => {
+      if (query) {
+        const searchable = normText([
+          row.numero, row.objeto, row.area, row.unidade, row.fornecedor, row.responsavel,
+          row.etapa, row.situacao_fonte, row.status_consumo, row.status_renovacao,
+          row.observacao, ...Object.values(row.extra ?? {}),
+        ].filter(Boolean).join(" "));
+        if (!searchable.includes(query)) return false;
+      }
+      if (area !== "todas" && (row.area ?? "Não informado") !== area) return false;
+      if (situacao !== "todas" && row.situacao !== situacao) return false;
+      if (etapa !== "todas" && row.etapa !== etapa) return false;
+      return true;
+    });
+
+    const getSortValue = (row: Row): string | number => {
+      if (sort === "situacao") return row.situacao;
+      if (sort === "valor") return row.valor ?? Number.POSITIVE_INFINITY;
+      if (sort === "quantidade") return row.quantidade ?? Number.POSITIVE_INFINITY;
+      if (sort === "data_fim") return row.data_fim ?? "9999-12-31";
+      return String(row[sort as keyof Row] ?? "");
+    };
+    filtered.sort((a, b) => {
+      const av = getSortValue(a);
+      const bv = getSortValue(b);
+      const comparison = typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv), "pt-BR", { numeric: true, sensitivity: "base" });
+      return dir === "asc" ? comparison : -comparison;
+    });
+    return filtered;
+  }, [allRows, qDebounced, area, situacao, etapa, sort, dir]);
+
+  const total = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const activePage = Math.min(page, totalPages);
+  const rows = useMemo(() => filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize), [filteredRows, activePage, pageSize]);
+
   useEffect(() => {
     const params = new URLSearchParams();
     if (qDebounced) params.set("q", qDebounced);
@@ -146,12 +185,14 @@ export function ProcessosBrowser() {
     if (sort !== "data_fim") params.set("sort", sort);
     if (dir !== "asc") params.set("dir", dir);
     if (page > 1) params.set("page", String(page));
+    const prefix = window.location.pathname.includes("/processos") ? window.location.pathname.split("/processos")[0] : "";
     const qs = params.toString();
-    window.history.replaceState(null, "", `/processos${qs ? `?${qs}` : ""}`);
+    window.history.replaceState(null, "", `${prefix}/processos/${qs ? `?${qs}` : ""}`);
   }, [qDebounced, area, situacao, etapa, sort, dir, page]);
 
   const filtrosAtivos =
     (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
+  const semBase = !loading && allRows !== null && total === 0 && filtrosAtivos === 0;
 
   function limparFiltros() {
     setQ("");
@@ -170,16 +211,30 @@ export function ProcessosBrowser() {
     setPage(1);
   }
 
-  const exportUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    if (qDebounced) params.set("q", qDebounced);
-    if (area !== "todas") params.set("area", area);
-    if (situacao !== "todas") params.set("situacao", situacao);
-    if (etapa !== "todas") params.set("etapa", etapa);
-    return `/api/processos/export?${params.toString()}`;
-  }, [qDebounced, area, situacao, etapa]);
-
-  const semBase = !loading && rows !== null && total === 0 && filtrosAtivos === 0;
+  function exportar() {
+    const max = 5000;
+    const data = filteredRows.slice(0, max);
+    const body = data.map((r) => [
+      r.numero, r.objeto, r.area, r.unidade, r.fornecedor, r.responsavel, r.etapa,
+      r.situacao_fonte, SITUACAO_LABEL[r.situacao], r.status_consumo ?? "",
+      r.saving_hist ?? "", r.saving_prop ?? "", r.status_renovacao ?? "",
+      r.data_previsao ? fmtDate(r.data_previsao) : "", r.data_inicio ? fmtDate(r.data_inicio) : "",
+      r.data_fim ? fmtDate(r.data_fim) : "", r.quantidade ?? "", r.valor ?? "", r.observacao ?? "", r.link ?? "",
+      r.file_name, r.imported_at ? fmtDateTime(r.imported_at) : "",
+    ]);
+    if (filteredRows.length > max) body.push([`AVISO: exportação limitada a ${max.toLocaleString("pt-BR")} linhas. Aplique mais filtros para exportar o restante.`]);
+    const csv = buildCsv([
+      "Nº processo", "Objeto", "Área", "Unidade", "Fornecedor", "Responsável", "Etapa", "Situação (fonte)",
+      "Situação de prazo", "Status de Consumo", "Saving Histórico (R$)", "Saving Proposta (R$)", "Status Renovação",
+      "Previsão", "Abertura", "Prazo/Vigência", "Qtd. itens", "Valor estimado (R$)", "Observações", "Link", "Arquivo de origem", "Importado em",
+    ], body);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `giro-de-atas-processos-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <>
@@ -190,8 +245,8 @@ export function ProcessosBrowser() {
         actions={
           <>
             <a
-              href={exportUrl}
-              download
+              href="#exportar"
+              onClick={(e) => { e.preventDefault(); exportar(); }}
               className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
               title="Exporta o recorte filtrado completo (até 5.000 linhas) em CSV"
               data-no-print
@@ -544,19 +599,19 @@ export function ProcessosBrowser() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={activePage <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(1, Math.min(p, totalPages) - 1))}
                   className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Anterior
                 </button>
                 <span className="tnum px-1 text-[13px] font-medium text-ink-soft">
-                  Página {fmtInt(page)} de {fmtInt(totalPages)}
+                  Página {fmtInt(activePage)} de {fmtInt(totalPages)}
                 </span>
                 <button
                   type="button"
-                  disabled={page >= totalPages || loading}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={activePage >= totalPages || loading}
+                  onClick={() => setPage((p) => Math.min(totalPages, Math.min(p, totalPages) + 1))}
                   className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Próxima

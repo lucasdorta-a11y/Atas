@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BookOpen, LayoutDashboard, Table2, Upload } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate } from "@/lib/format";
+import { getStaticBaseSummary } from "@/lib/static-dashboard";
+import { STATIC_DATA_EVENT } from "@/lib/static-store";
 
 const NAV = [
   { href: "/", label: "Panorama", icon: LayoutDashboard, match: (p: string) => p === "/" },
@@ -39,31 +41,28 @@ function BaseChip() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
-      const data = await res.json();
-      const ativas = (data.datasets ?? []).filter((d: { status: string }) => d.status === "active");
-      if (!ativas.length) {
+      const data = await getStaticBaseSummary();
+      if (!data.hasData) {
         setInfo({ label: "Nenhuma base carregada", detalhe: "Importe uma planilha para começar" });
       } else {
-        const refs = ativas.map((d: { reference_date: string | null }) => d.reference_date).filter(Boolean) as string[];
-        const ref = refs.length ? refs.sort().reverse()[0] : null;
         setInfo({
-          label: ref ? `Base de referência: ${fmtDate(ref)}` : "Base sem data de referência",
-          detalhe: `${ativas.length} ${ativas.length === 1 ? "base ativa" : "bases ativas"} · ${Number(data.kpis?.processos ?? 0).toLocaleString("pt-BR")} processos`,
+          label: data.referenceDate ? `Base de referência: ${fmtDate(data.referenceDate)}` : "Base sem data de referência",
+          detalhe: `${data.activeCount} ${data.activeCount === 1 ? "base ativa" : "bases ativas"} · ${data.processCount.toLocaleString("pt-BR")} registros`,
         });
       }
     } catch {
-      setInfo({ label: "Base indisponível", detalhe: "não foi possível ler o banco de dados" });
+      setInfo({ label: "Armazenamento local indisponível", detalhe: "verifique as permissões do navegador" });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const onUpdate = () => load();
-    window.addEventListener("giro:base-updated", onUpdate);
-    return () => window.removeEventListener("giro:base-updated", onUpdate);
+    window.addEventListener(STATIC_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
   }, [load]);
 
   return (
@@ -131,7 +130,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="border-t border-navy-800/70 px-5 py-4">
           <p className="text-[11.5px] leading-relaxed text-navy-400">
-            Dados armazenados no banco interno (PostgreSQL). Não há sincronização automática com o SharePoint.
+            Dados armazenados neste navegador (IndexedDB). Não há sincronização automática com o SharePoint nem entre usuários.
           </p>
         </div>
       </aside>

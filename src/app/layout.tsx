@@ -1,21 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Inter, Archivo } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const archivo = Archivo({
-  subsets: ["latin"],
-  variable: "--font-archivo",
-  weight: ["600", "700"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: {
@@ -32,7 +18,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${archivo.variable}`}>
+    <html lang="pt-BR">
       <body className="antialiased font-sans">
         <a href="#conteudo" className="skip-link">
           Pular para o conteúdo

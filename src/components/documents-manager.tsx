@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BookOpen, ExternalLink, Plus, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui";
+import { createDocument, deleteDocument, listDocuments } from "@/lib/static-store";
 
 export interface DocItem {
   id: number;
@@ -16,9 +17,27 @@ const CATEGORIAS = ["Procedimento", "Norma", "Manual", "Link SharePoint", "Outro
 
 export function DocumentsManager({ documentos, erroInicial }: { documentos: DocItem[]; erroInicial: boolean }) {
   const [docs, setDocs] = useState<DocItem[]>(documentos);
+  const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [erro, setErro] = useState<string | null>(erroInicial ? "Não foi possível carregar os documentos." : null);
   const [excluindo, setExcluindo] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    listDocuments()
+      .then((items) => {
+        if (ativo) setDocs(items);
+      })
+      .catch(() => {
+        if (ativo) setErro("Não foi possível carregar os documentos deste navegador.");
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const filtrados = useMemo(() => {
     const t = busca.toLowerCase().trim();
@@ -40,8 +59,7 @@ export function DocumentsManager({ documentos, erroInicial }: { documentos: DocI
     setExcluindo(id);
     setErro(null);
     try {
-      const res = await fetch(`/api/documentos?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro ?? "Falha ao excluir.");
+      await deleteDocument(id);
       setDocs((ds) => ds.filter((d) => d.id !== id));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao excluir.");
@@ -55,7 +73,7 @@ export function DocumentsManager({ documentos, erroInicial }: { documentos: DocI
       <PageHeader
         overline="Apoio"
         title="Documentos e regras"
-        description="Manuais, normas, procedimentos e links úteis (ex.: bibliotecas do SharePoint). Os links são cadastrados pela equipe — este painel não acessa o SharePoint automaticamente."
+        description="Manuais, normas, procedimentos e links úteis (ex.: bibliotecas do SharePoint). Os links são cadastrados pela equipe e ficam neste navegador — este painel não acessa o SharePoint automaticamente."
       />
 
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
@@ -85,7 +103,13 @@ export function DocumentsManager({ documentos, erroInicial }: { documentos: DocI
             </p>
           )}
 
-          {agrupados.length === 0 ? (
+          {carregando ? (
+            <div className="card space-y-3 p-6" aria-busy="true" aria-label="Carregando documentos">
+              <div className="skeleton h-5 w-2/3" />
+              <div className="skeleton h-12 w-full" />
+              <div className="skeleton h-12 w-full" />
+            </div>
+          ) : agrupados.length === 0 ? (
             <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
               <BookOpen size={30} className="text-navy-400" aria-hidden="true" />
               <h2 className="font-display text-[17px] font-bold text-navy-950">
@@ -93,7 +117,7 @@ export function DocumentsManager({ documentos, erroInicial }: { documentos: DocI
               </h2>
               <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
                 {docs.length === 0
-                  ? "Cadastre ao lado os links de normas, manuais e bibliotecas do SharePoint que a equipe usa no dia a dia."
+                  ? "Cadastre ao lado os links de normas, manuais e bibliotecas do SharePoint que a equipe usa no dia a dia. Os documentos ficam neste navegador."
                   : "Ajuste o termo de busca para encontrar outros documentos."}
               </p>
             </div>
@@ -152,7 +176,16 @@ function RegrasDePreenchimento() {
       <div className="space-y-4 text-[12px] text-ink-soft">
         <p><strong className="text-ink">Status “A Renovar”:</strong> Adotada a régua de 100 dias pré-vencimento para garantir margem de tempo na estruturação e renovação dos processos.</p>
         <p><strong className="text-ink">Base “Em Andamento”:</strong> Apurada cruzando a Planilha de Atas em Andamento com o relatório SAP (mapeamento de todos os projetos 7000 criados neste ano sem requisição).</p>
+        <p><strong className="text-ink">Snapshot local:</strong> A leitura da semana atual/anterior é gravada no IndexedDB deste navegador. Não há sincronização com SharePoint nem compartilhamento com outros usuários ou dispositivos.</p>
       </div>
+
+      <h2 className="text-[16px] font-display font-bold text-navy-900 mt-6 pt-4 border-t border-line">Colunas exatas do snapshot</h2>
+      <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
+        <li><strong className="text-ink">Gráficos:</strong> <code>Gráfico</code>, <code>Situação apresentada</code>, <code>ATAS</code>, <code>ITENS</code>; linhas `ATA CONCLUÍDAS (VÁLIDAS)`, `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` e `ATAS VENCIDAS E A VENCER`.</li>
+        <li><strong className="text-ink">Valores/saving:</strong> `VALOR DIRETOS`, `VALOR INDIRETOS`, `VALOR CAPEX`, `VALOR CONTRATADO R$`, `SAVING HISTÓRICO R$`, `SAVING PROPOSTA INICIAL R$`, `REDUÇÃO HISTÓRICO %` e `REDUÇÃO PROPOSTA INICIAL %`.</li>
+        <li><strong className="text-ink">Top e fornecedores:</strong> `TOP COMP INDIRETOS`, `TOP COMP DIRETOS`, `TOP COMP CAPEX`; `QTD ATAS`, `QTD ITENS`, `% CONCENTRAÇÃO DE ITENS` e `ANÁLISE`.</li>
+        <li><strong className="text-ink">Previsões complementares:</strong> outra planilha com `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO`; o produto cruza essas três colunas e não mostra foto, bolinha ou cargo.</li>
+      </ul>
 
       <h2 className="text-[16px] font-display font-bold text-navy-900 mt-6 pt-4 border-t border-line">Regras | Atas em Andamento</h2>
       <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
@@ -164,7 +197,7 @@ function RegrasDePreenchimento() {
 
       <h2 className="text-[16px] font-display font-bold text-accent-600 mt-6 pt-4 border-t border-line">Regras | Atas Renovação</h2>
       <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
-        <li><strong className="text-ink">Decisão "NOVA ATA":</strong> Informar o número do novo projeto (7000). Acompanhado na aba ATAS EM ANDAMENTO.</li>
+        <li><strong className="text-ink">Decisão &quot;NOVA ATA&quot;:</strong> Informar o número do novo projeto (7000). Acompanhado na aba ATAS EM ANDAMENTO.</li>
         <li><strong className="text-ink">Bloqueio do Contrato no SAP:</strong> Os contratos anteriores foram bloqueados no SAP para não permanecerem contabilizados.</li>
         <li><strong className="text-ink">Cobertura dos Itens:</strong> Atenção aos casos em que a nova ata não contemplou 100% dos itens da ata anterior.</li>
         <li><strong className="text-ink">Renovação pelo Mesmo Processo:</strong> Procurar equipe de Governança para apoio no andamento.</li>
@@ -188,14 +221,16 @@ function NovoDocumento({ onCreated }: { onCreated: (d: DocItem) => void }) {
     setErro(null);
     setOk(false);
     try {
-      const res = await fetch("/api/documentos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titulo, url, categoria, descricao }),
+      if (!/^https?:\/\/\S+$/i.test(url.trim())) {
+        throw new Error("Informe uma URL válida começando com http:// ou https://.");
+      }
+      const documento = await createDocument({
+        titulo: titulo.trim().slice(0, 200),
+        url: url.trim().slice(0, 2000),
+        categoria,
+        descricao: descricao.trim().slice(0, 1000) || null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.erro ?? "Falha ao salvar.");
-      onCreated(data.documento);
+      onCreated(documento);
       setTitulo("");
       setUrl("");
       setDescricao("");
