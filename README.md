@@ -45,17 +45,52 @@ npm run build
 
 O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que corresponde ao repositório `lucasdorta-a11y/Atas`; no servidor de desenvolvimento o projeto roda na raiz.
 
+## Estrutura do projeto
+
+```text
+src/
+├── app/                         # Rotas do App Router — apenas compõem a página com o componente da área
+│   ├── layout.tsx               # Layout raiz (metadata, fontes, AppShell)
+│   ├── page.tsx                 # /            → PanoramaView
+│   ├── importar/page.tsx        # /importar    → ImportWizard
+│   ├── processos/page.tsx       # /processos   → ProcessosBrowser
+│   ├── documentos/page.tsx      # /documentos  → DocumentsManager
+│   └── globals.css              # Tema (Tailwind 4) e estilos globais
+├── components/
+│   ├── ui.tsx                   # Primitivos compartilhados (PageHeader, StatusBadge, AreaTag, EmptyState…)
+│   ├── layout/app-shell.tsx     # Barra lateral, cabeçalho, navegação móvel e modo tela cheia
+│   ├── panorama/                # Painel consolidado (gráficos, saving, top 5, fornecedores, evolução, previsões)
+│   │   ├── panorama-view.tsx
+│   │   └── datasets-panel.tsx   # Auditoria das bases importadas
+│   ├── importar/import-wizard.tsx
+│   ├── processos/processos-browser.tsx
+│   └── documentos/documents-manager.tsx
+└── lib/
+    ├── domain.ts                # Campos canônicos, normalização pt-BR (datas, números), validação de linhas
+    ├── format.ts                # Formatação pt-BR (moeda, datas, inteiros)
+    ├── csv.ts                   # CSV compatível com Excel pt-BR, protegido contra injeção de fórmula
+    ├── import/
+    │   ├── client-parse.ts      # Leitura de .xlsx/.xls/.csv no navegador (todas as abas)
+    │   └── mapping.ts           # Sugestão automática coluna → campo canônico
+    ├── dashboard/
+    │   ├── dashboard-snapshot.ts  # Extrator dos blocos consolidados da planilha (nomes exatos)
+    │   └── static-dashboard.ts    # Monta os dados do panorama a partir do snapshot e dos registros
+    └── storage/
+        └── static-store.ts      # Persistência em IndexedDB (bases, snapshots, documentos)
+```
+
+Regra geral: `app/` não contém lógica — cada rota apenas renderiza o componente da sua área em `components/`. A lógica de negócio (parsing, validação, agregação, persistência) fica em `lib/`, sem dependência de React.
+
 ## Publicação no GitHub Pages
 
 O workflow `.github/workflows/deploy.yml` executa automaticamente em cada push na branch `main`:
 
 1. instala as dependências;
-2. remove, de forma defensiva, arquivos antigos de PostgreSQL/API caso tenham ficado no checkout;
-3. executa `npm run build`;
-4. publica `out/` com o Pages artifact;
-5. faz o deploy com `actions/deploy-pages`.
+2. executa `npm run build` (que inclui a verificação de tipos);
+3. publica `out/` com o Pages artifact;
+4. faz o deploy com `actions/deploy-pages`.
 
-Ao atualizar um repositório que antes usava a versão com PostgreSQL, não basta copiar arquivos novos por cima: remova também `src/db/`, `src/app/api/`, `src/lib/dashboard-data.ts` e `drizzle.config.json`. O workflow verifica que a página está usando `getStaticDashboardData` e interrompe com uma mensagem clara se a versão antiga ainda estiver no checkout.
+Os arquivos da versão anterior com PostgreSQL/API (`src/db/`, `src/lib/dashboard-data.ts`, `drizzle.config.json`) foram removidos do repositório; o código-fonte contém apenas a versão estática.
 
 No GitHub, configure **Settings → Pages → Source: GitHub Actions**. O endereço esperado é:
 

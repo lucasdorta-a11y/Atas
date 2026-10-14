@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BookOpen, ExternalLink, Plus, Search, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui";
-import { createDocument, deleteDocument, listDocuments } from "@/lib/static-store";
+import { createDocument, deleteDocument, listDocuments } from "@/lib/storage/static-store";
 
 export interface DocItem {
   id: number;

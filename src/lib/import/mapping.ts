@@ -3,7 +3,7 @@
  * Nunca decide sozinho em caso de ambiguidade: devolve `confidence` e a
  * interface deixa o usuário confirmar ou ajustar.
  */
-import { CANONICAL_FIELDS, normText, type Mapping } from "./domain";
+import { CANONICAL_FIELDS, normText, type Mapping } from "@/lib/domain";
 
 interface Synonym {
   key: string;

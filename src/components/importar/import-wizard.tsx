@@ -10,21 +10,20 @@ import clsx from "clsx";
 import { PageHeader, SectionTitle } from "@/components/ui";
 import {
   parseMultipleFiles, ParseError, MAX_FILE_MB, type SheetTable, type SourceSheet
-} from "@/lib/client-parse";
-import { suggestMapping, type Suggestion } from "@/lib/mapping";
+} from "@/lib/import/client-parse";
+import { suggestMapping, type Suggestion } from "@/lib/import/mapping";
 import {
   CANONICAL_FIELDS, KIND_LABEL, transformAndValidate,
   type DatasetKind, type DatasetNatureza, type ImportMode, type Issue, type Mapping, type ValidationResult,
 } from "@/lib/domain";
 import { buildCsv } from "@/lib/csv";
 import { fmtCurrency, fmtInt, todayISO } from "@/lib/format";
-import { notifyBaseUpdated } from "@/components/datasets-panel";
-import { saveDataset } from "@/lib/static-store";
+import { notifyStaticDataChanged, saveDataset } from "@/lib/storage/static-store";
 import {
   extractSnapshotPayload,
   hasSnapshotPayloadMeaningfulData,
   type DashboardSnapshotPayload,
-} from "@/lib/dashboard-snapshot";
+} from "@/lib/dashboard/dashboard-snapshot";
 
 /* ------------------------------------------------------------------ */
 
@@ -252,7 +251,7 @@ export function ImportWizard() {
       });
       setValidacao((current) => current ? { ...current, datasetId: dataset.id } : current);
       setStep(5);
-      notifyBaseUpdated();
+      notifyStaticDataChanged();
       announce(`Importação concluída. ${resultadoValidacao.records.length.toLocaleString("pt-BR")} linhas operacionais e ${meaningfulSnapshot ? "leitura do painel" : "nenhum snapshot"} salvos neste navegador.`);
     } catch (e) {
       setErroEtapa(e instanceof Error ? e.message : "Falha ao salvar a importação neste navegador.");

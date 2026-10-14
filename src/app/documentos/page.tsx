@@ -1,4 +1,4 @@
-import { DocumentsManager } from "@/components/documents-manager";
+import { DocumentsManager } from "@/components/documentos/documents-manager";
 
 export const metadata = { title: "Documentos de apoio" };
 

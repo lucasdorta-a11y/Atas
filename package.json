@@ -6,7 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "docs:fonte": "node scripts/gerar-codigo-fonte.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

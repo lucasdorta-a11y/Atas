@@ -5,7 +5,7 @@ import { Database, FileSpreadsheet, Trash2, CircleAlert } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 import { KIND_LABEL } from "@/lib/domain";
-import { deleteDataset, formatStoredDataset, listDatasets, notifyStaticDataChanged } from "@/lib/static-store";
+import { deleteDataset, formatStoredDataset, listDatasets, notifyStaticDataChanged } from "@/lib/storage/static-store";
 
 interface DatasetItem {
   id: number;
@@ -226,5 +226,3 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
     </>
   );
 }
-
-export { notifyBaseUpdated };

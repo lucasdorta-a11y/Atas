@@ -5,14 +5,14 @@ import {
   listSnapshotDatasets,
   formatStoredDataset,
   type ProcessRow,
-} from "@/lib/static-store";
+} from "@/lib/storage/static-store";
 import {
   defaultPreviousSnapshot,
   type DashboardSnapshotPayload,
   type ForecastBand,
   type SnapshotArea,
   SNAPSHOT_AREAS,
-} from "@/lib/dashboard-snapshot";
+} from "@/lib/dashboard/dashboard-snapshot";
 
 export interface StaticDashboardData {
   geradoEm: string;

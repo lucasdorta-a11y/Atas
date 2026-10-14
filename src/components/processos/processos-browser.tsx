@@ -11,7 +11,7 @@ import { AreaTag, PageHeader, StatusBadge, situacaoChave } from "@/components/ui
 import { KIND_LABEL, SITUACAO_LABEL, normText, type SituacaoChave } from "@/lib/domain";
 import { fmtCurrency, fmtDate, fmtDateTime, fmtInt, prazoRelativo } from "@/lib/format";
 import { buildCsv } from "@/lib/csv";
-import { listActiveProcessRows, STATIC_DATA_EVENT } from "@/lib/static-store";
+import { listActiveProcessRows, STATIC_DATA_EVENT } from "@/lib/storage/static-store";
 
 /* ------------------------------------------------------------------ */
 

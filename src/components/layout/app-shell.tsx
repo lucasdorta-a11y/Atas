@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { BookOpen, LayoutDashboard, Maximize2, Minimize2, Table2, Upload } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate } from "@/lib/format";
-import { getStaticBaseSummary } from "@/lib/static-dashboard";
-import { STATIC_DATA_EVENT } from "@/lib/static-store";
+import { getStaticBaseSummary } from "@/lib/dashboard/static-dashboard";
+import { STATIC_DATA_EVENT } from "@/lib/storage/static-store";
 
 const NAV = [
   { href: "/", label: "Panorama", icon: LayoutDashboard, match: (p: string) => p === "/" },

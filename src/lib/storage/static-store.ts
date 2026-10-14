@@ -7,7 +7,7 @@ import {
   type Issue,
   type SituacaoChave,
 } from "@/lib/domain";
-import type { DashboardSnapshotPayload } from "@/lib/dashboard-snapshot";
+import type { DashboardSnapshotPayload } from "@/lib/dashboard/dashboard-snapshot";
 
 /**
  * Persistência local para a versão publicada no GitHub Pages.

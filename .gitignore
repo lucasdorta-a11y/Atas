@@ -17,9 +17,6 @@ dist/
 .env.*
 !.env.example
 
-# drizzle
-drizzle/
-
 # debug
 npm-debug.log*
 yarn-debug.log*

@@ -1,4 +1,4 @@
-import { ImportWizard } from "@/components/import-wizard";
+import { ImportWizard } from "@/components/importar/import-wizard";
 
 export const metadata = { title: "Importar dados" };
 
