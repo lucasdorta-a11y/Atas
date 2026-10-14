@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FileStack, FileUp, RefreshCw } from "lucide-react";
-import { getStaticDashboardData, type StaticDashboardData } from "@/lib/static-dashboard";
+import { FileStack, FileUp, RefreshCw, SearchX } from "lucide-react";
+import { getStaticDashboardData, type PanoramaBlock, type StaticDashboardData } from "@/lib/static-dashboard";
 import { STATIC_DATA_EVENT } from "@/lib/static-store";
-import type { ForecastBand, SnapshotArea, SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
+import { SNAPSHOT_BLOCKS, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, areaStyle } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
 import clsx from "clsx";
 
@@ -15,6 +15,14 @@ const MONTH_NAMES_PT = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ] as const;
+
+const FAIXAS_PREVISAO: Array<{ band: ForecastBand; title: string; titleClass?: string }> = [
+  { band: "ate_15", title: "Previstas para concluir nos próximos 15 dias" },
+  { band: "ate_30", title: "Previstas para concluir de 16 a 30 dias" },
+  { band: "ate_60", title: "Previstas para concluir de 31 a 60 dias" },
+  { band: "acima_60", title: "Previsões para concluir acima de 60 dias" },
+  { band: "vencidas", title: "Previsões vencidas", titleClass: "bg-danger-700 text-white border-danger-700" },
+];
 
 export default function PanoramaPage() {
   const [data, setData] = useState<StaticDashboardData | null>(null);
@@ -107,7 +115,9 @@ export default function PanoramaPage() {
     );
   }
 
-  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes, currentSnapshot, previousSnapshot, savingTotal } = data;
+  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos } = data;
+  const referencia = currentSnapshot?.referenceDate ?? null;
+  const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
   const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
   const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
   const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
@@ -225,19 +235,23 @@ export default function PanoramaPage() {
           </span>
         </div>
         {previousSnapshot && <SnapshotCharts title={`Semana anterior · ${formatReferenceDate(previousSnapshot.referenceDate)}`} kpis={previousSnapshot.kpis} muted />}
-        <SnapshotCharts
-          title={`Semana atual${currentSnapshot?.referenceDate ? ` · ${formatReferenceDate(currentSnapshot.referenceDate)}` : ""}`}
-          kpis={{
-            concluidasAtas: kpis.concluidosAtas,
-            concluidasItens: kpis.concluidosItens,
-            saldoItens: kpis.saldoItens,
-            consumidoItens: kpis.consumidoItens,
-            aVencerAtas: kpis.aVencerAtas,
-            aVencerItens: kpis.aVencerItens,
-            vencidasAtas: kpis.vencidasAtas,
-            vencidasItens: kpis.vencidasItens,
-          }}
-        />
+        {ausente("kpis-leitura") ? (
+          <BlocoAusente bloco="kpis-leitura" referencia={referencia} />
+        ) : (
+          <SnapshotCharts
+            title={`Semana atual${currentSnapshot?.referenceDate ? ` · ${formatReferenceDate(currentSnapshot.referenceDate)}` : ""}`}
+            kpis={{
+              concluidasAtas: kpis.concluidosAtas,
+              concluidasItens: kpis.concluidosItens,
+              saldoItens: kpis.saldoItens,
+              consumidoItens: kpis.consumidoItens,
+              aVencerAtas: kpis.aVencerAtas,
+              aVencerItens: kpis.aVencerItens,
+              vencidasAtas: kpis.vencidasAtas,
+              vencidasItens: kpis.vencidasItens,
+            }}
+          />
+        )}
       </section>
 
       {/* Bloco 2: Valor Contratado & Saving (Ref: Screenshot 2 & 12) */}
@@ -245,6 +259,9 @@ export default function PanoramaPage() {
         <div className="grid items-stretch lg:grid-cols-2 divide-x divide-line">
           <div className="flex h-full min-h-full flex-col">
             <h3 className="flex min-h-[58px] items-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Valor Contratado Por Área</h3>
+            {ausente("valores-por-area") ? (
+              <div className="flex-1 px-5 pb-5"><BlocoAusente bloco="valores-por-area" referencia={referencia} compact /></div>
+            ) : (
             <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold">
@@ -254,7 +271,7 @@ export default function PanoramaPage() {
               </thead>
               <tbody className="h-full divide-y divide-white border-b-4 border-white">
                 {porAreaVisual.map((a) => (
-                  <tr key={a.area} className={a.area.toUpperCase() === "DIRETOS" ? "bg-diretos-500 text-white font-bold" : a.area.toUpperCase() === "INDIRETOS" ? "bg-indiretos-500 text-white font-bold" : a.area.toUpperCase() === "CAPEX" ? "bg-[#37474f] text-white font-bold" : "bg-neutral-100 font-bold"}>
+                  <tr key={a.area} className={clsx("font-bold text-white", areaStyle(a.area).band)}>
                     <td className="px-5 py-3 uppercase">{a.area}</td>
                     <td className="px-5 py-3 text-right">{fmtCurrency(a.valor)}</td>
                   </tr>
@@ -265,9 +282,13 @@ export default function PanoramaPage() {
                 </tr>
               </tbody>
             </table>
+            )}
           </div>
           <div className="flex h-full min-h-full flex-col">
             <h3 className="flex min-h-[58px] flex-col justify-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Saving <span className="text-[14px] text-danger-700 block mt-1 font-sans">Mapeamento iniciado em abr.2026</span></h3>
+            {ausente("saving") ? (
+              <div className="flex-1 px-5 pb-5"><BlocoAusente bloco="saving" referencia={referencia} compact /></div>
+            ) : (
             <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold text-[11px] text-center">
@@ -307,6 +328,7 @@ export default function PanoramaPage() {
                 </tr>
               </tbody>
             </table>
+            )}
           </div>
         </div>
       </section>
@@ -315,6 +337,9 @@ export default function PanoramaPage() {
       <section className="space-y-6">
         <div>
           <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Distribuição de Volume por Área (% Atas)</h2>
+          {ausente("top-compradores") ? (
+            <BlocoAusente bloco="top-compradores" referencia={referencia} />
+          ) : (
           <div className="grid gap-4 md:grid-cols-3">
             {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
               const areaStats = (porArea as any[]).find(a => a.area.toUpperCase() === area) || { processos: 0 };
@@ -323,7 +348,7 @@ export default function PanoramaPage() {
               
               return (
                 <div key={area} className="card overflow-hidden">
-                  <div className="bg-navy-950 text-white text-center py-3">
+                  <div className={clsx("text-center py-3 text-white", areaStyle(area).band)}>
                     <div className="font-bold">{area}</div>
                     <div className="text-[13px]">{fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))} ATAS (TOP 5) — {fmtNum(percent)}% DO TOTAL</div>
                     <div className="text-[10px] text-white/75">Área: {fmtInt(areaStats.processos)} ATAS</div>
@@ -343,10 +368,14 @@ export default function PanoramaPage() {
               );
             })}
           </div>
+          )}
         </div>
 
         <div>
           <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Representatividade Fornecedores</h2>
+          {ausente("fornecedores") ? (
+            <BlocoAusente bloco="fornecedores" referencia={referencia} />
+          ) : (
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
             <h3 className="bg-[#111c75] px-3 py-3 text-center font-bold text-white">FORNECEDORES GERAL</h3>
             <table className="w-full min-w-[720px] text-left">
@@ -378,12 +407,16 @@ export default function PanoramaPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </section>
 
       {/* Bloco 4: Evolução Por Área (Ref: Screenshot 4 & 14) */}
       <section>
         <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Evolução Por Área (Por Status Atual)</h2>
+        {ausente("evolucao") ? (
+          <BlocoAusente bloco="evolucao" referencia={referencia} />
+        ) : (
         <div className="card overflow-x-auto text-[12px]">
           <table className="w-full text-center">
             <thead>
@@ -400,7 +433,7 @@ export default function PanoramaPage() {
             <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-navy-900 font-medium">
               {evolucaoVisual.map((e: any) => (
                 <tr key={e.area}>
-                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", e.area.toUpperCase() === "DIRETOS" ? "bg-diretos-500" : e.area.toUpperCase() === "INDIRETOS" ? "bg-indiretos-500" : e.area.toUpperCase() === "CAPEX" ? "bg-capex-500" : "bg-neutral-500")}>
+                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", areaStyle(e.area).band)}>
                     {e.area}
                   </td>
                   <td className="px-3 py-3 border-l border-white">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
@@ -414,6 +447,7 @@ export default function PanoramaPage() {
             </tbody>
           </table>
         </div>
+        )}
       </section>
 
       {/* Bloco 5: Status de Renovações (Ref: Screenshots 5, 6, 7 & 15, 16, 17) */}
@@ -428,7 +462,7 @@ export default function PanoramaPage() {
 
             return (
               <div key={area}>
-                <div className={clsx("w-full py-2 text-center text-white font-bold mb-3 tracking-wider", area === "INDIRETOS" ? "bg-indiretos-600" : area === "DIRETOS" ? "bg-diretos-500" : "bg-capex-500")}>
+                <div className={clsx("w-full py-2 text-center text-white font-bold mb-3 tracking-wider", areaStyle(area).band)}>
                   {area}
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center text-[12px]">
@@ -448,45 +482,35 @@ export default function PanoramaPage() {
         <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Indicadores - Atas em andamento</h2>
         <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
         
+        {ausente("previsao-faixas") ? (
+          <BlocoAusente bloco="previsao-faixas" referencia={referencia} />
+        ) : (
         <div className="space-y-8">
-          <FaixaPrevisao title="Previsões para concluir acima de 60 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "acima_60") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "acima_60") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "acima_60") },
-          ]}/>
-          <FaixaPrevisao title="Previstas para concluir nos próximos 15 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_15") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_15") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_15") },
-          ]}/>
-          <FaixaPrevisao title="Previstas para concluir até 30 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_30") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_30") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_30") },
-          ]}/>
-          <FaixaPrevisao title="Previstas para concluir até 60 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_60") },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_60") },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_60") },
-          ]}/>
-          <FaixaPrevisao
-            title="Previsões vencidas"
-            titleClass="bg-[#b42318] text-white border-danger-700"
-            areaStats={[
-              { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "vencidas") },
-              { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "vencidas") },
-              { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "vencidas") },
-            ]}
-          />
-
+          {FAIXAS_PREVISAO.map(({ band, title, titleClass }) => (
+            <FaixaPrevisao
+              key={band}
+              title={title}
+              titleClass={titleClass}
+              areaStats={[
+                { area: "INDIRETOS", bg: areaStyle("Indiretos").band, ...prevByBand("Indiretos", band) },
+                { area: "DIRETOS", bg: areaStyle("Diretos").band, ...prevByBand("Diretos", band) },
+                { area: "CAPEX", bg: areaStyle("CAPEX").band, ...prevByBand("CAPEX", band) },
+              ]}
+            />
+          ))}
+        </div>
+        )}
+        {ausente("previsao-meses") ? (
+          <BlocoAusente bloco="previsao-meses" referencia={referencia} />
+        ) : (
           <PrevisaoMensal
             areas={[
-              { area: "INDIRETOS", bg: "bg-[#0b7c7b]", buckets: monthlyForArea("Indiretos") },
-              { area: "DIRETOS", bg: "bg-[#008cff]", buckets: monthlyForArea("Diretos") },
-              { area: "CAPEX", bg: "bg-[#fca500]", buckets: monthlyForArea("CAPEX") },
+              { area: "INDIRETOS", bg: areaStyle("Indiretos").band, buckets: monthlyForArea("Indiretos") },
+              { area: "DIRETOS", bg: areaStyle("Diretos").band, buckets: monthlyForArea("Diretos") },
+              { area: "CAPEX", bg: areaStyle("CAPEX").band, buckets: monthlyForArea("CAPEX") },
             ]}
           />
-        </div>
+        )}
       </section>
 
       {/* Bases e origem */}
@@ -499,6 +523,25 @@ export default function PanoramaPage() {
 }
 
 /* --- Componentes de Gráficos --- */
+
+function BlocoAusente({ bloco, referencia, compact = false }: { bloco: PanoramaBlock; referencia: string | null; compact?: boolean }) {
+  const info = SNAPSHOT_BLOCKS[bloco];
+  return (
+    <div
+      role="status"
+      className={clsx("rounded-2xl border-2 border-dashed border-navy-200 bg-navy-50/40 text-center", compact ? "px-4 py-6" : "px-6 py-10")}
+    >
+      <SearchX size={22} className="mx-auto text-navy-400" aria-hidden="true" />
+      <p className="mt-2 text-[14px] font-bold text-navy-900">Bloco não encontrado na planilha importada</p>
+      <p className="mx-auto mt-1 max-w-xl text-[12.5px] leading-relaxed text-ink-soft">
+        A importação{referencia ? ` de ${formatReferenceDate(referencia)}` : " atual"} não trazia <strong className="font-semibold text-navy-800">{info.label.toLowerCase()}</strong>; por isso nenhum número é exibido aqui — não significa zero.
+      </p>
+      <p className="mx-auto mt-2 max-w-xl text-[12px] leading-relaxed text-ink-soft">
+        <span className="font-semibold text-navy-800">Esperado na planilha:</span> {info.esperado}.
+      </p>
+    </div>
+  );
+}
 
 function formatReferenceDate(value: string | null | undefined): string {
   if (!value) return "sem data";

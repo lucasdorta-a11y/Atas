@@ -45,6 +45,15 @@ npm run build
 
 O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que corresponde ao repositório `lucasdorta-a11y/Atas`; no servidor de desenvolvimento o projeto roda na raiz.
 
+Para conferir uma planilha sem abrir o navegador, com Node.js 20+: o loader local transpila apenas os tipos necessários para os scripts.
+
+```bash
+npm run extrair -- amostras/planilha.xlsx --ref=2026-10-14
+npm run panorama:dry-run -- amostras/planilha.xlsx --ref=2026-10-14
+```
+
+Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução e previsões.
+
 ## Publicação no GitHub Pages
 
 O workflow `.github/workflows/deploy.yml` executa automaticamente em cada push na branch `main`:
@@ -78,7 +87,9 @@ A origem, a data de referência, as linhas válidas, ignoradas, duplicadas e os 
 
 ## Mapeamento exato do painel consolidado
 
-A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica.
+A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
+
+As áreas usam uma paleta única em todo o painel: Indiretos verde-água (`#0b7c7b`), Diretos azul (`#0a6fd6`) e CAPEX laranja (`#fca500`). O botão de atualização reprocessa os dados do IndexedDB local sem backend.
 
 ### Três gráficos e KPIs
 
@@ -106,7 +117,7 @@ A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as co
 
 A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status de renovações** permanece visível e não tem alteração funcional nesta versão.
 
-As faixas exibidas no painel seguem a ordem principal da planilha: acima de 60 dias, até 15, até 30, até 60 e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha: próximos 15 dias, de 16 a 30 dias, de 31 a 60 dias, acima de 60 dias e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Se um bloco não for encontrado, o painel informa “bloco não encontrado” em vez de exibir zeros. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal; meses sem ano recebem o ano correto quando atravessam dezembro. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). A faixa dos compradores é calculada usando a data de referência da planilha, não a data em que a importação foi feita. As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 

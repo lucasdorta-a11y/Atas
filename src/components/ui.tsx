@@ -66,16 +66,32 @@ export function situacaoChave(situacao: string | null | undefined): SituacaoChav
 /* Área                                                                 */
 /* ------------------------------------------------------------------ */
 
-export const AREA_STYLE: Record<string, { chip: string; dot: string; bar: string; hex: string }> = {
-  Indiretos: { chip: "bg-indiretos-100 text-indiretos-700", dot: "bg-indiretos-500", bar: "bg-indiretos-500", hex: "#2f6ba0" },
-  Diretos: { chip: "bg-diretos-100 text-diretos-700", dot: "bg-diretos-500", bar: "bg-diretos-500", hex: "#118578" },
-  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-600", bar: "bg-capex-600", hex: "#b45309" },
-  "Não informado": { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500", bar: "bg-neutral-400", hex: "#98a2b3" },
+export const AREA_STYLE: Record<string, { chip: string; dot: string; bar: string; band: string; hex: string }> = {
+  Indiretos: { chip: "bg-indiretos-100 text-indiretos-700", dot: "bg-indiretos-500", bar: "bg-indiretos-500", band: "bg-indiretos-500 text-white", hex: "#0b7c7b" },
+  Diretos: { chip: "bg-diretos-100 text-diretos-700", dot: "bg-diretos-500", bar: "bg-diretos-500", band: "bg-diretos-500 text-white", hex: "#0a6fd6" },
+  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-500", bar: "bg-capex-500", band: "bg-capex-500 text-navy-950", hex: "#fca500" },
+  "Não informado": { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500", bar: "bg-neutral-400", band: "bg-neutral-500 text-white", hex: "#98a2b3" },
 };
 
+export function areaStyle(area: string | null | undefined) {
+  const normalized = String(area ?? "").trim().toUpperCase();
+  const key = normalized === "INDIRETOS" || normalized === "INDIRETO"
+    ? "Indiretos"
+    : normalized === "DIRETOS" || normalized === "DIRETO"
+      ? "Diretos"
+      : normalized === "CAPEX" ? "CAPEX" : "Não informado";
+  return AREA_STYLE[key];
+}
+
 export function AreaTag({ area }: { area: string | null | undefined }) {
-  const key = area && AREA_STYLE[area] ? area : "Não informado";
-  const s = AREA_STYLE[key];
+  const s = areaStyle(area);
+  const key = String(area ?? "").trim().toUpperCase() === "CAPEX"
+    ? "CAPEX"
+    : String(area ?? "").trim().toUpperCase().startsWith("DIRET")
+      ? "Diretos"
+      : String(area ?? "").trim().toUpperCase().startsWith("INDIRET")
+        ? "Indiretos"
+        : "Não informado";
   return (
     <span className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-[3px] text-[12px] font-semibold", s.chip)}>
       <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-[2px]", s.dot)} />

@@ -14,6 +14,36 @@ export type SnapshotArea = (typeof SNAPSHOT_AREAS)[number];
 export const FORECAST_BANDS = ["ate_15", "ate_30", "ate_60", "vencidas", "acima_60", "canceladas", "finalizadas"] as const;
 export type ForecastBand = (typeof FORECAST_BANDS)[number];
 
+/** Blocos reconhecidos no snapshot e seus nomes exibidos quando uma fonte não os traz. */
+export const SNAPSHOT_BLOCK_KEYS = [
+  "kpis-leitura",
+  "valores-por-area",
+  "saving",
+  "top-compradores",
+  "fornecedores",
+  "evolucao",
+  "previsao-faixas",
+  "previsao-meses",
+  "previsoes-cruzadas",
+] as const;
+export type SnapshotBlockKey = (typeof SNAPSHOT_BLOCK_KEYS)[number];
+
+export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado: string }> = {
+  "kpis-leitura": { label: "Leitura dos gráficos", esperado: "tabela LEITURA DOS GRÁFICOS com Gráfico, Situação apresentada, ATAS e ITENS" },
+  "valores-por-area": { label: "Valor contratado por área", esperado: "VALOR DIRETOS, VALOR INDIRETOS e VALOR CAPEX" },
+  saving: { label: "Saving por área", esperado: "bloco Saving com os valores contratados, saving e percentuais" },
+  "top-compradores": { label: "Top compradores por área", esperado: "blocos TOP COMP por área" },
+  fornecedores: { label: "Representatividade de fornecedores", esperado: "tabela FORNECEDORES GERAL" },
+  evolucao: { label: "Evolução por área", esperado: "evolução por status atual e tabela EM ANDAMENTO" },
+  "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60, acima de 60 e vencidas" },
+  "previsao-meses": { label: "Previsão de conclusão por mês", esperado: "pivô PREVISÃO DE CONCLUSÃO POR MÊS" },
+  "previsoes-cruzadas": { label: "Previsões por comprador", esperado: "COMPRADOR, AREA e PRAZO CONCLUSÃO" },
+};
+
+export function snapshotBlockLabel(key: string): string {
+  return (SNAPSHOT_BLOCKS as Record<string, { label: string }>)[key]?.label ?? key;
+}
+
 export interface SnapshotKpis {
   concluidasAtas: number | null;
   concluidasItens: number | null;
@@ -515,6 +545,9 @@ function extractSaving(payload: DashboardSnapshotPayload, sheets: SnapshotSource
         target.reducaoPropPct = (reductionProposalCol >= 0 ? savingPercent(row[reductionProposalCol]) : null)
           ?? (proposalCol >= 0 ? savingPercent(row[proposalCol]) : null);
         found = true;
+        // O primeiro TOTAL encerra o bloco Saving; não atravessar tabelas
+        // posteriores que também possam conter uma linha TOTAL.
+        if (totalRow) break;
       }
     }
   }
@@ -788,6 +821,10 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       if (label === "QTD ITEM" || label === "QTD ITENS") {
         itens = numericAt(matrix, r + 1, column) ?? itens;
       }
+      // Assim que o par desta coluna foi encontrado, não atravessar uma
+      // tabela posterior que repita QTD ATAS/QTD ITENS (por exemplo, o pivô
+      // de previsão logo abaixo).
+      if (atas !== null && itens !== null) break;
       // O próximo quadro começa antes de outra métrica ser encontrada.
       if (r > headerRow + 1 && headerInfo(matrix[r]?.[column])) break;
     }
@@ -1062,11 +1099,17 @@ function bandFromDays(days: number): ForecastBand {
   return "acima_60";
 }
 
-function daysUntilISO(iso: string): number {
+/** Dias entre a data-base e a previsão. A data-base deve ser a referência
+ * da planilha, para que o cruzamento por comprador caia na mesma faixa do
+ * pivô, mesmo quando a importação ocorrer dias depois. */
+function daysUntilISO(iso: string, baseISO: string | null = null): number {
   const [year, month, day] = iso.split("-").map(Number);
   const target = new Date(year, month - 1, day);
+  const base = baseISO ? baseISO.split("-").map(Number) : [];
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = base.length === 3 && base.every((part) => Number.isFinite(part) && part > 0)
+    ? new Date(base[0], base[1] - 1, base[2])
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
 
@@ -1094,11 +1137,21 @@ function monthlyLabel(value: unknown, referenceDate: string | null): { label: st
   const monthName = Object.keys(MONTH_NUMBERS).find((name) => new RegExp(`\\b${name}\\b`).test(label));
   if (!monthName) return null;
   const yearMatch = label.match(/\b(20\d{2})\b/);
-  const referenceYear = referenceDate ? Number(referenceDate.slice(0, 4)) : new Date().getFullYear();
+  const reference = referenceDate
+    ? new Date(Number(referenceDate.slice(0, 4)), Number(referenceDate.slice(5, 7)) - 1, 1)
+    : new Date();
+  const referenceYear = reference.getFullYear();
+  const referenceMonth = reference.getMonth() + 1;
+  const month = MONTH_NUMBERS[monthName];
+  // O Excel muitas vezes traz somente “Janeiro”, sem ano. O pivô é de
+  // previsões futuras: um mês numericamente anterior ao mês de referência
+  // atravessou dezembro e pertence ao ano seguinte (inclusive quando a tabela
+  // lista mais de dois meses à frente).
+  const inferredYear = month < referenceMonth ? referenceYear + 1 : referenceYear;
   return {
     label: cellText(value),
-    month: MONTH_NUMBERS[monthName],
-    year: yearMatch ? Number(yearMatch[1]) : referenceYear,
+    month,
+    year: yearMatch ? Number(yearMatch[1]) : inferredYear,
   };
 }
 
@@ -1375,9 +1428,18 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
       const atasCol = findCountColumn(header, ["QTD ATAS", "ATAS", "QTD ATA"]);
       const itensCol = findCountColumn(header, ["QTD ITENS", "ITENS", "QTD ITEM"]);
       if (buyerCol < 0 || areaCol < 0 || deadlineCol < 0) continue;
+      // A base operacional pode conter linhas vazias entre registros. Elas são
+      // separadores e não encerram a leitura imediatamente; só param após uma
+      // sequência longa de linhas vazias.
+      let blankRun = 0;
       for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 10000); r += 1) {
         const row = sheet.matrix[r] ?? [];
-        if (isBlank(row)) break;
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 25) break;
+          continue;
+        }
+        blankRun = 0;
         const buyer = cellText(row[buyerCol]);
         const area = isArea(row[areaCol]);
         const deadlineText = cellText(row[deadlineCol]);
@@ -1387,7 +1449,7 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
         const date = parseDateBR(row[deadlineCol], "PRAZO CONCLUSAO");
         if (date.iso) iso = date.iso;
         const bandByText = bandFromLabel(deadlineText);
-        const band = bandByText ?? (iso ? bandFromDays(daysUntilISO(iso)) : null);
+        const band = bandByText ?? (iso ? bandFromDays(daysUntilISO(iso, payload.referenceDate)) : null);
         if (!band) continue;
         const atas = atasCol >= 0 ? integerValue(row[atasCol]) ?? 1 : 1;
         const itens = itensCol >= 0 ? integerValue(row[itensCol]) ?? 0 : 0;
@@ -1442,17 +1504,7 @@ export function extractSnapshotPayload(
   extractMonthlyForecastTable(payload, sheets);
   extractForecastRows(payload, sheets);
 
-  const allKnown = [
-    "kpis-leitura",
-    "valores-por-area",
-    "saving",
-    "top-compradores",
-    "fornecedores",
-    "evolucao",
-    "previsao-faixas",
-    "previsao-meses",
-    "previsoes-cruzadas",
-  ];
+  const allKnown = [...SNAPSHOT_BLOCK_KEYS];
   payload.coverage.missing = allKnown.filter((key) => !payload.coverage.found.includes(key));
   if (payload.coverage.missing.length > 0) {
     payload.notes.push(`Blocos não encontrados: ${payload.coverage.missing.join(", ")}. Confira os nomes exatos dos cabeçalhos/linhas.`);

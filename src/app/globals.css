@@ -25,21 +25,22 @@
   --color-accent-100: #fdeadd;
   --color-accent-50: #fff6ef;
 
-  /* Cores das áreas */
-  --color-indiretos-700: #1e4f80;
-  --color-indiretos-600: #27629a;
-  --color-indiretos-500: #2f6ba0;
-  --color-indiretos-100: #e2edf6;
+  /* Cores das áreas — a mesma codificação visual institucional do painel. */
+  --color-indiretos-700: #075958;
+  --color-indiretos-600: #0a6e6d;
+  --color-indiretos-500: #0b7c7b;
+  --color-indiretos-100: #d8eeed;
 
-  --color-diretos-700: #0b5d52;
-  --color-diretos-600: #0d7264;
-  --color-diretos-500: #118578;
-  --color-diretos-100: #ddf0ed;
+  --color-diretos-700: #0a53a8;
+  --color-diretos-600: #0a69c9;
+  --color-diretos-500: #0a6fd6;
+  --color-diretos-400: #008cff;
+  --color-diretos-100: #dbedff;
 
-  --color-capex-700: #92400e;
-  --color-capex-600: #b45309;
-  --color-capex-500: #d97706;
-  --color-capex-100: #fbeedb;
+  --color-capex-700: #8a5200;
+  --color-capex-600: #e08f00;
+  --color-capex-500: #fca500;
+  --color-capex-100: #fff0d1;
 
   /* Semânticas (tons escuros p/ texto AA, tons claros p/ fundo) */
   --color-danger-700: #b42318;

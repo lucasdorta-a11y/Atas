@@ -39,3 +39,6 @@ desktop.ini
 
 # misc
 *.local
+
+# Planilhas de amostra usadas só para testar o extrator localmente
+amostras/

@@ -163,7 +163,7 @@ export function ImportWizard() {
     setAvisoEstrutura(null);
   }, [suggestion, mappingTocado]);
 
-  const obrigatoriosOk = Boolean(mapping.numero && mapping.objeto);
+  const camposEssenciaisOk = Boolean(mapping.numero && mapping.objeto);
 
   /* ---------------- Validação local (GitHub Pages) ---------------- */
 
@@ -178,7 +178,7 @@ export function ImportWizard() {
     [combinedInfo, referenceDate],
   );
   const snapshotMeaningful = hasSnapshotPayloadMeaningfulData(snapshotPreview);
-  const canValidate = obrigatoriosOk || snapshotMeaningful;
+  const canValidate = camposEssenciaisOk || snapshotMeaningful;
 
   function resumoDaValidacao(result: ValidationResult) {
     return {
@@ -204,7 +204,7 @@ export function ImportWizard() {
         fileNames: combinedInfo.names,
         referenceDate: referenceDate || null,
       });
-      const result: ValidationResult = obrigatoriosOk
+      const result: ValidationResult = camposEssenciaisOk
         ? transformAndValidate(table.rows, mapping, { defaultArea })
         : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
       const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
@@ -265,7 +265,7 @@ export function ImportWizard() {
   function baixarRelatorio() {
     if (!table) return;
     // Mesma validação do preview — aqui para gerar o relatório integral.
-    const result = resultadoValidacao ?? (obrigatoriosOk
+    const result = resultadoValidacao ?? (camposEssenciaisOk
       ? transformAndValidate(table.rows, mapping, { defaultArea })
       : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 });
     const csv = buildCsv(
@@ -660,7 +660,7 @@ export function ImportWizard() {
               Para continuar, associe os campos essenciais de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
             </div>
           )}
-          {canValidate && !obrigatoriosOk && snapshotMeaningful && (
+          {canValidate && !camposEssenciaisOk && snapshotMeaningful && (
             <div className="card flex items-start gap-2.5 border-ok-600/30 bg-ok-100/60 p-4 text-[13px] leading-relaxed text-ok-700" role="status">
               <ShieldCheck size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               Blocos do dashboard reconhecidos. O mapeamento operacional é opcional para uma importação somente de métricas; os registros de processos não serão criados.

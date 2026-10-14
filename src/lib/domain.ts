@@ -346,8 +346,8 @@ export function transformAndValidate(
     const numero = cleanCell(get(row, "numero"))?.slice(0, maxLen) ?? null;
     const objeto = cleanCell(get(row, "objeto"))?.slice(0, 4000) ?? null;
 
-    if (!numero) pushIssue("error", "numero", "Identificador do processo vazio (campo obrigatório).");
-    if (!objeto) pushIssue("error", "objeto", "Objeto/descrição vazio (campo obrigatório).");
+    if (!numero) pushIssue("error", "numero", "Identificador do processo vazio (campo essencial para registros operacionais).");
+    if (!objeto) pushIssue("error", "objeto", "Objeto/descrição vazio (campo essencial para registros operacionais).");
 
     const areaRaw = cleanCell(get(row, "area"));
     let area = normalizeArea(areaRaw);

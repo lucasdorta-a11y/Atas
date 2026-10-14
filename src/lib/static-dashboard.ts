@@ -12,13 +12,29 @@ import {
   type ForecastBand,
   type SnapshotArea,
   SNAPSHOT_AREAS,
+  type SnapshotBlockKey,
 } from "@/lib/dashboard-snapshot";
+
+/** Blocos do panorama que podem ficar sem dado quando a planilha não os traz. */
+export const PANORAMA_BLOCKS = [
+  "kpis-leitura",
+  "valores-por-area",
+  "saving",
+  "top-compradores",
+  "fornecedores",
+  "evolucao",
+  "previsao-faixas",
+  "previsao-meses",
+] as const;
+export type PanoramaBlock = (typeof PANORAMA_BLOCKS)[number];
+export type PanoramaBlockSource = "snapshot" | "registros" | "ausente";
 
 export interface StaticDashboardData {
   geradoEm: string;
   hasData: boolean;
   currentSnapshot: DashboardSnapshotPayload | null;
   previousSnapshot: DashboardSnapshotPayload | null;
+  blocos: Record<PanoramaBlock, PanoramaBlockSource>;
   savingTotal: {
     valorSaving: number;
     saving_hist: number;
@@ -127,11 +143,14 @@ function areaDisplay(value: SnapshotArea): string {
   return value[0] + value.slice(1).toLowerCase();
 }
 
-function daysUntil(iso: string): number {
+function daysUntil(iso: string, baseISO: string | null = null): number {
   const [y, m, d] = iso.split("-").map(Number);
   const target = new Date(y, m - 1, d);
+  const base = baseISO ? baseISO.split("-").map(Number) : [];
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = base.length === 3 && base.every((part) => Number.isFinite(part) && part > 0)
+    ? new Date(base[0], base[1] - 1, base[2])
+    : new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
 
@@ -352,7 +371,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     const area = row.area ?? "Não informado";
     const responsavel = row.responsavel ?? "Não informado";
     const key = groupKey(area, responsavel, row.data_previsao);
-    const current = forecastGroups.get(key) ?? { area, responsavel, data_previsao: row.data_previsao, dias: daysUntil(row.data_previsao), atas: 0, itens: 0 };
+    const current = forecastGroups.get(key) ?? { area, responsavel, data_previsao: row.data_previsao, dias: daysUntil(row.data_previsao, currentSnapshot?.referenceDate ?? null), atas: 0, itens: 0 };
     current.atas += 1;
     current.itens += n(row.quantidade);
     forecastGroups.set(key, current);
@@ -375,7 +394,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
             responsavel: buyer.name,
             data_previsao: buyer.prazoConclusao ?? "",
             dias: buyer.prazoConclusao && /^\d{4}-\d{2}-\d{2}$/.test(buyer.prazoConclusao)
-              ? daysUntil(buyer.prazoConclusao)
+              ? daysUntil(buyer.prazoConclusao, currentSnapshot?.referenceDate ?? null)
               : forecastBandDays(band),
             atas: buyer.atas,
             itens: buyer.itens,
@@ -410,6 +429,25 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
         reducao_prop_pct: currentSnapshot.savingTotal.reducaoPropPct,
       }
     : null;
+
+  // Um bloco ausente não deve aparecer como zero: isso diferencia “não veio na
+  // planilha” de um indicador realmente igual a zero.
+  const hasRows = rows.length > 0;
+  const fromSnapshotOr = (key: SnapshotBlockKey, fallback: boolean): PanoramaBlockSource =>
+    snapshotHas(currentSnapshot, key) ? "snapshot" : fallback ? "registros" : "ausente";
+  const blocos: Record<PanoramaBlock, PanoramaBlockSource> = {
+    "kpis-leitura": fromSnapshotOr("kpis-leitura", hasRows),
+    "valores-por-area": fromSnapshotOr("valores-por-area", rows.some((row) => row.valor !== null)),
+    saving: fromSnapshotOr("saving", rows.some((row) => row.saving_hist !== null || row.saving_prop !== null)),
+    "top-compradores": fromSnapshotOr("top-compradores", rows.some((row) => Boolean(row.responsavel?.trim()))),
+    fornecedores: fromSnapshotOr("fornecedores", false),
+    evolucao: fromSnapshotOr("evolucao", hasRows),
+    "previsao-faixas": snapshotHas(currentSnapshot, "previsao-faixas") || snapshotHas(currentSnapshot, "previsoes-cruzadas")
+      ? "snapshot"
+      : rows.some((row) => row.situacao_norm === null && Boolean(row.data_previsao)) ? "registros" : "ausente",
+    "previsao-meses": fromSnapshotOr("previsao-meses", false),
+  };
+
   const snapshotHistory = snapshotDatasets.map((dataset) => ({
     id: dataset.id,
     referenceDate: dataset.referenceDate,
@@ -423,6 +461,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     hasData,
     currentSnapshot,
     previousSnapshot,
+    blocos,
     savingTotal,
     snapshotHistory,
     kpis,

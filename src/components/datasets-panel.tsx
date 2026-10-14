@@ -5,6 +5,7 @@ import { Database, FileSpreadsheet, Trash2, CircleAlert } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 import { KIND_LABEL } from "@/lib/domain";
+import { snapshotBlockLabel } from "@/lib/dashboard-snapshot";
 import { deleteDataset, formatStoredDataset, listDatasets, notifyStaticDataChanged } from "@/lib/static-store";
 
 interface DatasetItem {
@@ -167,7 +168,7 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
                       </span>
                     )}
                     {d.has_snapshot && (
-                      <span className="rounded-full bg-accent-100 px-2 py-0.5 font-medium text-accent-700" title={d.snapshot_coverage?.found.join(", ") || "Snapshot local"}>
+                      <span className="rounded-full bg-accent-100 px-2 py-0.5 font-medium text-accent-700" title={d.snapshot_coverage?.found.length ? `Blocos lidos: ${d.snapshot_coverage.found.map(snapshotBlockLabel).join(", ")}` : "Snapshot local"}>
                         snapshot local{d.snapshot_coverage?.found.length ? ` · ${d.snapshot_coverage.found.length} blocos` : ""}
                       </span>
                     )}

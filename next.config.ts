@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   assetPrefix: isStaticProduction ? "/Atas/" : "",
   trailingSlash: true,
   images: { unoptimized: true },
+  // Permite a prévia do ambiente de desenvolvimento em *.e2b.app sem
+  // afetar a exportação estática publicada no GitHub Pages.
+  allowedDevOrigins: ["*.e2b.app"],
 };
 
 export default nextConfig;

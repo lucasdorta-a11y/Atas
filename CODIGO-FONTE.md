@@ -1,74 +1,173 @@
 # Giro de Atas — Código-fonte consolidado
 
-Documento de referência com todos os arquivos do projeto e seus respectivos códigos.
+Versão mais recente do projeto estático para GitHub Pages, gerada a partir de `/home/user/atas-project` em 13/10/2026.
 
----
+> Esta edição contém somente a arquitetura estática atual. Os arquivos antigos de PostgreSQL, Drizzle e API não fazem mais parte do código-fonte publicado.
+
+## Alterações incluídas nesta versão
+
+- fornecedores lidos exclusivamente da tabela `FORNECEDORES GERAL`, com seleção do bloco completo e encerramento no primeiro `TOTAL`;
+- evolução concluída extraída da estrutura real `EVOLUÇÃO POR ÁREA (POR STATUS ATUAL)`, incluindo células compostas como `4 ATAS / 216 ITENS`;
+- previsão mensal extraída do pivô `PREVISÃO DE CONCLUSÃO POR MÊS`;
+- previsões canceladas e finalizadas ignoradas na interface, mesmo quando aparecem no snapshot importado;
+- botão de tela cheia para visualizar somente o panorama;
+- tipografia dos títulos e dos indicadores ajustada para evitar aparência esticada;
+- workflow de GitHub Pages sem PostgreSQL, com limpeza defensiva de arquivos legados;
+- armazenamento local mantido em IndexedDB, sem sincronização entre dispositivos.
 
 ## Sumário
 
-- [Arquivos de configuração](#arquivos-de-configuração)
-  - [drizzle.config.json](#drizzleconfigjson)
+- **Workflow e configuração**
+  - [.github/workflows/deploy.yml](#githubworkflowsdeployyml)
+  - [.gitignore](#gitignore)
   - [eslint.config.mjs](#eslintconfigmjs)
   - [next.config.ts](#nextconfigts)
   - [package.json](#packagejson)
+  - [package-lock.json](#packagelockjson)
   - [postcss.config.mjs](#postcssconfigmjs)
   - [tsconfig.json](#tsconfigjson)
-  - [.gitignore](#gitignore)
-- [API (src/app/api/)](#api-srcappapi)
-  - [dashboard/route.ts](#dashboardroutets)
-  - [datasets/route.ts](#datasetsroutets)
-  - [documentos/route.ts](#documentosroutets)
-  - [health/route.ts](#healthroutets)
-  - [import/route.ts](#importroutets)
-  - [processos/export/route.ts](#processosexportroutets)
-  - [processos/route.ts](#processosroutets)
-- [Páginas (src/app/)](#paginas-srcapp)
-  - [layout.tsx](#layouttsx)
-  - [page.tsx (Panorama)](#pagetsx-panorama)
-  - [globals.css](#globalscss)
-  - [documentos/page.tsx](#documentospagetsx)
-  - [importar/page.tsx](#importarpagetsx)
-  - [processos/page.tsx](#processospagetsx)
-- [Componentes (src/components/)](#componentes-srccomponents)
-  - [app-shell.tsx](#app-shelltsx)
-  - [charts.tsx](#chartstsx)
-  - [datasets-panel.tsx](#datasets-paneltsx)
-  - [documents-manager.tsx](#documents-managertsx)
-  - [import-wizard.tsx](#import-wizardtsx)
-  - [processos-browser.tsx](#processos-browsertsx)
-  - [ui.tsx](#uitsx)
-- [Banco de dados (src/db/)](#banco-de-dados-srcdb)
-  - [index.ts](#indexts)
-  - [schema.ts](#schemats)
-- [Bibliotecas (src/lib/)](#bibliotecas-srclib)
-  - [client-parse.ts](#client-parsets)
-  - [csv.ts](#csvts)
-  - [dashboard-data.ts](#dashboard-datats)
-  - [domain.ts](#domaints)
-  - [format.ts](#formatts)
-  - [mapping.ts](#mappingts)
-- [Scripts](#scripts)
-  - [e2e-test.mjs](#e2e-testmjs)
+  - [next-env.d.ts](#nextenvdts)
+  - [public/.nojekyll](#publicnojekyll)
+- **Páginas**
+  - [src/app/layout.tsx](#srcapplayouttsx)
+  - [src/app/page.tsx](#srcapppagetsx)
+  - [src/app/globals.css](#srcappglobalscss)
+  - [src/app/documentos/page.tsx](#srcappdocumentospagetsx)
+  - [src/app/importar/page.tsx](#srcappimportarpagetsx)
+  - [src/app/processos/page.tsx](#srcappprocessospagetsx)
+- **Componentes**
+  - [src/components/app-shell.tsx](#srccomponentsappshelltsx)
+  - [src/components/charts.tsx](#srccomponentschartstsx)
+  - [src/components/datasets-panel.tsx](#srccomponentsdatasetspaneltsx)
+  - [src/components/documents-manager.tsx](#srccomponentsdocumentsmanagertsx)
+  - [src/components/import-wizard.tsx](#srccomponentsimportwizardtsx)
+  - [src/components/processos-browser.tsx](#srccomponentsprocessosbrowsertsx)
+  - [src/components/ui.tsx](#srccomponentsuitsx)
+- **Bibliotecas**
+  - [src/lib/client-parse.ts](#srclibclientparsets)
+  - [src/lib/csv.ts](#srclibcsvts)
+  - [src/lib/dashboard-snapshot.ts](#srclibdashboardsnapshotts)
+  - [src/lib/domain.ts](#srclibdomaints)
+  - [src/lib/format.ts](#srclibformatts)
+  - [src/lib/mapping.ts](#srclibmappingts)
+  - [src/lib/static-dashboard.ts](#srclibstaticdashboardts)
+  - [src/lib/static-store.ts](#srclibstaticstorets)
 
 ---
 
-## Arquivos de configuração
+## Workflow e configuração
 
-### drizzle.config.json
+### `.github/workflows/deploy.yml`
 
-```json
-{
-  "dialect": "postgresql",
-  "schema": "./src/db/schema.ts",
-  "dbCredentials": {
-    "url": "postgresql://postgres:postgres@127.0.0.1:5432/app_db"
-  }
-}
-```
+````yaml
+name: Deploy to GitHub Pages
 
-### eslint.config.mjs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-```javascript
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Enforce static Pages source
+        run: |
+          # This repository must never type-check or export the old PostgreSQL/API tree.
+          # The cleanup is defensive for repositories updated by copying files over an
+          # older checkout, where deleted files can otherwise remain in GitHub.
+          rm -rf src/db src/app/api
+          rm -f src/lib/dashboard-data.ts drizzle.config.json
+          if grep -R "getDashboardData" -n src/app src/lib 2>/dev/null; then
+            echo "The checkout still contains the server-backed dashboard. Replace it with the static GitHub Pages source."
+            exit 1
+          fi
+      - name: Build static site
+        run: npm run build
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+````
+
+### `.gitignore`
+
+````text
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+build/
+dist/
+
+# production
+*.tsbuildinfo
+
+# environment
+.env
+.env.*
+!.env.example
+
+# drizzle
+drizzle/
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# os
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# misc
+*.local
+````
+
+### `eslint.config.mjs`
+
+````javascript
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 
@@ -77,31 +176,33 @@ export default defineConfig([
   ...nextCoreWebVitals,
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);
-```
+````
 
-### next.config.ts
+### `next.config.ts`
 
-> **Versão GitHub Pages (branch gh-pages)** — configurado para exportação estática.
-
-```typescript
+````typescript
 import type { NextConfig } from "next";
+
+// O site publicado no Pages vive em /Atas. Durante o desenvolvimento local,
+// mantemos a raiz / para que a prévia e o servidor dev sejam acessíveis.
+const isStaticProduction = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {
   output: "export",
-  basePath: "/Atas",
-  assetPrefix: "/Atas/",
+  basePath: isStaticProduction ? "/Atas" : "",
+  assetPrefix: isStaticProduction ? "/Atas/" : "",
   trailingSlash: true,
   images: { unoptimized: true },
 };
 
 export default nextConfig;
-```
+````
 
-### package.json
+### `package.json`
 
-```json
+````json
 {
-  "name": "nextjs-postgresql-template",
+  "name": "giro-de-atas-pages",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -112,11 +213,8 @@ export default nextConfig;
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "dotenv": "17.3.1",
-    "drizzle-orm": "0.45.2",
     "lucide-react": "^1.52.0",
     "next": "16.2.6",
-    "pg": "8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "xlsx": "^0.18.5"
@@ -124,10 +222,8 @@ export default nextConfig;
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
-    "@types/pg": "8.18.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
     "postcss": "8.5.8",
@@ -135,11 +231,6853 @@ export default nextConfig;
     "typescript": "5.9.3"
   }
 }
-```
+````
 
-### postcss.config.mjs
+### `package-lock.json`
 
-```javascript
+````json
+{
+  "name": "nextjs-postgresql-template",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "nextjs-postgresql-template",
+      "dependencies": {
+        "clsx": "^2.1.1",
+        "lucide-react": "^1.52.0",
+        "next": "16.2.6",
+        "react": "19.2.6",
+        "react-dom": "19.2.6",
+        "xlsx": "^0.18.5"
+      },
+      "devDependencies": {
+        "@tailwindcss/postcss": "4.1.17",
+        "@types/node": "22.19.15",
+        "@types/react": "19.2.14",
+        "@types/react-dom": "19.2.3",
+        "eslint": "9.39.4",
+        "eslint-config-next": "16.2.6",
+        "postcss": "8.5.8",
+        "tailwindcss": "4.1.17",
+        "typescript": "5.9.3"
+      }
+    },
+    "node_modules/@alloc/quick-lru": {
+      "version": "5.3.0",
+      "resolved": "https://registry.npmjs.org/@alloc/quick-lru/-/quick-lru-5.3.0.tgz",
+      "integrity": "sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/@babel/code-frame": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",
+      "integrity": "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/helper-validator-identifier": "^7.29.7",
+        "js-tokens": "^4.0.0",
+        "picocolors": "^1.1.1"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/compat-data": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/compat-data/-/compat-data-7.29.7.tgz",
+      "integrity": "sha512-locTkQyKvwIEgBzVrn8693ebc97F2U8ZHjbXwDXJ5Fn2TCpNwTlKcaKLkdHop5c/icOFE7qt7Q9JC5hnKNa6Gg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/core": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz",
+      "integrity": "sha512-RgHBCvtjbOK2gXSNBNIkNoEc9qoVEtau3hj8gEqKQuL3HZAibKarWFEI3Lfm6EYKkLalOh8eSrj9b+ch9H/VBA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/code-frame": "^7.29.7",
+        "@babel/generator": "^7.29.7",
+        "@babel/helper-compilation-targets": "^7.29.7",
+        "@babel/helper-module-transforms": "^7.29.7",
+        "@babel/helpers": "^7.29.7",
+        "@babel/parser": "^7.29.7",
+        "@babel/template": "^7.29.7",
+        "@babel/traverse": "^7.29.7",
+        "@babel/types": "^7.29.7",
+        "@jridgewell/remapping": "^2.3.5",
+        "convert-source-map": "^2.0.0",
+        "debug": "^4.1.0",
+        "gensync": "^1.0.0-beta.2",
+        "json5": "^2.2.3",
+        "semver": "^6.3.1"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/babel"
+      }
+    },
+    "node_modules/@babel/generator": {
+      "version": "7.29.8",
+      "resolved": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.8.tgz",
+      "integrity": "sha512-gZbepsdh3WDtgZKWL+vTPh71LSBrm/Y4/QDZBVCcYfmeTEEuoOYwlSy+G1StfJg+/Zy550u/3TATbm7qDbbMtg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/parser": "^7.29.8",
+        "@babel/types": "^7.29.8",
+        "@jridgewell/gen-mapping": "^0.3.12",
+        "@jridgewell/trace-mapping": "^0.3.28",
+        "jsesc": "^3.0.2"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-compilation-targets": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-compilation-targets/-/helper-compilation-targets-7.29.7.tgz",
+      "integrity": "sha512-wem6WaBj4NaVYVdNhLPPVacES6ZJ+KBBfSkTMD3YZxbP3rm3Di85tJU5ljaUNhaOynt+Aj0xruhYuzQBt8n71g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/compat-data": "^7.29.7",
+        "@babel/helper-validator-option": "^7.29.7",
+        "browserslist": "^4.24.0",
+        "lru-cache": "^5.1.1",
+        "semver": "^6.3.1"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-globals": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-globals/-/helper-globals-7.29.7.tgz",
+      "integrity": "sha512-3nQVUAtvkKH9zahfWgw96Jc/uFOmjACE1kQz82E2lqWmHBgjzbNlsC22nuQTfahmWeQtTq5nQ/4Nnd2A1wj4zA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-module-imports": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-module-imports/-/helper-module-imports-7.29.7.tgz",
+      "integrity": "sha512-ejHwrQQYcm9xnTivShn2IDOlIzInN34AXskvq9QicvCtEzq1Vzclu/tKF8Jq1Cg8JG2GL6/EmjgsCT7lXepE3g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/traverse": "^7.29.7",
+        "@babel/types": "^7.29.7"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-module-transforms": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-module-transforms/-/helper-module-transforms-7.29.7.tgz",
+      "integrity": "sha512-UPUVSyXbOh627KiCIGQSgwWzGeBKLkaJ9PJEdrngIwMSzxLR4jS4+f1f1jb7VzBbg8nFLaYotvVPFCTqdrmTAg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/helper-module-imports": "^7.29.7",
+        "@babel/helper-validator-identifier": "^7.29.7",
+        "@babel/traverse": "^7.29.7"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      },
+      "peerDependencies": {
+        "@babel/core": "^7.0.0"
+      }
+    },
+    "node_modules/@babel/helper-string-parser": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-string-parser/-/helper-string-parser-7.29.7.tgz",
+      "integrity": "sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-validator-identifier": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz",
+      "integrity": "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helper-validator-option": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/helper-validator-option/-/helper-validator-option-7.29.7.tgz",
+      "integrity": "sha512-N9ZErrD+yW5geCDtBqnOoxmR8+tNKiGuxKlDpuJxfsqpa2dFcexaziGAE/qoHLiDDreVNMupxGmSoNlyvsA3gw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/helpers": {
+      "version": "7.29.10",
+      "resolved": "https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.10.tgz",
+      "integrity": "sha512-EMCx3AGZ3WfAl6ht7AyQoPm2Lh+BGYEMdc4Q6Hf7uSCDOZFuLq44qNwL+iaim8VlyYhRAo4X43+weadK8ZB4Yg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/template": "^7.29.7",
+        "@babel/types": "^7.29.8"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/parser": {
+      "version": "7.29.9",
+      "resolved": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.9.tgz",
+      "integrity": "sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/types": "^7.29.8"
+      },
+      "bin": {
+        "parser": "bin/babel-parser.js"
+      },
+      "engines": {
+        "node": ">=6.0.0"
+      }
+    },
+    "node_modules/@babel/template": {
+      "version": "7.29.7",
+      "resolved": "https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz",
+      "integrity": "sha512-puq+Gf35oI24FeN11LkoUQFqv9uwNeWpxXZi/Ji3rRIoKAzKnxRaZ+Gkj0vKS9ZCiTESfng1N9LyOyXvo+m+Gg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/code-frame": "^7.29.7",
+        "@babel/parser": "^7.29.7",
+        "@babel/types": "^7.29.7"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/traverse": {
+      "version": "7.29.10",
+      "resolved": "https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.10.tgz",
+      "integrity": "sha512-B3lYAs2nkKskbgQ1nfy8Ma9ao9Q1rntTAQHrzzyDuj+TSO+X3le6PfWwqDvodsb+OumE10eMFfuMCTQSQ5iuIQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/code-frame": "^7.29.7",
+        "@babel/generator": "^7.29.8",
+        "@babel/helper-globals": "^7.29.7",
+        "@babel/parser": "^7.29.9",
+        "@babel/template": "^7.29.7",
+        "@babel/types": "^7.29.8",
+        "debug": "^4.3.1"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@babel/types": {
+      "version": "7.29.8",
+      "resolved": "https://registry.npmjs.org/@babel/types/-/types-7.29.8.tgz",
+      "integrity": "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/helper-string-parser": "^7.29.7",
+        "@babel/helper-validator-identifier": "^7.29.7"
+      },
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/@emnapi/core": {
+      "version": "1.10.0",
+      "resolved": "https://registry.npmjs.org/@emnapi/core/-/core-1.10.0.tgz",
+      "integrity": "sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==",
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "@emnapi/wasi-threads": "1.2.1",
+        "tslib": "^2.4.0"
+      }
+    },
+    "node_modules/@emnapi/runtime": {
+      "version": "1.11.3",
+      "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.11.3.tgz",
+      "integrity": "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==",
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "tslib": "^2.4.0"
+      }
+    },
+    "node_modules/@emnapi/wasi-threads": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/@emnapi/wasi-threads/-/wasi-threads-1.2.1.tgz",
+      "integrity": "sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==",
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "tslib": "^2.4.0"
+      }
+    },
+    "node_modules/@eslint-community/eslint-utils": {
+      "version": "4.10.1",
+      "resolved": "https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.10.1.tgz",
+      "integrity": "sha512-cuadcxVFE8sDK6iWJbs8Sn0av2Nrh2QSGQhVlBW9AaAHqHwjWsZHT8LJ4hFGPh7ASBV2deFdM7H/DPjulmh8rg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "eslint-visitor-keys": "^3.4.3"
+      },
+      "engines": {
+        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      },
+      "peerDependencies": {
+        "eslint": "^6.0.0 || ^7.0.0 || >=8.0.0"
+      }
+    },
+    "node_modules/@eslint-community/eslint-utils/node_modules/eslint-visitor-keys": {
+      "version": "3.4.3",
+      "resolved": "https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz",
+      "integrity": "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": "^12.22.0 || ^14.17.0 || >=16.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/@eslint-community/regexpp": {
+      "version": "4.12.2",
+      "resolved": "https://registry.npmjs.org/@eslint-community/regexpp/-/regexpp-4.12.2.tgz",
+      "integrity": "sha512-EriSTlt5OC9/7SXkRSCAhfSxxoSUgBm33OH+IkwbdpgoqsSsUg7y3uh+IICI/Qg4BBWr3U2i39RpmycbxMq4ew==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": "^12.0.0 || ^14.0.0 || >=16.0.0"
+      }
+    },
+    "node_modules/@eslint/config-array": {
+      "version": "0.21.2",
+      "resolved": "https://registry.npmjs.org/@eslint/config-array/-/config-array-0.21.2.tgz",
+      "integrity": "sha512-nJl2KGTlrf9GjLimgIru+V/mzgSK0ABCDQRvxw5BjURL7WfH5uoWmizbH7QB6MmnMBd8cIC9uceWnezL1VZWWw==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@eslint/object-schema": "^2.1.7",
+        "debug": "^4.3.1",
+        "minimatch": "^3.1.5"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      }
+    },
+    "node_modules/@eslint/config-helpers": {
+      "version": "0.4.2",
+      "resolved": "https://registry.npmjs.org/@eslint/config-helpers/-/config-helpers-0.4.2.tgz",
+      "integrity": "sha512-gBrxN88gOIf3R7ja5K9slwNayVcZgK6SOUORm2uBzTeIEfeVaIhOpCtTox3P6R7o2jLFwLFTLnC7kU/RGcYEgw==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@eslint/core": "^0.17.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      }
+    },
+    "node_modules/@eslint/core": {
+      "version": "0.17.0",
+      "resolved": "https://registry.npmjs.org/@eslint/core/-/core-0.17.0.tgz",
+      "integrity": "sha512-yL/sLrpmtDaFEiUj1osRP4TI2MDz1AddJL+jZ7KSqvBuliN4xqYY54IfdN8qD8Toa6g1iloph1fxQNkjOxrrpQ==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@types/json-schema": "^7.0.15"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      }
+    },
+    "node_modules/@eslint/eslintrc": {
+      "version": "3.3.7",
+      "resolved": "https://registry.npmjs.org/@eslint/eslintrc/-/eslintrc-3.3.7.tgz",
+      "integrity": "sha512-F42g89Qd5oAWtp0k0nnSrjziAKza7w8SVT4mStc18LZMaRb4J1HQAHLCalEtDCxrTuksx7NU9qsmeLwpOfPqWw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ajv": "^6.14.0",
+        "debug": "^4.3.2",
+        "espree": "^10.0.1",
+        "globals": "^14.0.0",
+        "ignore": "^5.2.0",
+        "import-fresh": "^3.2.1",
+        "js-yaml": "^4.3.2",
+        "minimatch": "^3.1.5",
+        "strip-json-comments": "^3.1.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/@eslint/js": {
+      "version": "9.39.4",
+      "resolved": "https://registry.npmjs.org/@eslint/js/-/js-9.39.4.tgz",
+      "integrity": "sha512-nE7DEIchvtiFTwBw4Lfbu59PG+kCofhjsKaCWzxTpt4lfRjRMqG6uMBzKXuEcyXhOHoUp9riAm7/aWYGhXZ9cw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://eslint.org/donate"
+      }
+    },
+    "node_modules/@eslint/object-schema": {
+      "version": "2.1.7",
+      "resolved": "https://registry.npmjs.org/@eslint/object-schema/-/object-schema-2.1.7.tgz",
+      "integrity": "sha512-VtAOaymWVfZcmZbp6E2mympDIHvyjXs/12LqWYjVw6qjrfF+VK+fyG33kChz3nnK+SU5/NeHOqrTEHS8sXO3OA==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      }
+    },
+    "node_modules/@eslint/plugin-kit": {
+      "version": "0.4.1",
+      "resolved": "https://registry.npmjs.org/@eslint/plugin-kit/-/plugin-kit-0.4.1.tgz",
+      "integrity": "sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@eslint/core": "^0.17.0",
+        "levn": "^0.4.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      }
+    },
+    "node_modules/@humanfs/core": {
+      "version": "0.19.2",
+      "resolved": "https://registry.npmjs.org/@humanfs/core/-/core-0.19.2.tgz",
+      "integrity": "sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@humanfs/types": "^0.15.0"
+      },
+      "engines": {
+        "node": ">=18.18.0"
+      }
+    },
+    "node_modules/@humanfs/node": {
+      "version": "0.16.8",
+      "resolved": "https://registry.npmjs.org/@humanfs/node/-/node-0.16.8.tgz",
+      "integrity": "sha512-gE1eQNZ3R++kTzFUpdGlpmy8kDZD/MLyHqDwqjkVQI0JMdI1D51sy1H958PNXYkM2rAac7e5/CnIKZrHtPh3BQ==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@humanfs/core": "^0.19.2",
+        "@humanfs/types": "^0.15.0",
+        "@humanwhocodes/retry": "^0.4.0"
+      },
+      "engines": {
+        "node": ">=18.18.0"
+      }
+    },
+    "node_modules/@humanfs/types": {
+      "version": "0.15.0",
+      "resolved": "https://registry.npmjs.org/@humanfs/types/-/types-0.15.0.tgz",
+      "integrity": "sha512-ZZ1w0aoQkwuUuC7Yf+7sdeaNfqQiiLcSRbfI08oAxqLtpXQr9AIVX7Ay7HLDuiLYAaFPu8oBYNq/QIi9URHJ3Q==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.18.0"
+      }
+    },
+    "node_modules/@humanwhocodes/module-importer": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/@humanwhocodes/module-importer/-/module-importer-1.0.1.tgz",
+      "integrity": "sha512-bxveV4V8v5Yb4ncFTT3rPSgZBOpCkjfK0y4oVVVJwIuDVBRMDXrPyXRL988i5ap9m9bnyEEjWfm5WkBmtffLfA==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=12.22"
+      },
+      "funding": {
+        "type": "github",
+        "url": "https://github.com/sponsors/nzakas"
+      }
+    },
+    "node_modules/@humanwhocodes/retry": {
+      "version": "0.4.3",
+      "resolved": "https://registry.npmjs.org/@humanwhocodes/retry/-/retry-0.4.3.tgz",
+      "integrity": "sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=18.18"
+      },
+      "funding": {
+        "type": "github",
+        "url": "https://github.com/sponsors/nzakas"
+      }
+    },
+    "node_modules/@img/colour": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/@img/colour/-/colour-1.1.0.tgz",
+      "integrity": "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==",
+      "license": "MIT",
+      "optional": true,
+      "engines": {
+        "node": ">=18"
+      }
+    },
+    "node_modules/@img/sharp-darwin-arm64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-arm64/-/sharp-darwin-arm64-0.34.5.tgz",
+      "integrity": "sha512-imtQ3WMJXbMY4fxb/Ndp6HBTNVtWCUI0WdobyheGf5+ad6xX8VIDO8u2xE4qc/fr08CKG/7dDseFtn6M6g/r3w==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-darwin-arm64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-darwin-x64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-darwin-x64/-/sharp-darwin-x64-0.34.5.tgz",
+      "integrity": "sha512-YNEFAF/4KQ/PeW0N+r+aVVsoIY0/qxxikF2SWdp+NRkmMB7y9LBZAVqQ4yhGCm/H3H270OSykqmQMKLBhBJDEw==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-darwin-x64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-libvips-darwin-arm64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz",
+      "integrity": "sha512-zqjjo7RatFfFoP0MkQ51jfuFZBnVE2pRiaydKJ1G/rHZvnsrHAOcQALIi9sA5co5xenQdTugCvtb1cuf78Vf4g==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-darwin-x64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-darwin-x64/-/sharp-libvips-darwin-x64-1.2.4.tgz",
+      "integrity": "sha512-1IOd5xfVhlGwX+zXv2N93k0yMONvUlANylbJw1eTah8K/Jtpi15KC+WSiaX/nBmbm2HxRM1gZ0nSdjSsrZbGKg==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-arm": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm/-/sharp-libvips-linux-arm-1.2.4.tgz",
+      "integrity": "sha512-bFI7xcKFELdiNCVov8e44Ia4u2byA+l3XtsAj+Q8tfCwO6BQ8iDojYdvoPMqsKDkuoOo+X6HZA0s0q11ANMQ8A==",
+      "cpu": [
+        "arm"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-arm64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-arm64/-/sharp-libvips-linux-arm64-1.2.4.tgz",
+      "integrity": "sha512-excjX8DfsIcJ10x1Kzr4RcWe1edC9PquDRRPx3YVCvQv+U5p7Yin2s32ftzikXojb1PIFc/9Mt28/y+iRklkrw==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-ppc64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-ppc64/-/sharp-libvips-linux-ppc64-1.2.4.tgz",
+      "integrity": "sha512-FMuvGijLDYG6lW+b/UvyilUWu5Ayu+3r2d1S8notiGCIyYU/76eig1UfMmkZ7vwgOrzKzlQbFSuQfgm7GYUPpA==",
+      "cpu": [
+        "ppc64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-riscv64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-riscv64/-/sharp-libvips-linux-riscv64-1.2.4.tgz",
+      "integrity": "sha512-oVDbcR4zUC0ce82teubSm+x6ETixtKZBh/qbREIOcI3cULzDyb18Sr/Wcyx7NRQeQzOiHTNbZFF1UwPS2scyGA==",
+      "cpu": [
+        "riscv64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-s390x": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-s390x/-/sharp-libvips-linux-s390x-1.2.4.tgz",
+      "integrity": "sha512-qmp9VrzgPgMoGZyPvrQHqk02uyjA0/QrTO26Tqk6l4ZV0MPWIW6LTkqOIov+J1yEu7MbFQaDpwdwJKhbJvuRxQ==",
+      "cpu": [
+        "s390x"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linux-x64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.2.4.tgz",
+      "integrity": "sha512-tJxiiLsmHc9Ax1bz3oaOYBURTXGIRDODBqhveVHonrHJ9/+k89qbLl0bcJns+e4t4rvaNBxaEZsFtSfAdquPrw==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linuxmusl-arm64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-arm64/-/sharp-libvips-linuxmusl-arm64-1.2.4.tgz",
+      "integrity": "sha512-FVQHuwx1IIuNow9QAbYUzJ+En8KcVm9Lk5+uGUQJHaZmMECZmOlix9HnH7n1TRkXMS0pGxIJokIVB9SuqZGGXw==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-libvips-linuxmusl-x64": {
+      "version": "1.2.4",
+      "resolved": "https://registry.npmjs.org/@img/sharp-libvips-linuxmusl-x64/-/sharp-libvips-linuxmusl-x64-1.2.4.tgz",
+      "integrity": "sha512-+LpyBk7L44ZIXwz/VYfglaX/okxezESc6UxDSoyo2Ks6Jxc4Y7sGjpgU9s4PMgqgjj1gZCylTieNamqA1MF7Dg==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-linux-arm": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm/-/sharp-linux-arm-0.34.5.tgz",
+      "integrity": "sha512-9dLqsvwtg1uuXBGZKsxem9595+ujv0sJ6Vi8wcTANSFpwV/GONat5eCkzQo/1O6zRIkh0m/8+5BjrRr7jDUSZw==",
+      "cpu": [
+        "arm"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-arm": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linux-arm64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-arm64/-/sharp-linux-arm64-0.34.5.tgz",
+      "integrity": "sha512-bKQzaJRY/bkPOXyKx5EVup7qkaojECG6NLYswgktOZjaXecSAeCWiZwwiFf3/Y+O1HrauiE3FVsGxFg8c24rZg==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-arm64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linux-ppc64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-ppc64/-/sharp-linux-ppc64-0.34.5.tgz",
+      "integrity": "sha512-7zznwNaqW6YtsfrGGDA6BRkISKAAE1Jo0QdpNYXNMHu2+0dTrPflTLNkpc8l7MUP5M16ZJcUvysVWWrMefZquA==",
+      "cpu": [
+        "ppc64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-ppc64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linux-riscv64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-riscv64/-/sharp-linux-riscv64-0.34.5.tgz",
+      "integrity": "sha512-51gJuLPTKa7piYPaVs8GmByo7/U7/7TZOq+cnXJIHZKavIRHAP77e3N2HEl3dgiqdD/w0yUfiJnII77PuDDFdw==",
+      "cpu": [
+        "riscv64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-riscv64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linux-s390x": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-s390x/-/sharp-linux-s390x-0.34.5.tgz",
+      "integrity": "sha512-nQtCk0PdKfho3eC5MrbQoigJ2gd1CgddUMkabUj+rBevs8tZ2cULOx46E7oyX+04WGfABgIwmMC0VqieTiR4jg==",
+      "cpu": [
+        "s390x"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-s390x": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linux-x64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linux-x64/-/sharp-linux-x64-0.34.5.tgz",
+      "integrity": "sha512-MEzd8HPKxVxVenwAa+JRPwEC7QFjoPWuS5NZnBt6B3pu7EG2Ge0id1oLHZpPJdn3OQK+BQDiw9zStiHBTJQQQQ==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linux-x64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linuxmusl-arm64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-arm64/-/sharp-linuxmusl-arm64-0.34.5.tgz",
+      "integrity": "sha512-fprJR6GtRsMt6Kyfq44IsChVZeGN97gTD331weR1ex1c1rypDEABN6Tm2xa1wE6lYb5DdEnk03NZPqA7Id21yg==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linuxmusl-arm64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-linuxmusl-x64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-linuxmusl-x64/-/sharp-linuxmusl-x64-0.34.5.tgz",
+      "integrity": "sha512-Jg8wNT1MUzIvhBFxViqrEhWDGzqymo3sV7z7ZsaWbZNDLXRJZoRGrjulp60YYtV4wfY8VIKcWidjojlLcWrd8Q==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "Apache-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-libvips-linuxmusl-x64": "1.2.4"
+      }
+    },
+    "node_modules/@img/sharp-wasm32": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-wasm32/-/sharp-wasm32-0.34.5.tgz",
+      "integrity": "sha512-OdWTEiVkY2PHwqkbBI8frFxQQFekHaSSkUIJkwzclWZe64O1X4UlUjqqqLaPbUpMOQk6FBu/HtlGXNblIs0huw==",
+      "cpu": [
+        "wasm32"
+      ],
+      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+      "optional": true,
+      "dependencies": {
+        "@emnapi/runtime": "^1.7.0"
+      },
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-win32-arm64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-win32-arm64/-/sharp-win32-arm64-0.34.5.tgz",
+      "integrity": "sha512-WQ3AgWCWYSb2yt+IG8mnC6Jdk9Whs7O0gxphblsLvdhSpSTtmu69ZG1Gkb6NuvxsNACwiPV6cNSZNzt0KPsw7g==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-win32-ia32": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-win32-ia32/-/sharp-win32-ia32-0.34.5.tgz",
+      "integrity": "sha512-FV9m/7NmeCmSHDD5j4+4pNI8Cp3aW+JvLoXcTUo0IqyjSfAZJ8dIUmijx1qaJsIiU+Hosw6xM5KijAWRJCSgNg==",
+      "cpu": [
+        "ia32"
+      ],
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@img/sharp-win32-x64": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/@img/sharp-win32-x64/-/sharp-win32-x64-0.34.5.tgz",
+      "integrity": "sha512-+29YMsqY2/9eFEiW93eqWnuLcWcufowXewwSNIT6UwZdUUCrM3oFjMWH/Z6/TMmb4hlFenmfAVbpWeup2jryCw==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "Apache-2.0 AND LGPL-3.0-or-later",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      }
+    },
+    "node_modules/@jridgewell/gen-mapping": {
+      "version": "0.3.13",
+      "resolved": "https://registry.npmjs.org/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz",
+      "integrity": "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@jridgewell/sourcemap-codec": "^1.5.0",
+        "@jridgewell/trace-mapping": "^0.3.24"
+      }
+    },
+    "node_modules/@jridgewell/remapping": {
+      "version": "2.3.5",
+      "resolved": "https://registry.npmjs.org/@jridgewell/remapping/-/remapping-2.3.5.tgz",
+      "integrity": "sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@jridgewell/gen-mapping": "^0.3.5",
+        "@jridgewell/trace-mapping": "^0.3.24"
+      }
+    },
+    "node_modules/@jridgewell/resolve-uri": {
+      "version": "3.1.2",
+      "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",
+      "integrity": "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.0.0"
+      }
+    },
+    "node_modules/@jridgewell/sourcemap-codec": {
+      "version": "1.6.0",
+      "resolved": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.6.0.tgz",
+      "integrity": "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/@jridgewell/trace-mapping": {
+      "version": "0.3.31",
+      "resolved": "https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.31.tgz",
+      "integrity": "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@jridgewell/resolve-uri": "^3.1.0",
+        "@jridgewell/sourcemap-codec": "^1.4.14"
+      }
+    },
+    "node_modules/@napi-rs/wasm-runtime": {
+      "version": "1.2.5",
+      "resolved": "https://registry.npmjs.org/@napi-rs/wasm-runtime/-/wasm-runtime-1.2.5.tgz",
+      "integrity": "sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==",
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "@tybys/wasm-util": "^0.10.3"
+      },
+      "engines": {
+        "node": "^20.19.0 || ^22.13.0 || >=23.5.0"
+      },
+      "funding": {
+        "type": "github",
+        "url": "https://github.com/sponsors/Brooooooklyn"
+      },
+      "peerDependencies": {
+        "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4",
+        "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4"
+      }
+    },
+    "node_modules/@next/env": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/env/-/env-16.2.6.tgz",
+      "integrity": "sha512-gd8HoHN4ufj73WmR3JmVolrpJR47ILK6LouP5xElPglaVxir6e1a7VzvTvDWkOoPXT9rkkTzyCxBu4yeZfZwcw==",
+      "license": "MIT"
+    },
+    "node_modules/@next/eslint-plugin-next": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/eslint-plugin-next/-/eslint-plugin-next-16.2.6.tgz",
+      "integrity": "sha512-Z8l6o4JWKUl755x4R+wogD86KPeU+Ckw4K+SYG4kHeOJtRenDeK+OSbGcqZpDtbwn9DsJVdir2UxmwXuinUbUw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fast-glob": "3.3.1"
+      }
+    },
+    "node_modules/@next/swc-darwin-arm64": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-darwin-arm64/-/swc-darwin-arm64-16.2.6.tgz",
+      "integrity": "sha512-ZJGkkcNfYgrrMkqOdZ7zoLa1TOy0qpcMfk/z4Mh/FKUz40gVO+HNQWqmLxf67Z5WB64DRp0dhEbyHfel+6sJUg==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-darwin-x64": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-darwin-x64/-/swc-darwin-x64-16.2.6.tgz",
+      "integrity": "sha512-v/YLBHIY132Ced3puBJ7YJKw1lqsCrgcNo2aRJlCEyQrrCeRJlvGlnmxhPxNQI3KE3N1DN5r9TPNPvka3nq5RQ==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-linux-arm64-gnu": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-linux-arm64-gnu/-/swc-linux-arm64-gnu-16.2.6.tgz",
+      "integrity": "sha512-RPOvqlYBbcQjkz9VQQDZ2T2bARIjXZV1KFlt+V2Mr6SW/e4I9fcKsaA0hdyf2FHoTlsV2xnBd5Y912rP/1Ce6w==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-linux-arm64-musl": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-linux-arm64-musl/-/swc-linux-arm64-musl-16.2.6.tgz",
+      "integrity": "sha512-URUTu1+dMkxJsPFgm+OeEvq9wf5sujw0EvgYy80TDGHTSLTnIHeqb0Eu8A3sC95IRgjejQL+kC4mw+4yPxiAXA==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-linux-x64-gnu": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-linux-x64-gnu/-/swc-linux-x64-gnu-16.2.6.tgz",
+      "integrity": "sha512-DOj182mPV8G3UkrayLoREM5YEYI+Dk5wv7Ox9xl1fFibAELEsFD0lDPfHIeILlutMMfdyhlzYPELG3peuKaurw==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-linux-x64-musl": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-linux-x64-musl/-/swc-linux-x64-musl-16.2.6.tgz",
+      "integrity": "sha512-HKQ5SP/V/ub73UvF7n/zeJlxk2kLmtL7Wzrg4WfmkjmNos5onJ2tKu7yZOPdL18A6Svfn3max29ym+ry7NkK4g==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-win32-arm64-msvc": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-win32-arm64-msvc/-/swc-win32-arm64-msvc-16.2.6.tgz",
+      "integrity": "sha512-LZXpTlPyS5v7HhSmnvsLGP3iIYgYOBnc8r8ArlT55sGHV89bR2HlDdBjWQ+PY6SJMmk8TuVGFuxalnP3k/0Dwg==",
+      "cpu": [
+        "arm64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@next/swc-win32-x64-msvc": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/@next/swc-win32-x64-msvc/-/swc-win32-x64-msvc-16.2.6.tgz",
+      "integrity": "sha512-F0+4i0h9J6C4eE3EAPWsoCk7UW/dbzOjyzxY0qnDUOYFu6FFmdZ6l97/XdV3/Nz3VYyO7UWjyEJUXkGqcoXfMA==",
+      "cpu": [
+        "x64"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@nodelib/fs.scandir": {
+      "version": "2.1.5",
+      "resolved": "https://registry.npmjs.org/@nodelib/fs.scandir/-/fs.scandir-2.1.5.tgz",
+      "integrity": "sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@nodelib/fs.stat": "2.0.5",
+        "run-parallel": "^1.1.9"
+      },
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/@nodelib/fs.stat": {
+      "version": "2.0.5",
+      "resolved": "https://registry.npmjs.org/@nodelib/fs.stat/-/fs.stat-2.0.5.tgz",
+      "integrity": "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/@nodelib/fs.walk": {
+      "version": "1.2.8",
+      "resolved": "https://registry.npmjs.org/@nodelib/fs.walk/-/fs.walk-1.2.8.tgz",
+      "integrity": "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@nodelib/fs.scandir": "2.1.5",
+        "fastq": "^1.6.0"
+      },
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/@nolyfill/is-core-module": {
+      "version": "1.0.39",
+      "resolved": "https://registry.npmjs.org/@nolyfill/is-core-module/-/is-core-module-1.0.39.tgz",
+      "integrity": "sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=12.4.0"
+      }
+    },
+    "node_modules/@rtsao/scc": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/@rtsao/scc/-/scc-1.1.0.tgz",
+      "integrity": "sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/@swc/helpers": {
+      "version": "0.5.15",
+      "resolved": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.15.tgz",
+      "integrity": "sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "tslib": "^2.8.0"
+      }
+    },
+    "node_modules/@tailwindcss/node": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/node/-/node-4.1.17.tgz",
+      "integrity": "sha512-csIkHIgLb3JisEFQ0vxr2Y57GUNYh447C8xzwj89U/8fdW8LhProdxvnVH6U8M2Y73QKiTIH+LWbK3V2BBZsAg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@jridgewell/remapping": "^2.3.4",
+        "enhanced-resolve": "^5.18.3",
+        "jiti": "^2.6.1",
+        "lightningcss": "1.30.2",
+        "magic-string": "^0.30.21",
+        "source-map-js": "^1.2.1",
+        "tailwindcss": "4.1.17"
+      }
+    },
+    "node_modules/@tailwindcss/oxide": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide/-/oxide-4.1.17.tgz",
+      "integrity": "sha512-F0F7d01fmkQhsTjXezGBLdrl1KresJTcI3DB8EkScCldyKp3Msz4hub4uyYaVnk88BAS1g5DQjjF6F5qczheLA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 10"
+      },
+      "optionalDependencies": {
+        "@tailwindcss/oxide-android-arm64": "4.1.17",
+        "@tailwindcss/oxide-darwin-arm64": "4.1.17",
+        "@tailwindcss/oxide-darwin-x64": "4.1.17",
+        "@tailwindcss/oxide-freebsd-x64": "4.1.17",
+        "@tailwindcss/oxide-linux-arm-gnueabihf": "4.1.17",
+        "@tailwindcss/oxide-linux-arm64-gnu": "4.1.17",
+        "@tailwindcss/oxide-linux-arm64-musl": "4.1.17",
+        "@tailwindcss/oxide-linux-x64-gnu": "4.1.17",
+        "@tailwindcss/oxide-linux-x64-musl": "4.1.17",
+        "@tailwindcss/oxide-wasm32-wasi": "4.1.17",
+        "@tailwindcss/oxide-win32-arm64-msvc": "4.1.17",
+        "@tailwindcss/oxide-win32-x64-msvc": "4.1.17"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-android-arm64": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-android-arm64/-/oxide-android-arm64-4.1.17.tgz",
+      "integrity": "sha512-BMqpkJHgOZ5z78qqiGE6ZIRExyaHyuxjgrJ6eBO5+hfrfGkuya0lYfw8fRHG77gdTjWkNWEEm+qeG2cDMxArLQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "android"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-darwin-arm64": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-darwin-arm64/-/oxide-darwin-arm64-4.1.17.tgz",
+      "integrity": "sha512-EquyumkQweUBNk1zGEU/wfZo2qkp/nQKRZM8bUYO0J+Lums5+wl2CcG1f9BgAjn/u9pJzdYddHWBiFXJTcxmOg==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-darwin-x64": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-darwin-x64/-/oxide-darwin-x64-4.1.17.tgz",
+      "integrity": "sha512-gdhEPLzke2Pog8s12oADwYu0IAw04Y2tlmgVzIN0+046ytcgx8uZmCzEg4VcQh+AHKiS7xaL8kGo/QTiNEGRog==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-freebsd-x64": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-freebsd-x64/-/oxide-freebsd-x64-4.1.17.tgz",
+      "integrity": "sha512-hxGS81KskMxML9DXsaXT1H0DyA+ZBIbyG/sSAjWNe2EDl7TkPOBI42GBV3u38itzGUOmFfCzk1iAjDXds8Oh0g==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "freebsd"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-linux-arm-gnueabihf": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-linux-arm-gnueabihf/-/oxide-linux-arm-gnueabihf-4.1.17.tgz",
+      "integrity": "sha512-k7jWk5E3ldAdw0cNglhjSgv501u7yrMf8oeZ0cElhxU6Y2o7f8yqelOp3fhf7evjIS6ujTI3U8pKUXV2I4iXHQ==",
+      "cpu": [
+        "arm"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-linux-arm64-gnu": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-linux-arm64-gnu/-/oxide-linux-arm64-gnu-4.1.17.tgz",
+      "integrity": "sha512-HVDOm/mxK6+TbARwdW17WrgDYEGzmoYayrCgmLEw7FxTPLcp/glBisuyWkFz/jb7ZfiAXAXUACfyItn+nTgsdQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-linux-arm64-musl": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-linux-arm64-musl/-/oxide-linux-arm64-musl-4.1.17.tgz",
+      "integrity": "sha512-HvZLfGr42i5anKtIeQzxdkw/wPqIbpeZqe7vd3V9vI3RQxe3xU1fLjss0TjyhxWcBaipk7NYwSrwTwK1hJARMg==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-linux-x64-gnu": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-linux-x64-gnu/-/oxide-linux-x64-gnu-4.1.17.tgz",
+      "integrity": "sha512-M3XZuORCGB7VPOEDH+nzpJ21XPvK5PyjlkSFkFziNHGLc5d6g3di2McAAblmaSUNl8IOmzYwLx9NsE7bplNkwQ==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-linux-x64-musl": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-linux-x64-musl/-/oxide-linux-x64-musl-4.1.17.tgz",
+      "integrity": "sha512-k7f+pf9eXLEey4pBlw+8dgfJHY4PZ5qOUFDyNf7SI6lHjQ9Zt7+NcscjpwdCEbYi6FI5c2KDTDWyf2iHcCSyyQ==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-wasm32-wasi": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-wasm32-wasi/-/oxide-wasm32-wasi-4.1.17.tgz",
+      "integrity": "sha512-cEytGqSSoy7zK4JRWiTCx43FsKP/zGr0CsuMawhH67ONlH+T79VteQeJQRO/X7L0juEUA8ZyuYikcRBf0vsxhg==",
+      "bundleDependencies": [
+        "@napi-rs/wasm-runtime",
+        "@emnapi/core",
+        "@emnapi/runtime",
+        "@tybys/wasm-util",
+        "@emnapi/wasi-threads",
+        "tslib"
+      ],
+      "cpu": [
+        "wasm32"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "@emnapi/core": "^1.6.0",
+        "@emnapi/runtime": "^1.6.0",
+        "@emnapi/wasi-threads": "^1.1.0",
+        "@napi-rs/wasm-runtime": "^1.0.7",
+        "@tybys/wasm-util": "^0.10.1",
+        "tslib": "^2.4.0"
+      },
+      "engines": {
+        "node": ">=14.0.0"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-win32-arm64-msvc": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-win32-arm64-msvc/-/oxide-win32-arm64-msvc-4.1.17.tgz",
+      "integrity": "sha512-JU5AHr7gKbZlOGvMdb4722/0aYbU+tN6lv1kONx0JK2cGsh7g148zVWLM0IKR3NeKLv+L90chBVYcJ8uJWbC9A==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/oxide-win32-x64-msvc": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/oxide-win32-x64-msvc/-/oxide-win32-x64-msvc-4.1.17.tgz",
+      "integrity": "sha512-SKWM4waLuqx0IH+FMDUw6R66Hu4OuTALFgnleKbqhgGU30DY20NORZMZUKgLRjQXNN2TLzKvh48QXTig4h4bGw==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 10"
+      }
+    },
+    "node_modules/@tailwindcss/postcss": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/@tailwindcss/postcss/-/postcss-4.1.17.tgz",
+      "integrity": "sha512-+nKl9N9mN5uJ+M7dBOOCzINw94MPstNR/GtIhz1fpZysxL/4a+No64jCBD6CPN+bIHWFx3KWuu8XJRrj/572Dw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@alloc/quick-lru": "^5.2.0",
+        "@tailwindcss/node": "4.1.17",
+        "@tailwindcss/oxide": "4.1.17",
+        "postcss": "^8.4.41",
+        "tailwindcss": "4.1.17"
+      }
+    },
+    "node_modules/@tybys/wasm-util": {
+      "version": "0.10.4",
+      "resolved": "https://registry.npmjs.org/@tybys/wasm-util/-/wasm-util-0.10.4.tgz",
+      "integrity": "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==",
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "tslib": "^2.4.0"
+      }
+    },
+    "node_modules/@types/estree": {
+      "version": "1.0.9",
+      "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz",
+      "integrity": "sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/@types/json-schema": {
+      "version": "7.0.15",
+      "resolved": "https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz",
+      "integrity": "sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/@types/json5": {
+      "version": "0.0.29",
+      "resolved": "https://registry.npmjs.org/@types/json5/-/json5-0.0.29.tgz",
+      "integrity": "sha512-dRLjCWHYg4oaA77cxO64oO+7JwCwnIzkZPdrrC71jQmQtlhM556pwKo5bUzqvZndkVbeFLIIi+9TC40JNF5hNQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/@types/node": {
+      "version": "22.19.15",
+      "resolved": "https://registry.npmjs.org/@types/node/-/node-22.19.15.tgz",
+      "integrity": "sha512-F0R/h2+dsy5wJAUe3tAU6oqa2qbWY5TpNfL/RGmo1y38hiyO1w3x2jPtt76wmuaJI4DQnOBu21cNXQ2STIUUWg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "undici-types": "~6.21.0"
+      }
+    },
+    "node_modules/@types/react": {
+      "version": "19.2.14",
+      "resolved": "https://registry.npmjs.org/@types/react/-/react-19.2.14.tgz",
+      "integrity": "sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w==",
+      "devOptional": true,
+      "license": "MIT",
+      "dependencies": {
+        "csstype": "^3.2.2"
+      }
+    },
+    "node_modules/@types/react-dom": {
+      "version": "19.2.3",
+      "resolved": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz",
+      "integrity": "sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==",
+      "dev": true,
+      "license": "MIT",
+      "peerDependencies": {
+        "@types/react": "^19.2.0"
+      }
+    },
+    "node_modules/@typescript-eslint/eslint-plugin": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/eslint-plugin/-/eslint-plugin-8.71.1.tgz",
+      "integrity": "sha512-nNlBf6HuotqMgZvSkWD5hNdemiBIxQ2NmrlgfcUIeZRs+BbakjscCQRq/Hb74EFVnFiSWWdL12JruqwBy3ERDw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@eslint-community/regexpp": "^4.12.2",
+        "@typescript-eslint/scope-manager": "8.71.1",
+        "@typescript-eslint/type-utils": "8.71.1",
+        "@typescript-eslint/utils": "8.71.1",
+        "@typescript-eslint/visitor-keys": "8.71.1",
+        "ignore": "^7.0.5",
+        "natural-compare": "^1.4.0",
+        "ts-api-utils": "^2.5.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "@typescript-eslint/parser": "^8.71.1",
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/eslint-plugin/node_modules/ignore": {
+      "version": "7.0.12",
+      "resolved": "https://registry.npmjs.org/ignore/-/ignore-7.0.12.tgz",
+      "integrity": "sha512-/8UvqAPU9DGTI9k4mxtf49U37Isfwr8Uts96+SBHIkFxPJnHS0Ew4f00sM4Scd8V8EjM0jUNtVDdv1kPdt35lg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 4"
+      }
+    },
+    "node_modules/@typescript-eslint/parser": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.71.1.tgz",
+      "integrity": "sha512-oM/5sAqz/l1v/zYK1qTOPrn2+JIrBGC1V6uNYucRO5gh6eT9vWJ/RhPbGE59byvZEUQ4VP6XkLBaS5Jti5jpvw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/scope-manager": "8.71.1",
+        "@typescript-eslint/types": "8.71.1",
+        "@typescript-eslint/typescript-estree": "8.71.1",
+        "@typescript-eslint/visitor-keys": "8.71.1",
+        "debug": "^4.4.3"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/project-service": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/project-service/-/project-service-8.71.1.tgz",
+      "integrity": "sha512-Oijc9RUsohHjncg6iGi7gCtjnEjYt9FWv9u6ygK8uKcHK5eLjLAkqERQ9BaytbpceOFdk6kifPCS/zAZE+A99g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/tsconfig-utils": "^8.71.1",
+        "@typescript-eslint/types": "^8.71.1",
+        "debug": "^4.4.3"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/scope-manager": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/scope-manager/-/scope-manager-8.71.1.tgz",
+      "integrity": "sha512-1YUDZXdTnXLlob03SFHBipdyMBsDVm7zoSz0ytTJ39dk5J1TgsTK03VlR/dLXG/RLLUrPcYbD4rp23BmHxHP0w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/types": "8.71.1",
+        "@typescript-eslint/visitor-keys": "8.71.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      }
+    },
+    "node_modules/@typescript-eslint/tsconfig-utils": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/tsconfig-utils/-/tsconfig-utils-8.71.1.tgz",
+      "integrity": "sha512-oTvkml5SxXhgg+WWKhod5qWQICDXtOB+/Hi9VdPKFAANJ2b7YOgMffgvzXuqog7R6A/JtrzRf128dsxummyWhg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/type-utils": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/type-utils/-/type-utils-8.71.1.tgz",
+      "integrity": "sha512-kH3t3jZCYv2PZSBEWPKTariLrCaoF1CLoPitYFBJOhAGEwWnSRAtGEifrfrpBa4K9JlwWNZotgA5w3/wLSk/FQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/types": "8.71.1",
+        "@typescript-eslint/typescript-estree": "8.71.1",
+        "@typescript-eslint/utils": "8.71.1",
+        "debug": "^4.4.3",
+        "ts-api-utils": "^2.5.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/types": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/types/-/types-8.71.1.tgz",
+      "integrity": "sha512-ybYnPTUwg3VQQOFEiBPLs8Jxl1ry2vXdn1kVKguomBbvxpetdu3MKTNDqFNUrlG8ylP9MpZosmXMFYlGQHk1oQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      }
+    },
+    "node_modules/@typescript-eslint/typescript-estree": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/typescript-estree/-/typescript-estree-8.71.1.tgz",
+      "integrity": "sha512-pSKSEK1JJpHs6KiKVtABCE4iJK5d7FLFzDXQNBQ2oRY7LEd3UwOt3TZemTgu9syTIf56dJWlTn/pdmrO9oKUXQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/project-service": "8.71.1",
+        "@typescript-eslint/tsconfig-utils": "8.71.1",
+        "@typescript-eslint/types": "8.71.1",
+        "@typescript-eslint/visitor-keys": "8.71.1",
+        "debug": "^4.4.3",
+        "minimatch": "^10.2.2",
+        "semver": "^7.7.3",
+        "tinyglobby": "^0.2.15",
+        "ts-api-utils": "^2.5.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/typescript-estree/node_modules/balanced-match": {
+      "version": "4.0.4",
+      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-4.0.4.tgz",
+      "integrity": "sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": "18 || 20 || >=22"
+      }
+    },
+    "node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion": {
+      "version": "5.0.12",
+      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.12.tgz",
+      "integrity": "sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "balanced-match": "^4.0.2"
+      },
+      "engines": {
+        "node": "20 || >=22"
+      }
+    },
+    "node_modules/@typescript-eslint/typescript-estree/node_modules/minimatch": {
+      "version": "10.2.6",
+      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-10.2.6.tgz",
+      "integrity": "sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==",
+      "dev": true,
+      "license": "BlueOak-1.0.0",
+      "dependencies": {
+        "brace-expansion": "^5.0.8"
+      },
+      "engines": {
+        "node": "18 || 20 || >=22"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/isaacs"
+      }
+    },
+    "node_modules/@typescript-eslint/typescript-estree/node_modules/semver": {
+      "version": "7.8.5",
+      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==",
+      "dev": true,
+      "license": "ISC",
+      "bin": {
+        "semver": "bin/semver.js"
+      },
+      "engines": {
+        "node": ">=10"
+      }
+    },
+    "node_modules/@typescript-eslint/utils": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/utils/-/utils-8.71.1.tgz",
+      "integrity": "sha512-CBjT6gfAz3DW2j9Q4moFnqt208Aq+506sVGXfpRcyAeqn0EpayL0mjdWoCO2t3RC7GewNrFxdeehuEaPg6DMzQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@eslint-community/eslint-utils": "^4.9.1",
+        "@typescript-eslint/scope-manager": "8.71.1",
+        "@typescript-eslint/types": "8.71.1",
+        "@typescript-eslint/typescript-estree": "8.71.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/@typescript-eslint/visitor-keys": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/@typescript-eslint/visitor-keys/-/visitor-keys-8.71.1.tgz",
+      "integrity": "sha512-0GxiUGqMU0qXJt58cBsiG3DP8lUmBaFo2vChtUX+CT7PnR3v/VGLLrzVP4K9r1lNiZXjHYefMBbPunplr09v6w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/types": "8.71.1",
+        "eslint-visitor-keys": "^5.0.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      }
+    },
+    "node_modules/@typescript-eslint/visitor-keys/node_modules/eslint-visitor-keys": {
+      "version": "5.0.1",
+      "resolved": "https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-5.0.1.tgz",
+      "integrity": "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": "^20.19.0 || ^22.13.0 || >=24"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/@unrs/resolver-binding-android-arm-eabi": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-android-arm-eabi/-/resolver-binding-android-arm-eabi-1.12.2.tgz",
+      "integrity": "sha512-g5T90pqg1bo/7mytQx6F4iBNC0Wsh9cu+z9veDbFjc7HjpesJFWD7QMS0NGStXM075+7dJPPVvBbpZlnrdpi/w==",
+      "cpu": [
+        "arm"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "android"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-android-arm64": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-android-arm64/-/resolver-binding-android-arm64-1.12.2.tgz",
+      "integrity": "sha512-YGCRZv/9GLhwmz6mYDeTsm/92BAyR28l6c2ReweVW5pWgfsitWLY8upvfRlGdoyD8HjeTHSYJWyZGD4KJA/nFQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "android"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-darwin-arm64": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-darwin-arm64/-/resolver-binding-darwin-arm64-1.12.2.tgz",
+      "integrity": "sha512-u9DiNT1auQMO20A9SyTuG3wUgQWB9Z7KjAg0uFuCDR1FsAY8A0CG2S6JpHS1xwm/w1G08bjXZDcyOCjv1WAm2w==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-darwin-x64": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-darwin-x64/-/resolver-binding-darwin-x64-1.12.2.tgz",
+      "integrity": "sha512-f7rPLi/T1HVKZu/u6t87lroib16n8vrSzcyxI7lg4BGO9UF26KhQL44sd9eOUgrTYhvRXtWOIZT5PejdPyJfUA==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-freebsd-x64": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-freebsd-x64/-/resolver-binding-freebsd-x64-1.12.2.tgz",
+      "integrity": "sha512-BpcOjWCJub6nRZUS2zA20pmLvjtqAtGejETaIyRLiZiQf++cbrjltLA5NN/xaXfqeOBOSlMFbemIl5/S5tljmg==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "freebsd"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-arm-gnueabihf": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-arm-gnueabihf/-/resolver-binding-linux-arm-gnueabihf-1.12.2.tgz",
+      "integrity": "sha512-vZTDvdSISZjJx66OzJqtsOhzifbqRjbmI1Mnu49fQDwog5GtDI4QidRiEAYbZCRj9C8YZEW+3ZjqsyS9GR4k2A==",
+      "cpu": [
+        "arm"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-arm-musleabihf": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-arm-musleabihf/-/resolver-binding-linux-arm-musleabihf-1.12.2.tgz",
+      "integrity": "sha512-BiPI+IrIlwcW4nLLMM21+B1dFPzd55yAVgVGrdgDjNef+ch03GdxrcyaIz8X9SsQirh/kCQ7mviyWlMxdh2D7g==",
+      "cpu": [
+        "arm"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-arm64-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-arm64-gnu/-/resolver-binding-linux-arm64-gnu-1.12.2.tgz",
+      "integrity": "sha512-zJc0H99FEPoFfSrNpa91HYfxzfAJCr502oxNK1cfdC9hlaFI43RT+JFCann9JUgZmLzzntChHyn13Sgn9ljHNg==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-arm64-musl": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-arm64-musl/-/resolver-binding-linux-arm64-musl-1.12.2.tgz",
+      "integrity": "sha512-KQ3Lki6l+Pz1k/eBipN41ES+YUK30beLGb9YqcB1O542cyLCNE6GaxrfcY3T6EezmGGk84wb5XyO9loTM9tkcA==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-loong64-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-loong64-gnu/-/resolver-binding-linux-loong64-gnu-1.12.2.tgz",
+      "integrity": "sha512-3SJGEh1DborhG6pyxvhPzCT4bbSIVihsvgJc13P1bHG7KLdNDaF9T3gsTwFc7Jw/5Y5/iWOjkEx7Zy0NvCGX3Q==",
+      "cpu": [
+        "loong64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-loong64-musl": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-loong64-musl/-/resolver-binding-linux-loong64-musl-1.12.2.tgz",
+      "integrity": "sha512-jiuG/Obbel7uw1PwHNFfrkiKhLAF6mnyZ6aWlOAVN9WqKm8v0OFGnciJIHu8+CMvXLQ8AD51LPzAoUfT21D5Ew==",
+      "cpu": [
+        "loong64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-ppc64-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-ppc64-gnu/-/resolver-binding-linux-ppc64-gnu-1.12.2.tgz",
+      "integrity": "sha512-q7xRvVpmcfeL+LlZg8Pbbo6QaTZwDU5BaGZbwfhkEsXJn3Was8xYfE0RBH266xZt0rM6B7i8xAYIvjthuUIWHg==",
+      "cpu": [
+        "ppc64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-riscv64-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-riscv64-gnu/-/resolver-binding-linux-riscv64-gnu-1.12.2.tgz",
+      "integrity": "sha512-0CVdx6lcnT3Q9inOH8tsMIOJ6ImndllMjqJHg8RLVdB7Vq4SfkEXl9mCSsVNuNA4MCYycRicCUxPCabVHJRr6A==",
+      "cpu": [
+        "riscv64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-riscv64-musl": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-riscv64-musl/-/resolver-binding-linux-riscv64-musl-1.12.2.tgz",
+      "integrity": "sha512-iOwlRo9vnp6R6ohHQS11n0NnfdXx/omhkocmIfaPRpQhKZ+3BDMkkdRVh53qjkFkpPddf+FETA28NwGN7l5l+w==",
+      "cpu": [
+        "riscv64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-s390x-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-s390x-gnu/-/resolver-binding-linux-s390x-gnu-1.12.2.tgz",
+      "integrity": "sha512-HYJtLfXq94q8iZNFT1lknx258wlkkWhZeUXJRqzKBBUJ00CvZ+N33zgbCqimLjsyw5Va6uUxhVa12mI+kaveEw==",
+      "cpu": [
+        "s390x"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-x64-gnu": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-x64-gnu/-/resolver-binding-linux-x64-gnu-1.12.2.tgz",
+      "integrity": "sha512-mPsUhunKKDih5O96Y6enDQyHc1SqBPlY1E/SfMWDM3EdJ95Z9CArPeCVwCCqbP45ljvivdEk8Fxn+SIb1rDAJQ==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-linux-x64-musl": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-linux-x64-musl/-/resolver-binding-linux-x64-musl-1.12.2.tgz",
+      "integrity": "sha512-azrt6+5ydLd8Vt210AAFis/lZevSfPw93EJRIJG+xPu4WCJ8K0kppCTpMyLPcKT7H15M4Jnt2tMp5bOvCkRC6A==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-openharmony-arm64": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-openharmony-arm64/-/resolver-binding-openharmony-arm64-1.12.2.tgz",
+      "integrity": "sha512-YZ9hP4O0X9PQb8eO980qmLNGH4zT3I9+SZTdt0Pr0YyuGQhYKoOZkV02VzrzyOZJ5xIJ3UFIenKkUkGg8GjgWQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "openharmony"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-wasm32-wasi": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-wasm32-wasi/-/resolver-binding-wasm32-wasi-1.12.2.tgz",
+      "integrity": "sha512-tYFDIkMxSflfEc/h92ZWNsZlHSwgimbNHSO3PL2JWQHfCuC2q316jMyYU9TIWZsFK2bQwyK5VAdYgn8ygPj69A==",
+      "cpu": [
+        "wasm32"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "@emnapi/core": "1.10.0",
+        "@emnapi/runtime": "1.10.0",
+        "@napi-rs/wasm-runtime": "^1.1.4"
+      },
+      "engines": {
+        "node": ">=14.0.0"
+      }
+    },
+    "node_modules/@unrs/resolver-binding-wasm32-wasi/node_modules/@emnapi/runtime": {
+      "version": "1.10.0",
+      "resolved": "https://registry.npmjs.org/@emnapi/runtime/-/runtime-1.10.0.tgz",
+      "integrity": "sha512-ewvYlk86xUoGI0zQRNq/mC+16R1QeDlKQy21Ki3oSYXNgLb45GV1P6A0M+/s6nyCuNDqe5VpaY84BzXGwVbwFA==",
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "dependencies": {
+        "tslib": "^2.4.0"
+      }
+    },
+    "node_modules/@unrs/resolver-binding-win32-arm64-msvc": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-arm64-msvc/-/resolver-binding-win32-arm64-msvc-1.12.2.tgz",
+      "integrity": "sha512-qzNyg3xL0VPQmCaUh+N5jSitce6k+uCBfMDesWRnlULOZaqUkaJ0ybdT+UqlAWJoQjuqfIU/0Ptx9bteN4D82g==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-win32-ia32-msvc": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-ia32-msvc/-/resolver-binding-win32-ia32-msvc-1.12.2.tgz",
+      "integrity": "sha512-WD9sY00OfpHVGfsnHZoA8jVT+esS/Bg8z8jzxp5BnDCjjwsuKsPQrzswwpFy4J1AUJbXPRfkpcX0mXrzeXW79g==",
+      "cpu": [
+        "ia32"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ]
+    },
+    "node_modules/@unrs/resolver-binding-win32-x64-msvc": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/@unrs/resolver-binding-win32-x64-msvc/-/resolver-binding-win32-x64-msvc-1.12.2.tgz",
+      "integrity": "sha512-nAB74NfSNKknqQ1RrYj6uz8FcXEomu/MATJZxh/x+BArzN2U3JbOYC0APYzUIGhVY3m5hRxA8VPNdPBoG8txlA==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ]
+    },
+    "node_modules/acorn": {
+      "version": "8.19.0",
+      "resolved": "https://registry.npmjs.org/acorn/-/acorn-8.19.0.tgz",
+      "integrity": "sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "acorn": "bin/acorn"
+      },
+      "engines": {
+        "node": ">=0.4.0"
+      }
+    },
+    "node_modules/acorn-jsx": {
+      "version": "5.3.2",
+      "resolved": "https://registry.npmjs.org/acorn-jsx/-/acorn-jsx-5.3.2.tgz",
+      "integrity": "sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==",
+      "dev": true,
+      "license": "MIT",
+      "peerDependencies": {
+        "acorn": "^6.0.0 || ^7.0.0 || ^8.0.0"
+      }
+    },
+    "node_modules/adler-32": {
+      "version": "1.3.1",
+      "resolved": "https://registry.npmjs.org/adler-32/-/adler-32-1.3.1.tgz",
+      "integrity": "sha512-ynZ4w/nUUv5rrsR8UUGoe1VC9hZj6V5hU9Qw1HlMDJGEJw5S7TfTErWTjMys6M7vr0YWcPqs3qAr4ss0nDfP+A==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/ajv": {
+      "version": "6.15.0",
+      "resolved": "https://registry.npmjs.org/ajv/-/ajv-6.15.0.tgz",
+      "integrity": "sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fast-deep-equal": "^3.1.1",
+        "fast-json-stable-stringify": "^2.0.0",
+        "json-schema-traverse": "^0.4.1",
+        "uri-js": "^4.2.2"
+      },
+      "funding": {
+        "type": "github",
+        "url": "https://github.com/sponsors/epoberezkin"
+      }
+    },
+    "node_modules/ansi-styles": {
+      "version": "4.3.0",
+      "resolved": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-4.3.0.tgz",
+      "integrity": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "color-convert": "^2.0.1"
+      },
+      "engines": {
+        "node": ">=8"
+      },
+      "funding": {
+        "url": "https://github.com/chalk/ansi-styles?sponsor=1"
+      }
+    },
+    "node_modules/argparse": {
+      "version": "2.0.1",
+      "resolved": "https://registry.npmjs.org/argparse/-/argparse-2.0.1.tgz",
+      "integrity": "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==",
+      "dev": true,
+      "license": "Python-2.0"
+    },
+    "node_modules/aria-query": {
+      "version": "5.3.2",
+      "resolved": "https://registry.npmjs.org/aria-query/-/aria-query-5.3.2.tgz",
+      "integrity": "sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/array-buffer-byte-length": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/array-buffer-byte-length/-/array-buffer-byte-length-1.0.2.tgz",
+      "integrity": "sha512-LHE+8BuR7RYGDKvnrmcuSq3tDcKv9OFEXQt/HpbZhY7V6h0zlUXutnAD82GiFx9rdieCMjkvtcsPqBwgUl1Iiw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "is-array-buffer": "^3.0.5"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array-includes": {
+      "version": "3.2.0",
+      "resolved": "https://registry.npmjs.org/array-includes/-/array-includes-3.2.0.tgz",
+      "integrity": "sha512-VXY5eFRarnXcYxwBjJzPmEhH55+rmP79/+ueDhi0F+TuqfHCItagIHqxeUZrmgrOPa31QTh9H85DjX3FfJ0FTg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.24.2",
+        "es-object-atoms": "^1.1.2",
+        "es-shim-unscopables": "^1.1.0",
+        "is-string": "^1.1.1",
+        "math-intrinsics": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array.prototype.findlast": {
+      "version": "1.2.5",
+      "resolved": "https://registry.npmjs.org/array.prototype.findlast/-/array.prototype.findlast-1.2.5.tgz",
+      "integrity": "sha512-CVvd6FHg1Z3POpBLxO6E6zr+rSKEQ9L6rZHAaY7lLfhKsWYUBBOuMs0e9o24oopj6H+geRCX0YJ+TJLBK2eHyQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.2",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.0.0",
+        "es-shim-unscopables": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array.prototype.findlastindex": {
+      "version": "1.2.6",
+      "resolved": "https://registry.npmjs.org/array.prototype.findlastindex/-/array.prototype.findlastindex-1.2.6.tgz",
+      "integrity": "sha512-F/TKATkzseUExPlfvmwQKGITM3DGTK+vkAsCZoDc5daVygbJBnjEUCbgkAvVFsgfXfX4YIqZ/27G3k3tdXrTxQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.9",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.1",
+        "es-shim-unscopables": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array.prototype.flat": {
+      "version": "1.3.3",
+      "resolved": "https://registry.npmjs.org/array.prototype.flat/-/array.prototype.flat-1.3.3.tgz",
+      "integrity": "sha512-rwG/ja1neyLqCuGZ5YYrznA62D4mZXg0i1cIskIUKSiqF3Cje9/wXAls9B9s1Wa2fomMsIv8czB8jZcPmxCXFg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.5",
+        "es-shim-unscopables": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array.prototype.flatmap": {
+      "version": "1.3.3",
+      "resolved": "https://registry.npmjs.org/array.prototype.flatmap/-/array.prototype.flatmap-1.3.3.tgz",
+      "integrity": "sha512-Y7Wt51eKJSyi80hFrJCePGGNo5ktJCslFuboqJsbf57CCPcm5zztluPlc4/aD8sWsKvlwatezpV4U1efk8kpjg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.5",
+        "es-shim-unscopables": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/array.prototype.tosorted": {
+      "version": "1.1.4",
+      "resolved": "https://registry.npmjs.org/array.prototype.tosorted/-/array.prototype.tosorted-1.1.4.tgz",
+      "integrity": "sha512-p6Fx8B7b7ZhL/gmUsAy0D15WhvDccw3mnGNbZpi3pmeJdxtWsj2jEaI4Y6oo3XiHfzuSgPwKc04MYt6KgvC/wA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.3",
+        "es-errors": "^1.3.0",
+        "es-shim-unscopables": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/arraybuffer.prototype.slice": {
+      "version": "1.0.4",
+      "resolved": "https://registry.npmjs.org/arraybuffer.prototype.slice/-/arraybuffer.prototype.slice-1.0.4.tgz",
+      "integrity": "sha512-BNoCY6SXXPQ7gF2opIP4GBE+Xw7U+pHMYKuzjgCN3GwiaIR09UUeKfheyIry77QtrCBlC0KK0q5/TER/tYh3PQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "array-buffer-byte-length": "^1.0.1",
+        "call-bind": "^1.0.8",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.5",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.6",
+        "is-array-buffer": "^3.0.4"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/ast-types-flow": {
+      "version": "0.0.8",
+      "resolved": "https://registry.npmjs.org/ast-types-flow/-/ast-types-flow-0.0.8.tgz",
+      "integrity": "sha512-OH/2E5Fg20h2aPrbe+QL8JZQFko0YZaF+j4mnQ7BGhfavO7OpSLa8a0y9sBwomHdSbkhTS8TQNayBfnW5DwbvQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/async-function": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/async-function/-/async-function-1.0.0.tgz",
+      "integrity": "sha512-hsU18Ae8CDTR6Kgu9DYf0EbCr/a5iGL0rytQDobUcdpYOKokk8LEjVphnXkDkgpi0wYVsqrXuP0bZxJaTqdgoA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/available-typed-arrays": {
+      "version": "1.0.7",
+      "resolved": "https://registry.npmjs.org/available-typed-arrays/-/available-typed-arrays-1.0.7.tgz",
+      "integrity": "sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "possible-typed-array-names": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/axe-core": {
+      "version": "4.14.0",
+      "resolved": "https://registry.npmjs.org/axe-core/-/axe-core-4.14.0.tgz",
+      "integrity": "sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==",
+      "dev": true,
+      "license": "MPL-2.0",
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/axobject-query": {
+      "version": "4.1.0",
+      "resolved": "https://registry.npmjs.org/axobject-query/-/axobject-query-4.1.0.tgz",
+      "integrity": "sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/balanced-match": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz",
+      "integrity": "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/baseline-browser-mapping": {
+      "version": "2.11.27",
+      "resolved": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.11.27.tgz",
+      "integrity": "sha512-ElY12DaROGuan+lMmZ8Cvo/ZUbXPe7Enc/9VU/b1T3Kp4dwytRcNdR8DoSJN5SNJT/CuvcCA0DHDVmMOCePdRQ==",
+      "license": "Apache-2.0",
+      "bin": {
+        "baseline-browser-mapping": "dist/cli.cjs"
+      },
+      "engines": {
+        "node": ">=6.0.0"
+      }
+    },
+    "node_modules/brace-expansion": {
+      "version": "1.1.21",
+      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.21.tgz",
+      "integrity": "sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "balanced-match": "^1.0.0",
+        "concat-map": "0.0.1"
+      }
+    },
+    "node_modules/braces": {
+      "version": "3.0.3",
+      "resolved": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
+      "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fill-range": "^7.1.1"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/browserslist": {
+      "version": "4.29.3",
+      "resolved": "https://registry.npmjs.org/browserslist/-/browserslist-4.29.3.tgz",
+      "integrity": "sha512-1R4kiYKXGViqEN0CnoDrXc1StD9niAwu+j2dukWzrD4bJgsD4lDmEp0CRbc6E/vYJIfTHwPmwyaKtVSudICdPA==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "opencollective",
+          "url": "https://opencollective.com/browserslist"
+        },
+        {
+          "type": "tidelift",
+          "url": "https://tidelift.com/funding/github/npm/browserslist"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "baseline-browser-mapping": "^2.11.26",
+        "caniuse-lite": "^1.0.30001813",
+        "electron-to-chromium": "^1.5.439",
+        "node-releases": "^2.0.57",
+        "update-browserslist-db": "^1.3.3"
+      },
+      "bin": {
+        "browserslist": "cli.js"
+      },
+      "engines": {
+        "node": "^6 || ^7 || ^8 || ^9 || ^10 || ^11 || ^12 || >=13.7"
+      }
+    },
+    "node_modules/call-bind": {
+      "version": "1.0.9",
+      "resolved": "https://registry.npmjs.org/call-bind/-/call-bind-1.0.9.tgz",
+      "integrity": "sha512-a/hy+pNsFUTR+Iz8TCJvXudKVLAnz/DyeSUo10I5yvFDQJBFU2s9uqQpoSrJlroHUKoKqzg+epxyP9lqFdzfBQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.2",
+        "es-define-property": "^1.0.1",
+        "get-intrinsic": "^1.3.0",
+        "set-function-length": "^1.2.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/call-bind-apply-helpers": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz",
+      "integrity": "sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "function-bind": "^1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/call-bound": {
+      "version": "1.0.4",
+      "resolved": "https://registry.npmjs.org/call-bound/-/call-bound-1.0.4.tgz",
+      "integrity": "sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.2",
+        "get-intrinsic": "^1.3.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/callsites": {
+      "version": "3.1.0",
+      "resolved": "https://registry.npmjs.org/callsites/-/callsites-3.1.0.tgz",
+      "integrity": "sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/caniuse-lite": {
+      "version": "1.0.30001815",
+      "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001815.tgz",
+      "integrity": "sha512-uDybUEyfgbyJJ93J1vikTylBX31AkdVYeVPeffMQpf8XN7hSfr0oZOn4VFOIMNvtU5+rHvC5Udg2TgtJKHm23Q==",
+      "funding": [
+        {
+          "type": "opencollective",
+          "url": "https://opencollective.com/browserslist"
+        },
+        {
+          "type": "tidelift",
+          "url": "https://tidelift.com/funding/github/npm/caniuse-lite"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "CC-BY-4.0"
+    },
+    "node_modules/cfb": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/cfb/-/cfb-1.2.2.tgz",
+      "integrity": "sha512-KfdUZsSOw19/ObEWasvBP/Ac4reZvAGauZhs6S/gqNhXhI7cKwvlH7ulj+dOEYnca4bm4SGo8C1bTAQvnTjgQA==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "adler-32": "~1.3.0",
+        "crc-32": "~1.2.0"
+      },
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/chalk": {
+      "version": "4.1.2",
+      "resolved": "https://registry.npmjs.org/chalk/-/chalk-4.1.2.tgz",
+      "integrity": "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ansi-styles": "^4.1.0",
+        "supports-color": "^7.1.0"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/chalk/chalk?sponsor=1"
+      }
+    },
+    "node_modules/client-only": {
+      "version": "0.0.1",
+      "resolved": "https://registry.npmjs.org/client-only/-/client-only-0.0.1.tgz",
+      "integrity": "sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==",
+      "license": "MIT"
+    },
+    "node_modules/clsx": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/clsx/-/clsx-2.1.1.tgz",
+      "integrity": "sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/codepage": {
+      "version": "1.15.0",
+      "resolved": "https://registry.npmjs.org/codepage/-/codepage-1.15.0.tgz",
+      "integrity": "sha512-3g6NUTPd/YtuuGrhMnOMRjFc+LJw/bnMp3+0r/Wcz3IXUuCosKRJvMphm5+Q+bvTVGcJJuRvVLuYba+WojaFaA==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/color-convert": {
+      "version": "2.0.1",
+      "resolved": "https://registry.npmjs.org/color-convert/-/color-convert-2.0.1.tgz",
+      "integrity": "sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "color-name": "~1.1.4"
+      },
+      "engines": {
+        "node": ">=7.0.0"
+      }
+    },
+    "node_modules/color-name": {
+      "version": "1.1.4",
+      "resolved": "https://registry.npmjs.org/color-name/-/color-name-1.1.4.tgz",
+      "integrity": "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/concat-map": {
+      "version": "0.0.1",
+      "resolved": "https://registry.npmjs.org/concat-map/-/concat-map-0.0.1.tgz",
+      "integrity": "sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/convert-source-map": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/convert-source-map/-/convert-source-map-2.0.0.tgz",
+      "integrity": "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/crc-32": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/crc-32/-/crc-32-1.2.2.tgz",
+      "integrity": "sha512-ROmzCKrTnOwybPcJApAA6WBWij23HVfGVNKqqrZpuyZOHqK2CwHSvpGuyt/UNNvaIjEd8X5IFGp4Mh+Ie1IHJQ==",
+      "license": "Apache-2.0",
+      "bin": {
+        "crc32": "bin/crc32.njs"
+      },
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/cross-spawn": {
+      "version": "7.0.6",
+      "resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",
+      "integrity": "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "path-key": "^3.1.0",
+        "shebang-command": "^2.0.0",
+        "which": "^2.0.1"
+      },
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/csstype": {
+      "version": "3.2.3",
+      "resolved": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz",
+      "integrity": "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
+      "devOptional": true,
+      "license": "MIT"
+    },
+    "node_modules/damerau-levenshtein": {
+      "version": "1.0.8",
+      "resolved": "https://registry.npmjs.org/damerau-levenshtein/-/damerau-levenshtein-1.0.8.tgz",
+      "integrity": "sha512-sdQSFB7+llfUcQHUQO3+B8ERRj0Oa4w9POWMI/puGtuf7gFywGmkaLCElnudfTiKZV+NvHqL0ifzdrI8Ro7ESA==",
+      "dev": true,
+      "license": "BSD-2-Clause"
+    },
+    "node_modules/data-view-buffer": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/data-view-buffer/-/data-view-buffer-1.0.2.tgz",
+      "integrity": "sha512-EmKO5V3OLXh1rtK2wgXRansaK1/mtVdTUEiEI0W8RkvgT05kfxaH29PliLnpLP73yYO6142Q72QNa8Wx/A5CqQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "es-errors": "^1.3.0",
+        "is-data-view": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/data-view-byte-length": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/data-view-byte-length/-/data-view-byte-length-1.0.2.tgz",
+      "integrity": "sha512-tuhGbE6CfTM9+5ANGf+oQb72Ky/0+s3xKUpHvShfiz2RxMFgFPjsXuRLBVMtvMs15awe45SRb83D6wH4ew6wlQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "es-errors": "^1.3.0",
+        "is-data-view": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/inspect-js"
+      }
+    },
+    "node_modules/data-view-byte-offset": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/data-view-byte-offset/-/data-view-byte-offset-1.0.1.tgz",
+      "integrity": "sha512-BS8PfmtDGnrgYdOonGZQdLZslWIeCGFP9tpan0hi1Co2Zr2NKADsvGYA8XxuG/4UWgJ6Cjtv+YJnB6MM69QGlQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "is-data-view": "^1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/debug": {
+      "version": "4.4.3",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.3"
+      },
+      "engines": {
+        "node": ">=6.0"
+      },
+      "peerDependenciesMeta": {
+        "supports-color": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/deep-is": {
+      "version": "0.1.4",
+      "resolved": "https://registry.npmjs.org/deep-is/-/deep-is-0.1.4.tgz",
+      "integrity": "sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/define-data-property": {
+      "version": "1.1.4",
+      "resolved": "https://registry.npmjs.org/define-data-property/-/define-data-property-1.1.4.tgz",
+      "integrity": "sha512-rBMvIzlpA8v6E+SJZoo++HAYqsLrkg7MSfIinMPFhmkorw7X+dOXVJQs+QT69zGkzMyfDnIMN2Wid1+NbL3T+A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-define-property": "^1.0.0",
+        "es-errors": "^1.3.0",
+        "gopd": "^1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/define-properties": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/define-properties/-/define-properties-1.2.1.tgz",
+      "integrity": "sha512-8QmQKqEASLd5nx0U1B1okLElbUuuttJ/AnYmRXbbbGDWh6uS208EjD4Xqq/I9wK7u0v6O08XhTWnt5XtEbR6Dg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-data-property": "^1.0.1",
+        "has-property-descriptors": "^1.0.0",
+        "object-keys": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/detect-libc": {
+      "version": "2.1.2",
+      "resolved": "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz",
+      "integrity": "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==",
+      "devOptional": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/doctrine": {
+      "version": "2.1.0",
+      "resolved": "https://registry.npmjs.org/doctrine/-/doctrine-2.1.0.tgz",
+      "integrity": "sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "dependencies": {
+        "esutils": "^2.0.2"
+      },
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/dunder-proto": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz",
+      "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "gopd": "^1.2.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/electron-to-chromium": {
+      "version": "1.5.449",
+      "resolved": "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.449.tgz",
+      "integrity": "sha512-dKeYk/3SFQz+nXi5whp3OuJzeWABEG4zCtkWJ9+Vby1E1iFM2y0gElRtQvNXRPJTsj8WAF4HMP7hvP790QtJ9g==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/emoji-regex": {
+      "version": "9.2.2",
+      "resolved": "https://registry.npmjs.org/emoji-regex/-/emoji-regex-9.2.2.tgz",
+      "integrity": "sha512-L18DaJsXSUk2+42pv8mLs5jJT2hqFkFE4j21wOmgbUqsZ2hL72NsUU785g9RXgo3s0ZNgVl42TiHp3ZtOv/Vyg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/enhanced-resolve": {
+      "version": "5.26.0",
+      "resolved": "https://registry.npmjs.org/enhanced-resolve/-/enhanced-resolve-5.26.0.tgz",
+      "integrity": "sha512-9vhedylFonb2YGogzUKX6+Ja72gOJbN1QHAqdrvqLwhdl/QWbKopzoUC9EbQNVsAns/bx/4uyqalrQAoy1IByw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "graceful-fs": "^4.2.4",
+        "tapable": "^2.3.3"
+      },
+      "engines": {
+        "node": ">=10.13.0"
+      }
+    },
+    "node_modules/es-abstract": {
+      "version": "1.24.2",
+      "resolved": "https://registry.npmjs.org/es-abstract/-/es-abstract-1.24.2.tgz",
+      "integrity": "sha512-2FpH9Q5i2RRwyEP1AylXe6nYLR5OhaJTZwmlcP0dL/+JCbgg7yyEo/sEK6HeGZRf3dFpWwThaRHVApXSkW3xeg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "array-buffer-byte-length": "^1.0.2",
+        "arraybuffer.prototype.slice": "^1.0.4",
+        "available-typed-arrays": "^1.0.7",
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.4",
+        "data-view-buffer": "^1.0.2",
+        "data-view-byte-length": "^1.0.2",
+        "data-view-byte-offset": "^1.0.1",
+        "es-define-property": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.1",
+        "es-set-tostringtag": "^2.1.0",
+        "es-to-primitive": "^1.3.0",
+        "function.prototype.name": "^1.1.8",
+        "get-intrinsic": "^1.3.0",
+        "get-proto": "^1.0.1",
+        "get-symbol-description": "^1.1.0",
+        "globalthis": "^1.0.4",
+        "gopd": "^1.2.0",
+        "has-property-descriptors": "^1.0.2",
+        "has-proto": "^1.2.0",
+        "has-symbols": "^1.1.0",
+        "hasown": "^2.0.2",
+        "internal-slot": "^1.1.0",
+        "is-array-buffer": "^3.0.5",
+        "is-callable": "^1.2.7",
+        "is-data-view": "^1.0.2",
+        "is-negative-zero": "^2.0.3",
+        "is-regex": "^1.2.1",
+        "is-set": "^2.0.3",
+        "is-shared-array-buffer": "^1.0.4",
+        "is-string": "^1.1.1",
+        "is-typed-array": "^1.1.15",
+        "is-weakref": "^1.1.1",
+        "math-intrinsics": "^1.1.0",
+        "object-inspect": "^1.13.4",
+        "object-keys": "^1.1.1",
+        "object.assign": "^4.1.7",
+        "own-keys": "^1.0.1",
+        "regexp.prototype.flags": "^1.5.4",
+        "safe-array-concat": "^1.1.3",
+        "safe-push-apply": "^1.0.0",
+        "safe-regex-test": "^1.1.0",
+        "set-proto": "^1.0.0",
+        "stop-iteration-iterator": "^1.1.0",
+        "string.prototype.trim": "^1.2.10",
+        "string.prototype.trimend": "^1.0.9",
+        "string.prototype.trimstart": "^1.0.8",
+        "typed-array-buffer": "^1.0.3",
+        "typed-array-byte-length": "^1.0.3",
+        "typed-array-byte-offset": "^1.0.4",
+        "typed-array-length": "^1.0.7",
+        "unbox-primitive": "^1.1.0",
+        "which-typed-array": "^1.1.19"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/es-abstract-get": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/es-abstract-get/-/es-abstract-get-1.0.0.tgz",
+      "integrity": "sha512-6PMWXpdhshVvFp+FoWYs1EvG1Nj0tvk0dZM+XcK0xMEM1czRVcP6ohqPWHy6qPagSpC8j4+p89WXlT+xXJs/fg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.2",
+        "is-callable": "^1.2.7",
+        "object-inspect": "^1.13.4"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/es-define-property": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz",
+      "integrity": "sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-errors": {
+      "version": "1.3.0",
+      "resolved": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
+      "integrity": "sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-iterator-helpers": {
+      "version": "1.4.0",
+      "resolved": "https://registry.npmjs.org/es-iterator-helpers/-/es-iterator-helpers-1.4.0.tgz",
+      "integrity": "sha512-c/A0P0oxkACDc+cKWw8evLXK83oBKgn0qPOqCYT4x9uolpCIJAcYvJC9QYKNDRPsTeGyCrQ326jrvgZWdCdK5Q==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.24.2",
+        "es-errors": "^1.3.0",
+        "es-set-tostringtag": "^2.1.0",
+        "function-bind": "^1.1.2",
+        "get-intrinsic": "^1.3.0",
+        "globalthis": "^1.0.4",
+        "gopd": "^1.2.0",
+        "has-property-descriptors": "^1.0.2",
+        "has-proto": "^1.2.0",
+        "has-symbols": "^1.1.0",
+        "internal-slot": "^1.1.0",
+        "iterator.prototype": "^1.1.5",
+        "math-intrinsics": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-object-atoms": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.2.tgz",
+      "integrity": "sha512-HWcBoN6NileqtSydK2FqHbS/LoDd2pqrnQHLyJzBj4kOp/ky2MWMN694xOfkK8/SnUsW2DH7EfyVlydKCsm1Zw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-set-tostringtag": {
+      "version": "2.1.0",
+      "resolved": "https://registry.npmjs.org/es-set-tostringtag/-/es-set-tostringtag-2.1.0.tgz",
+      "integrity": "sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.6",
+        "has-tostringtag": "^1.0.2",
+        "hasown": "^2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-shim-unscopables": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/es-shim-unscopables/-/es-shim-unscopables-1.1.0.tgz",
+      "integrity": "sha512-d9T8ucsEhh8Bi1woXCf+TIKDIROLG5WCkxg8geBCbvk22kzwC5G2OnXVMO6FUsvQlgUUXQ2itephWDLqDzbeCw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "hasown": "^2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-to-primitive": {
+      "version": "1.3.4",
+      "resolved": "https://registry.npmjs.org/es-to-primitive/-/es-to-primitive-1.3.4.tgz",
+      "integrity": "sha512-yPDz7wqpg1/mmHLmS3tcfTfbw5f1eryXvyghYBffGdERwe+mV7ZcWzTR8LR17Kvqt3qfPurjlonmnq3MKXIOXw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-abstract-get": "^1.0.0",
+        "es-define-property": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "is-callable": "^1.2.7",
+        "is-date-object": "^1.1.0",
+        "is-symbol": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/escalade": {
+      "version": "3.2.0",
+      "resolved": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz",
+      "integrity": "sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/escape-string-regexp": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz",
+      "integrity": "sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/eslint": {
+      "version": "9.39.4",
+      "resolved": "https://registry.npmjs.org/eslint/-/eslint-9.39.4.tgz",
+      "integrity": "sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==",
+      "deprecated": "This version is no longer supported. Please see https://eslint.org/version-support for other options.",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@eslint-community/eslint-utils": "^4.8.0",
+        "@eslint-community/regexpp": "^4.12.1",
+        "@eslint/config-array": "^0.21.2",
+        "@eslint/config-helpers": "^0.4.2",
+        "@eslint/core": "^0.17.0",
+        "@eslint/eslintrc": "^3.3.5",
+        "@eslint/js": "9.39.4",
+        "@eslint/plugin-kit": "^0.4.1",
+        "@humanfs/node": "^0.16.6",
+        "@humanwhocodes/module-importer": "^1.0.1",
+        "@humanwhocodes/retry": "^0.4.2",
+        "@types/estree": "^1.0.6",
+        "ajv": "^6.14.0",
+        "chalk": "^4.0.0",
+        "cross-spawn": "^7.0.6",
+        "debug": "^4.3.2",
+        "escape-string-regexp": "^4.0.0",
+        "eslint-scope": "^8.4.0",
+        "eslint-visitor-keys": "^4.2.1",
+        "espree": "^10.4.0",
+        "esquery": "^1.5.0",
+        "esutils": "^2.0.2",
+        "fast-deep-equal": "^3.1.3",
+        "file-entry-cache": "^8.0.0",
+        "find-up": "^5.0.0",
+        "glob-parent": "^6.0.2",
+        "ignore": "^5.2.0",
+        "imurmurhash": "^0.1.4",
+        "is-glob": "^4.0.0",
+        "json-stable-stringify-without-jsonify": "^1.0.1",
+        "lodash.merge": "^4.6.2",
+        "minimatch": "^3.1.5",
+        "natural-compare": "^1.4.0",
+        "optionator": "^0.9.3"
+      },
+      "bin": {
+        "eslint": "bin/eslint.js"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://eslint.org/donate"
+      },
+      "peerDependencies": {
+        "jiti": "*"
+      },
+      "peerDependenciesMeta": {
+        "jiti": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/eslint-config-next": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/eslint-config-next/-/eslint-config-next-16.2.6.tgz",
+      "integrity": "sha512-z2ELYSkyrrJ6cuunTU8vhsT/RpouPkjaSah06nVW6Rg2Hpg0Vs8s497/e5s8G8qtdp4ccsiovz5P1rv+5VSW2Q==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@next/eslint-plugin-next": "16.2.6",
+        "eslint-import-resolver-node": "^0.3.6",
+        "eslint-import-resolver-typescript": "^3.5.2",
+        "eslint-plugin-import": "^2.32.0",
+        "eslint-plugin-jsx-a11y": "^6.10.0",
+        "eslint-plugin-react": "^7.37.0",
+        "eslint-plugin-react-hooks": "^7.0.0",
+        "globals": "16.4.0",
+        "typescript-eslint": "^8.46.0"
+      },
+      "peerDependencies": {
+        "eslint": ">=9.0.0",
+        "typescript": ">=3.3.1"
+      },
+      "peerDependenciesMeta": {
+        "typescript": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/eslint-config-next/node_modules/globals": {
+      "version": "16.4.0",
+      "resolved": "https://registry.npmjs.org/globals/-/globals-16.4.0.tgz",
+      "integrity": "sha512-ob/2LcVVaVGCYN+r14cnwnoDPUufjiYgSqRhiFD0Q1iI4Odora5RE8Iv1D24hAz5oMophRGkGz+yuvQmmUMnMw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=18"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/eslint-import-resolver-node": {
+      "version": "0.3.10",
+      "resolved": "https://registry.npmjs.org/eslint-import-resolver-node/-/eslint-import-resolver-node-0.3.10.tgz",
+      "integrity": "sha512-tRrKqFyCaKict5hOd244sL6EQFNycnMQnBe+j8uqGNXYzsImGbGUU4ibtoaBmv5FLwJwcFJNeg1GeVjQfbMrDQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "debug": "^3.2.7",
+        "is-core-module": "^2.16.1",
+        "resolve": "^2.0.0-next.6"
+      }
+    },
+    "node_modules/eslint-import-resolver-node/node_modules/debug": {
+      "version": "3.2.7",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-3.2.7.tgz",
+      "integrity": "sha512-CFjzYYAi4ThfiQvizrFQevTTXHtnCqWfe7x1AhgEscTz6ZbLbfoLRLPugTQyBth6f8ZERVUSyWHFD/7Wu4t1XQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.1"
+      }
+    },
+    "node_modules/eslint-import-resolver-typescript": {
+      "version": "3.10.1",
+      "resolved": "https://registry.npmjs.org/eslint-import-resolver-typescript/-/eslint-import-resolver-typescript-3.10.1.tgz",
+      "integrity": "sha512-A1rHYb06zjMGAxdLSkN2fXPBwuSaQ0iO5M/hdyS0Ajj1VBaRp0sPD3dn1FhME3c/JluGFbwSxyCfqdSbtQLAHQ==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "@nolyfill/is-core-module": "1.0.39",
+        "debug": "^4.4.0",
+        "get-tsconfig": "^4.10.0",
+        "is-bun-module": "^2.0.0",
+        "stable-hash": "^0.0.5",
+        "tinyglobby": "^0.2.13",
+        "unrs-resolver": "^1.6.2"
+      },
+      "engines": {
+        "node": "^14.18.0 || >=16.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint-import-resolver-typescript"
+      },
+      "peerDependencies": {
+        "eslint": "*",
+        "eslint-plugin-import": "*",
+        "eslint-plugin-import-x": "*"
+      },
+      "peerDependenciesMeta": {
+        "eslint-plugin-import": {
+          "optional": true
+        },
+        "eslint-plugin-import-x": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/eslint-module-utils": {
+      "version": "2.14.0",
+      "resolved": "https://registry.npmjs.org/eslint-module-utils/-/eslint-module-utils-2.14.0.tgz",
+      "integrity": "sha512-W2WCRZ9Dqntd+2u8jJcVMV2PKulc6RdLgUUoh/yQr3uB6lo/ZOeGx11sv60/8S4QFFKNslAlWhr9u0Ef7ZW6Ig==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "debug": "^3.2.7"
+      },
+      "engines": {
+        "node": ">=4"
+      },
+      "peerDependenciesMeta": {
+        "eslint": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/eslint-module-utils/node_modules/debug": {
+      "version": "3.2.7",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-3.2.7.tgz",
+      "integrity": "sha512-CFjzYYAi4ThfiQvizrFQevTTXHtnCqWfe7x1AhgEscTz6ZbLbfoLRLPugTQyBth6f8ZERVUSyWHFD/7Wu4t1XQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.1"
+      }
+    },
+    "node_modules/eslint-plugin-import": {
+      "version": "2.32.0",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-import/-/eslint-plugin-import-2.32.0.tgz",
+      "integrity": "sha512-whOE1HFo/qJDyX4SnXzP4N6zOWn79WhnCUY/iDR0mPfQZO8wcYE4JClzI2oZrhBnnMUCBCHZhO6VQyoBU95mZA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@rtsao/scc": "^1.1.0",
+        "array-includes": "^3.1.9",
+        "array.prototype.findlastindex": "^1.2.6",
+        "array.prototype.flat": "^1.3.3",
+        "array.prototype.flatmap": "^1.3.3",
+        "debug": "^3.2.7",
+        "doctrine": "^2.1.0",
+        "eslint-import-resolver-node": "^0.3.9",
+        "eslint-module-utils": "^2.12.1",
+        "hasown": "^2.0.2",
+        "is-core-module": "^2.16.1",
+        "is-glob": "^4.0.3",
+        "minimatch": "^3.1.2",
+        "object.fromentries": "^2.0.8",
+        "object.groupby": "^1.0.3",
+        "object.values": "^1.2.1",
+        "semver": "^6.3.1",
+        "string.prototype.trimend": "^1.0.9",
+        "tsconfig-paths": "^3.15.0"
+      },
+      "engines": {
+        "node": ">=4"
+      },
+      "peerDependencies": {
+        "eslint": "^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9"
+      }
+    },
+    "node_modules/eslint-plugin-import/node_modules/debug": {
+      "version": "3.2.7",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-3.2.7.tgz",
+      "integrity": "sha512-CFjzYYAi4ThfiQvizrFQevTTXHtnCqWfe7x1AhgEscTz6ZbLbfoLRLPugTQyBth6f8ZERVUSyWHFD/7Wu4t1XQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.1"
+      }
+    },
+    "node_modules/eslint-plugin-jsx-a11y": {
+      "version": "6.10.2",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-jsx-a11y/-/eslint-plugin-jsx-a11y-6.10.2.tgz",
+      "integrity": "sha512-scB3nz4WmG75pV8+3eRUQOHZlNSUhFNq37xnpgRkCCELU3XMvXAxLk1eqWWyE22Ki4Q01Fnsw9BA3cJHDPgn2Q==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "aria-query": "^5.3.2",
+        "array-includes": "^3.1.8",
+        "array.prototype.flatmap": "^1.3.2",
+        "ast-types-flow": "^0.0.8",
+        "axe-core": "^4.10.0",
+        "axobject-query": "^4.1.0",
+        "damerau-levenshtein": "^1.0.8",
+        "emoji-regex": "^9.2.2",
+        "hasown": "^2.0.2",
+        "jsx-ast-utils": "^3.3.5",
+        "language-tags": "^1.0.9",
+        "minimatch": "^3.1.2",
+        "object.fromentries": "^2.0.8",
+        "safe-regex-test": "^1.0.3",
+        "string.prototype.includes": "^2.0.1"
+      },
+      "engines": {
+        "node": ">=4.0"
+      },
+      "peerDependencies": {
+        "eslint": "^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9"
+      }
+    },
+    "node_modules/eslint-plugin-react": {
+      "version": "7.37.5",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-react/-/eslint-plugin-react-7.37.5.tgz",
+      "integrity": "sha512-Qteup0SqU15kdocexFNAJMvCJEfa2xUKNV4CC1xsVMrIIqEy3SQ/rqyxCWNzfrd3/ldy6HMlD2e0JDVpDg2qIA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "array-includes": "^3.1.8",
+        "array.prototype.findlast": "^1.2.5",
+        "array.prototype.flatmap": "^1.3.3",
+        "array.prototype.tosorted": "^1.1.4",
+        "doctrine": "^2.1.0",
+        "es-iterator-helpers": "^1.2.1",
+        "estraverse": "^5.3.0",
+        "hasown": "^2.0.2",
+        "jsx-ast-utils": "^2.4.1 || ^3.0.0",
+        "minimatch": "^3.1.2",
+        "object.entries": "^1.1.9",
+        "object.fromentries": "^2.0.8",
+        "object.values": "^1.2.1",
+        "prop-types": "^15.8.1",
+        "resolve": "^2.0.0-next.5",
+        "semver": "^6.3.1",
+        "string.prototype.matchall": "^4.0.12",
+        "string.prototype.repeat": "^1.0.0"
+      },
+      "engines": {
+        "node": ">=4"
+      },
+      "peerDependencies": {
+        "eslint": "^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7"
+      }
+    },
+    "node_modules/eslint-plugin-react-hooks": {
+      "version": "7.1.1",
+      "resolved": "https://registry.npmjs.org/eslint-plugin-react-hooks/-/eslint-plugin-react-hooks-7.1.1.tgz",
+      "integrity": "sha512-f2I7Gw6JbvCexzIInuSbZpfdQ44D7iqdWX01FKLvrPgqxoE7oMj8clOfto8U6vYiz4yd5oKu39rRSVOe1zRu0g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@babel/core": "^7.24.4",
+        "@babel/parser": "^7.24.4",
+        "hermes-parser": "^0.25.1",
+        "zod": "^3.25.0 || ^4.0.0",
+        "zod-validation-error": "^3.5.0 || ^4.0.0"
+      },
+      "engines": {
+        "node": ">=18"
+      },
+      "peerDependencies": {
+        "eslint": "^3.0.0 || ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0-0 || ^9.0.0 || ^10.0.0"
+      }
+    },
+    "node_modules/eslint-scope": {
+      "version": "8.4.0",
+      "resolved": "https://registry.npmjs.org/eslint-scope/-/eslint-scope-8.4.0.tgz",
+      "integrity": "sha512-sNXOfKCn74rt8RICKMvJS7XKV/Xk9kA7DyJr8mJik3S7Cwgy3qlkkmyS2uQB3jiJg6VNdZd/pDBJu0nvG2NlTg==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "dependencies": {
+        "esrecurse": "^4.3.0",
+        "estraverse": "^5.2.0"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/eslint-visitor-keys": {
+      "version": "4.2.1",
+      "resolved": "https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-4.2.1.tgz",
+      "integrity": "sha512-Uhdk5sfqcee/9H/rCOJikYz67o0a2Tw2hGRPOG2Y1R2dg7brRe1uG0yaNQDHu+TO/uQPF/5eCapvYSmHUjt7JQ==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/espree": {
+      "version": "10.4.0",
+      "resolved": "https://registry.npmjs.org/espree/-/espree-10.4.0.tgz",
+      "integrity": "sha512-j6PAQ2uUr79PZhBjP5C5fhl8e39FmRnOjsD5lGnWrFU8i2G776tBK7+nP8KuQUTTyAZUwfQqXAgrVH5MbH9CYQ==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "dependencies": {
+        "acorn": "^8.15.0",
+        "acorn-jsx": "^5.3.2",
+        "eslint-visitor-keys": "^4.2.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/eslint"
+      }
+    },
+    "node_modules/esquery": {
+      "version": "1.7.0",
+      "resolved": "https://registry.npmjs.org/esquery/-/esquery-1.7.0.tgz",
+      "integrity": "sha512-Ap6G0WQwcU/LHsvLwON1fAQX9Zp0A2Y6Y/cJBl9r/JbW90Zyg4/zbG6zzKa2OTALELarYHmKu0GhpM5EO+7T0g==",
+      "dev": true,
+      "license": "BSD-3-Clause",
+      "dependencies": {
+        "estraverse": "^5.1.0"
+      },
+      "engines": {
+        "node": ">=0.10"
+      }
+    },
+    "node_modules/esrecurse": {
+      "version": "4.3.0",
+      "resolved": "https://registry.npmjs.org/esrecurse/-/esrecurse-4.3.0.tgz",
+      "integrity": "sha512-KmfKL3b6G+RXvP8N1vr3Tq1kL/oCFgn2NYXEtqP8/L3pKapUA4G8cFVaoF3SU323CD4XypR/ffioHmkti6/Tag==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "dependencies": {
+        "estraverse": "^5.2.0"
+      },
+      "engines": {
+        "node": ">=4.0"
+      }
+    },
+    "node_modules/estraverse": {
+      "version": "5.3.0",
+      "resolved": "https://registry.npmjs.org/estraverse/-/estraverse-5.3.0.tgz",
+      "integrity": "sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "engines": {
+        "node": ">=4.0"
+      }
+    },
+    "node_modules/esutils": {
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/esutils/-/esutils-2.0.3.tgz",
+      "integrity": "sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/fast-deep-equal": {
+      "version": "3.1.3",
+      "resolved": "https://registry.npmjs.org/fast-deep-equal/-/fast-deep-equal-3.1.3.tgz",
+      "integrity": "sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/fast-glob": {
+      "version": "3.3.1",
+      "resolved": "https://registry.npmjs.org/fast-glob/-/fast-glob-3.3.1.tgz",
+      "integrity": "sha512-kNFPyjhh5cKjrUltxs+wFx+ZkbRaxxmZ+X0ZU31SOsxCEtP9VPgtq2teZw1DebupL5GmDaNQ6yKMMVcM41iqDg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@nodelib/fs.stat": "^2.0.2",
+        "@nodelib/fs.walk": "^1.2.3",
+        "glob-parent": "^5.1.2",
+        "merge2": "^1.3.0",
+        "micromatch": "^4.0.4"
+      },
+      "engines": {
+        "node": ">=8.6.0"
+      }
+    },
+    "node_modules/fast-glob/node_modules/glob-parent": {
+      "version": "5.1.2",
+      "resolved": "https://registry.npmjs.org/glob-parent/-/glob-parent-5.1.2.tgz",
+      "integrity": "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "is-glob": "^4.0.1"
+      },
+      "engines": {
+        "node": ">= 6"
+      }
+    },
+    "node_modules/fast-json-stable-stringify": {
+      "version": "2.1.0",
+      "resolved": "https://registry.npmjs.org/fast-json-stable-stringify/-/fast-json-stable-stringify-2.1.0.tgz",
+      "integrity": "sha512-lhd/wF+Lk98HZoTCtlVraHtfh5XYijIjalXck7saUtuanSDyLMxnHhSXEDJqHxD7msR8D0uCmqlkwjCV8xvwHw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/fast-levenshtein": {
+      "version": "2.0.6",
+      "resolved": "https://registry.npmjs.org/fast-levenshtein/-/fast-levenshtein-2.0.6.tgz",
+      "integrity": "sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/fastq": {
+      "version": "1.20.3",
+      "resolved": "https://registry.npmjs.org/fastq/-/fastq-1.20.3.tgz",
+      "integrity": "sha512-XKv5nnLs6nLF71NgiKJLIZFLkPyIEuOselLG7ujZnGrRfQK8HpvY+WqKhAJUAdLomwVHErVS4LfxFlPq0/FTAw==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "reusify": "^1.0.4"
+      }
+    },
+    "node_modules/file-entry-cache": {
+      "version": "8.0.0",
+      "resolved": "https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-8.0.0.tgz",
+      "integrity": "sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "flat-cache": "^4.0.0"
+      },
+      "engines": {
+        "node": ">=16.0.0"
+      }
+    },
+    "node_modules/fill-range": {
+      "version": "7.1.1",
+      "resolved": "https://registry.npmjs.org/fill-range/-/fill-range-7.1.1.tgz",
+      "integrity": "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "to-regex-range": "^5.0.1"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/find-up": {
+      "version": "5.0.0",
+      "resolved": "https://registry.npmjs.org/find-up/-/find-up-5.0.0.tgz",
+      "integrity": "sha512-78/PXT1wlLLDgTzDs7sjq9hzz0vXD+zn+7wypEe4fXQxCmdmqfGsEPQxmiCSQI3ajFV91bVSsvNtrJRiW6nGng==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "locate-path": "^6.0.0",
+        "path-exists": "^4.0.0"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/flat-cache": {
+      "version": "4.0.1",
+      "resolved": "https://registry.npmjs.org/flat-cache/-/flat-cache-4.0.1.tgz",
+      "integrity": "sha512-f7ccFPK3SXFHpx15UIGyRJ/FJQctuKZ0zVuN3frBo4HnK3cay9VEW0R6yPYFHC0AgqhukPzKjq22t5DmAyqGyw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "flatted": "^3.2.9",
+        "keyv": "^4.5.4"
+      },
+      "engines": {
+        "node": ">=16"
+      }
+    },
+    "node_modules/flatted": {
+      "version": "3.4.4",
+      "resolved": "https://registry.npmjs.org/flatted/-/flatted-3.4.4.tgz",
+      "integrity": "sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/for-each": {
+      "version": "0.3.5",
+      "resolved": "https://registry.npmjs.org/for-each/-/for-each-0.3.5.tgz",
+      "integrity": "sha512-dKx12eRCVIzqCxFGplyFKJMPvLEWgmNtUrpTiJIR5u97zEhRG8ySrtboPHZXx7daLxQVrl643cTzbab2tkQjxg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-callable": "^1.2.7"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/frac": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/frac/-/frac-1.1.2.tgz",
+      "integrity": "sha512-w/XBfkibaTl3YDqASwfDUqkna4Z2p9cFSr1aHDt0WoMTECnRfBOv2WArlZILlqgWlmdIlALXGpM2AOhEk5W3IA==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/function-bind": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz",
+      "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==",
+      "dev": true,
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/function.prototype.name": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/function.prototype.name/-/function.prototype.name-1.2.0.tgz",
+      "integrity": "sha512-jObKIik1P2QjPHP5nz5BaOtUlfgS0fWo8IUByNXkM+o+02sJOi94em77GwJKQSJ3gfPHdgzLNrHc1uokV4P/ew==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "es-define-property": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "functions-have-names": "^1.2.3",
+        "has-property-descriptors": "^1.0.2",
+        "hasown": "^2.0.4",
+        "is-callable": "^1.2.7",
+        "is-document.all": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/functions-have-names": {
+      "version": "1.2.3",
+      "resolved": "https://registry.npmjs.org/functions-have-names/-/functions-have-names-1.2.3.tgz",
+      "integrity": "sha512-xckBUXyTIqT97tq2x2AMb+g163b5JFysYk0x4qxNFwbfQkmNZoiRHb6sPzI9/QV33WeuvVYBUIiD4NzNIyqaRQ==",
+      "dev": true,
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/generator-function": {
+      "version": "2.0.1",
+      "resolved": "https://registry.npmjs.org/generator-function/-/generator-function-2.0.1.tgz",
+      "integrity": "sha512-SFdFmIJi+ybC0vjlHN0ZGVGHc3lgE0DxPAT0djjVg+kjOnSqclqmj0KQ7ykTOLP6YxoqOvuAODGdcHJn+43q3g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/gensync": {
+      "version": "1.0.0-beta.2",
+      "resolved": "https://registry.npmjs.org/gensync/-/gensync-1.0.0-beta.2.tgz",
+      "integrity": "sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6.9.0"
+      }
+    },
+    "node_modules/get-intrinsic": {
+      "version": "1.3.0",
+      "resolved": "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz",
+      "integrity": "sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.2",
+        "es-define-property": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.1",
+        "function-bind": "^1.1.2",
+        "get-proto": "^1.0.1",
+        "gopd": "^1.2.0",
+        "has-symbols": "^1.1.0",
+        "hasown": "^2.0.2",
+        "math-intrinsics": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/get-proto": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz",
+      "integrity": "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "dunder-proto": "^1.0.1",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/get-symbol-description": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/get-symbol-description/-/get-symbol-description-1.1.0.tgz",
+      "integrity": "sha512-w9UMqWwJxHNOvoNzSJ2oPF5wvYcvP7jUvYzhp67yEhTi17ZDBBC1z9pTdGuzjD+EFIqLSYRweZjqfiPzQ06Ebg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.6"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/get-tsconfig": {
+      "version": "4.14.3",
+      "resolved": "https://registry.npmjs.org/get-tsconfig/-/get-tsconfig-4.14.3.tgz",
+      "integrity": "sha512-++QEw4DIY7WGoukz+/+A/8dGYPT9l9yIadnmSgZ8Rjr3YVSVDipQSO9CdnJo9ePqFqUUqh+wk9uIaoiAwsiPkA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "resolve-pkg-maps": "^1.0.0"
+      },
+      "funding": {
+        "url": "https://github.com/privatenumber/get-tsconfig?sponsor=1"
+      }
+    },
+    "node_modules/glob-parent": {
+      "version": "6.0.2",
+      "resolved": "https://registry.npmjs.org/glob-parent/-/glob-parent-6.0.2.tgz",
+      "integrity": "sha512-XxwI8EOhVQgWp6iDL+3b0r86f4d6AX6zSU55HfB4ydCEuXLXc5FcYeOu+nnGftS4TEju/11rt4KJPTMgbfmv4A==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "is-glob": "^4.0.3"
+      },
+      "engines": {
+        "node": ">=10.13.0"
+      }
+    },
+    "node_modules/globals": {
+      "version": "14.0.0",
+      "resolved": "https://registry.npmjs.org/globals/-/globals-14.0.0.tgz",
+      "integrity": "sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=18"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/globalthis": {
+      "version": "1.0.4",
+      "resolved": "https://registry.npmjs.org/globalthis/-/globalthis-1.0.4.tgz",
+      "integrity": "sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-properties": "^1.2.1",
+        "gopd": "^1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/gopd": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz",
+      "integrity": "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/graceful-fs": {
+      "version": "4.2.11",
+      "resolved": "https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz",
+      "integrity": "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/has-bigints": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/has-bigints/-/has-bigints-1.1.0.tgz",
+      "integrity": "sha512-R3pbpkcIqv2Pm3dUwgjclDRVmWpTJW2DcMzcIhEXEx1oh/CEMObMm3KLmRJOdvhM7o4uQBnwr8pzRK2sJWIqfg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/has-flag": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/has-flag/-/has-flag-4.0.0.tgz",
+      "integrity": "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/has-property-descriptors": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/has-property-descriptors/-/has-property-descriptors-1.0.2.tgz",
+      "integrity": "sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-define-property": "^1.0.0"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/has-proto": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/has-proto/-/has-proto-1.2.0.tgz",
+      "integrity": "sha512-KIL7eQPfHQRC8+XluaIw7BHUwwqL19bQn4hzNgdr+1wXoU0KKj6rufu47lhY7KbJR2C6T6+PfyN0Ea7wkSS+qQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "dunder-proto": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/has-symbols": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz",
+      "integrity": "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/has-tostringtag": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/has-tostringtag/-/has-tostringtag-1.0.2.tgz",
+      "integrity": "sha512-NqADB8VjPFLM2V0VvHUewwwsw0ZWBaIdgo+ieHtK3hasLz4qeCRjYcqfB6AQrBggRKppKF8L52/VqdVsO47Dlw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "has-symbols": "^1.0.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/hasown": {
+      "version": "2.0.4",
+      "resolved": "https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz",
+      "integrity": "sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "function-bind": "^1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/hermes-estree": {
+      "version": "0.25.1",
+      "resolved": "https://registry.npmjs.org/hermes-estree/-/hermes-estree-0.25.1.tgz",
+      "integrity": "sha512-0wUoCcLp+5Ev5pDW2OriHC2MJCbwLwuRx+gAqMTOkGKJJiBCLjtrvy4PWUGn6MIVefecRpzoOZ/UV6iGdOr+Cw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/hermes-parser": {
+      "version": "0.25.1",
+      "resolved": "https://registry.npmjs.org/hermes-parser/-/hermes-parser-0.25.1.tgz",
+      "integrity": "sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "hermes-estree": "0.25.1"
+      }
+    },
+    "node_modules/ignore": {
+      "version": "5.3.2",
+      "resolved": "https://registry.npmjs.org/ignore/-/ignore-5.3.2.tgz",
+      "integrity": "sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 4"
+      }
+    },
+    "node_modules/import-fresh": {
+      "version": "3.3.1",
+      "resolved": "https://registry.npmjs.org/import-fresh/-/import-fresh-3.3.1.tgz",
+      "integrity": "sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "parent-module": "^1.0.0",
+        "resolve-from": "^4.0.0"
+      },
+      "engines": {
+        "node": ">=6"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/imurmurhash": {
+      "version": "0.1.4",
+      "resolved": "https://registry.npmjs.org/imurmurhash/-/imurmurhash-0.1.4.tgz",
+      "integrity": "sha512-JmXMZ6wuvDmLiHEml9ykzqO6lwFbof0GG4IkcGaENdCRDDmMVnny7s5HsIgHCbaq0w2MyPhDqkhTUgS2LU2PHA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.8.19"
+      }
+    },
+    "node_modules/internal-slot": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/internal-slot/-/internal-slot-1.1.0.tgz",
+      "integrity": "sha512-4gd7VpWNQNB4UKKCFFVcp1AVv+FMOgs9NKzjHKusc8jTMhd5eL1NqQqOpE0KzMds804/yHlglp3uxgluOqAPLw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "hasown": "^2.0.2",
+        "side-channel": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/is-array-buffer": {
+      "version": "3.0.5",
+      "resolved": "https://registry.npmjs.org/is-array-buffer/-/is-array-buffer-3.0.5.tgz",
+      "integrity": "sha512-DDfANUiiG2wC1qawP66qlTugJeL5HyzMpfr8lLK+jMQirGzNod0B12cFB/9q838Ru27sBwfw78/rdoU7RERz6A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.3",
+        "get-intrinsic": "^1.2.6"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-async-function": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/is-async-function/-/is-async-function-2.1.1.tgz",
+      "integrity": "sha512-9dgM/cZBnNvjzaMYHVoxxfPj2QXt22Ev7SuuPrs+xav0ukGB0S6d4ydZdEiM48kLx5kDV+QBPrpVnFyefL8kkQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "async-function": "^1.0.0",
+        "call-bound": "^1.0.3",
+        "get-proto": "^1.0.1",
+        "has-tostringtag": "^1.0.2",
+        "safe-regex-test": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-bigint": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/is-bigint/-/is-bigint-1.1.0.tgz",
+      "integrity": "sha512-n4ZT37wG78iz03xPRKJrHTdZbe3IicyucEtdRsV5yglwc3GyUfbAfpSeD0FJ41NbUNSt5wbhqfp1fS+BgnvDFQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "has-bigints": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-boolean-object": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/is-boolean-object/-/is-boolean-object-1.2.2.tgz",
+      "integrity": "sha512-wa56o2/ElJMYqjCjGkXri7it5FbebW5usLw/nPmCMs5DeZ7eziSYZhSmPRn0txqeW4LnAmQQU7FgqLpsEFKM4A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "has-tostringtag": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-bun-module": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/is-bun-module/-/is-bun-module-2.0.0.tgz",
+      "integrity": "sha512-gNCGbnnnnFAUGKeZ9PdbyeGYJqewpmc2aKHUEMO5nQPWU9lOmv7jcmQIv+qHD8fXW6W7qfuCwX4rY9LNRjXrkQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "semver": "^7.7.1"
+      }
+    },
+    "node_modules/is-bun-module/node_modules/semver": {
+      "version": "7.8.5",
+      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==",
+      "dev": true,
+      "license": "ISC",
+      "bin": {
+        "semver": "bin/semver.js"
+      },
+      "engines": {
+        "node": ">=10"
+      }
+    },
+    "node_modules/is-callable": {
+      "version": "1.2.7",
+      "resolved": "https://registry.npmjs.org/is-callable/-/is-callable-1.2.7.tgz",
+      "integrity": "sha512-1BC0BVFhS/p0qtw6enp8e+8OD0UrK0oFLztSjNzhcKA3WDuJxxAPXzPuPtKkjEY9UUoEWlX/8fgKeu2S8i9JTA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-core-module": {
+      "version": "2.17.0",
+      "resolved": "https://registry.npmjs.org/is-core-module/-/is-core-module-2.17.0.tgz",
+      "integrity": "sha512-J/vG0zBCbIKOQFfufSwyXdMrsohyJIUNkrnmo6WZGzoM7tr/lsbfW5b2BvisL6zsyMzK9UxV9L6c7AoFbyXHOA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "hasown": "^2.0.4"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-data-view": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/is-data-view/-/is-data-view-1.0.2.tgz",
+      "integrity": "sha512-RKtWF8pGmS87i2D6gqQu/l7EYRlVdfzemCJN/P3UOs//x1QE7mfhvzHIApBTRf7axvT6DMGwSwBXYCT0nfB9xw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "get-intrinsic": "^1.2.6",
+        "is-typed-array": "^1.1.13"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-date-object": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/is-date-object/-/is-date-object-1.1.0.tgz",
+      "integrity": "sha512-PwwhEakHVKTdRNVOw+/Gyh0+MzlCl4R6qKvkhuvLtPMggI1WAHt9sOwZxQLSGpUaDnrdyDsomoRgNnCfKNSXXg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "has-tostringtag": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-document.all": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/is-document.all/-/is-document.all-1.0.0.tgz",
+      "integrity": "sha512-+XSoyS05OdBbhFuELhgTCpFNHkpBOJqtsZfUFFpe5QTw+9Sjbh8zitxhQkYAo6wV7e1Vb8cAPvpCk9jGam/82g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.4"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-extglob": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz",
+      "integrity": "sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/is-finalizationregistry": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/is-finalizationregistry/-/is-finalizationregistry-1.1.1.tgz",
+      "integrity": "sha512-1pC6N8qWJbWoPtEjgcL2xyhQOP491EQjeUo3qTKcmV8YSDDJrOepfG8pcC7h/QgnQHYSv0mJ3Z/ZWxmatVrysg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-generator-function": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/is-generator-function/-/is-generator-function-1.1.2.tgz",
+      "integrity": "sha512-upqt1SkGkODW9tsGNG5mtXTXtECizwtS2kA161M+gJPc1xdb/Ax629af6YrTwcOeQHbewrPNlE5Dx7kzvXTizA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.4",
+        "generator-function": "^2.0.0",
+        "get-proto": "^1.0.1",
+        "has-tostringtag": "^1.0.2",
+        "safe-regex-test": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-glob": {
+      "version": "4.0.3",
+      "resolved": "https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz",
+      "integrity": "sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-extglob": "^2.1.1"
+      },
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/is-map": {
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/is-map/-/is-map-2.0.3.tgz",
+      "integrity": "sha512-1Qed0/Hr2m+YqxnM09CjA2d/i6YZNfF6R2oRAOj36eUdS6qIV/huPJNSEpKbupewFs+ZsJlxsjjPbc0/afW6Lw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-negative-zero": {
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/is-negative-zero/-/is-negative-zero-2.0.3.tgz",
+      "integrity": "sha512-5KoIu2Ngpyek75jXodFvnafB6DJgr3u8uuK0LEZJjrU19DrMD3EVERaR8sjz8CCGgpZvxPl9SuE1GMVPFHx1mw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-number": {
+      "version": "7.0.0",
+      "resolved": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+      "integrity": "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.12.0"
+      }
+    },
+    "node_modules/is-number-object": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/is-number-object/-/is-number-object-1.1.1.tgz",
+      "integrity": "sha512-lZhclumE1G6VYD8VHe35wFaIif+CTy5SJIi5+3y4psDgWu4wPDoBhF8NxUOinEc7pHgiTsT6MaBb92rKhhD+Xw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "has-tostringtag": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-regex": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/is-regex/-/is-regex-1.2.1.tgz",
+      "integrity": "sha512-MjYsKHO5O7mCsmRGxWcLWheFqN9DJ/2TmngvjKXihe6efViPqc274+Fx/4fYj/r03+ESvBdTXK0V6tA3rgez1g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "gopd": "^1.2.0",
+        "has-tostringtag": "^1.0.2",
+        "hasown": "^2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-set": {
+      "version": "2.0.3",
+      "resolved": "https://registry.npmjs.org/is-set/-/is-set-2.0.3.tgz",
+      "integrity": "sha512-iPAjerrse27/ygGLxw+EBR9agv9Y6uLeYVJMu+QNCoouJ1/1ri0mGrcWpfCqFZuzzx3WjtwxG098X+n4OuRkPg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-shared-array-buffer": {
+      "version": "1.0.4",
+      "resolved": "https://registry.npmjs.org/is-shared-array-buffer/-/is-shared-array-buffer-1.0.4.tgz",
+      "integrity": "sha512-ISWac8drv4ZGfwKl5slpHG9OwPNty4jOWPRIhBpxOoD+hqITiwuipOQ2bNthAzwA3B4fIjO4Nln74N0S9byq8A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-string": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/is-string/-/is-string-1.1.1.tgz",
+      "integrity": "sha512-BtEeSsoaQjlSPBemMQIrY1MY0uM6vnS1g5fmufYOtnxLGUZM2178PKbhsk7Ffv58IX+ZtcvoGwccYsh0PglkAA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "has-tostringtag": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-symbol": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/is-symbol/-/is-symbol-1.1.1.tgz",
+      "integrity": "sha512-9gGx6GTtCQM73BgmHQXfDmLtfjjTUDSyoxTCbp5WtoixAhfgsDirWIcVQ/IHpvI5Vgd5i/J5F7B9cN/WlVbC/w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "has-symbols": "^1.1.0",
+        "safe-regex-test": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-typed-array": {
+      "version": "1.1.15",
+      "resolved": "https://registry.npmjs.org/is-typed-array/-/is-typed-array-1.1.15.tgz",
+      "integrity": "sha512-p3EcsicXjit7SaskXHs1hA91QxgTw46Fv6EFKKGS5DRFLD8yKnohjF3hxoju94b/OcMZoQukzpPpBE9uLVKzgQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "which-typed-array": "^1.1.16"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-weakmap": {
+      "version": "2.0.2",
+      "resolved": "https://registry.npmjs.org/is-weakmap/-/is-weakmap-2.0.2.tgz",
+      "integrity": "sha512-K5pXYOm9wqY1RgjpL3YTkF39tni1XajUIkawTLUo9EZEVUFga5gSQJF8nNS7ZwJQ02y+1YCNYcMh+HIf1ZqE+w==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-weakref": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/is-weakref/-/is-weakref-1.1.1.tgz",
+      "integrity": "sha512-6i9mGWSlqzNMEqpCp93KwRS1uUOodk2OJ6b+sq7ZPDSy2WuI5NFIxp/254TytR8ftefexkWn5xNiHUNpPOfSew==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/is-weakset": {
+      "version": "2.0.4",
+      "resolved": "https://registry.npmjs.org/is-weakset/-/is-weakset-2.0.4.tgz",
+      "integrity": "sha512-mfcwb6IzQyOKTs84CQMrOwW4gQcaTOAWJ0zzJCl2WSPDrWk/OzDaImWFH3djXhb24g4eudZfLRozAvPGw4d9hQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "get-intrinsic": "^1.2.6"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/isarray": {
+      "version": "2.0.5",
+      "resolved": "https://registry.npmjs.org/isarray/-/isarray-2.0.5.tgz",
+      "integrity": "sha512-xHjhDr3cNBK0BzdUJSPXZntQUx/mwMS5Rw4A7lPJ90XGAO6ISP/ePDNuo0vhqOZU+UD5JoodwCAAoZQd3FeAKw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/isexe": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz",
+      "integrity": "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/iterator.prototype": {
+      "version": "1.1.5",
+      "resolved": "https://registry.npmjs.org/iterator.prototype/-/iterator.prototype-1.1.5.tgz",
+      "integrity": "sha512-H0dkQoCa3b2VEeKQBOxFph+JAbcrQdE7KC0UkqwpLmv2EC4P41QXP+rqo9wYodACiG5/WM5s9oDApTU8utwj9g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-data-property": "^1.1.4",
+        "es-object-atoms": "^1.0.0",
+        "get-intrinsic": "^1.2.6",
+        "get-proto": "^1.0.0",
+        "has-symbols": "^1.1.0",
+        "set-function-name": "^2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/jiti": {
+      "version": "2.7.0",
+      "resolved": "https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz",
+      "integrity": "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "jiti": "lib/jiti-cli.mjs"
+      }
+    },
+    "node_modules/js-tokens": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+      "integrity": "sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/js-yaml": {
+      "version": "4.3.2",
+      "resolved": "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz",
+      "integrity": "sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/puzrin"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/nodeca"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "argparse": "^2.0.1"
+      },
+      "bin": {
+        "js-yaml": "bin/js-yaml.js"
+      }
+    },
+    "node_modules/jsesc": {
+      "version": "3.1.0",
+      "resolved": "https://registry.npmjs.org/jsesc/-/jsesc-3.1.0.tgz",
+      "integrity": "sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "jsesc": "bin/jsesc"
+      },
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/json-buffer": {
+      "version": "3.0.1",
+      "resolved": "https://registry.npmjs.org/json-buffer/-/json-buffer-3.0.1.tgz",
+      "integrity": "sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/json-schema-traverse": {
+      "version": "0.4.1",
+      "resolved": "https://registry.npmjs.org/json-schema-traverse/-/json-schema-traverse-0.4.1.tgz",
+      "integrity": "sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/json-stable-stringify-without-jsonify": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/json-stable-stringify-without-jsonify/-/json-stable-stringify-without-jsonify-1.0.1.tgz",
+      "integrity": "sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/json5": {
+      "version": "2.2.3",
+      "resolved": "https://registry.npmjs.org/json5/-/json5-2.2.3.tgz",
+      "integrity": "sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "json5": "lib/cli.js"
+      },
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/jsx-ast-utils": {
+      "version": "3.3.5",
+      "resolved": "https://registry.npmjs.org/jsx-ast-utils/-/jsx-ast-utils-3.3.5.tgz",
+      "integrity": "sha512-ZZow9HBI5O6EPgSJLUb8n2NKgmVWTwCvHGwFuJlMjvLFqlGG6pjirPhtdsseaLZjSibD8eegzmYpUZwoIlj2cQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "array-includes": "^3.1.6",
+        "array.prototype.flat": "^1.3.1",
+        "object.assign": "^4.1.4",
+        "object.values": "^1.1.6"
+      },
+      "engines": {
+        "node": ">=4.0"
+      }
+    },
+    "node_modules/keyv": {
+      "version": "4.5.4",
+      "resolved": "https://registry.npmjs.org/keyv/-/keyv-4.5.4.tgz",
+      "integrity": "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "json-buffer": "3.0.1"
+      }
+    },
+    "node_modules/language-subtag-registry": {
+      "version": "0.3.23",
+      "resolved": "https://registry.npmjs.org/language-subtag-registry/-/language-subtag-registry-0.3.23.tgz",
+      "integrity": "sha512-0K65Lea881pHotoGEa5gDlMxt3pctLi2RplBb7Ezh4rRdLEOtgi7n4EwK9lamnUCkKBqaeKRVebTq6BAxSkpXQ==",
+      "dev": true,
+      "license": "CC0-1.0"
+    },
+    "node_modules/language-tags": {
+      "version": "1.0.9",
+      "resolved": "https://registry.npmjs.org/language-tags/-/language-tags-1.0.9.tgz",
+      "integrity": "sha512-MbjN408fEndfiQXbFQ1vnd+1NoLDsnQW41410oQBXiyXDMYH5z505juWa4KUE1LqxRC7DgOgZDbKLxHIwm27hA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "language-subtag-registry": "^0.3.20"
+      },
+      "engines": {
+        "node": ">=0.10"
+      }
+    },
+    "node_modules/levn": {
+      "version": "0.4.1",
+      "resolved": "https://registry.npmjs.org/levn/-/levn-0.4.1.tgz",
+      "integrity": "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "prelude-ls": "^1.2.1",
+        "type-check": "~0.4.0"
+      },
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/lightningcss": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.30.2.tgz",
+      "integrity": "sha512-utfs7Pr5uJyyvDETitgsaqSyjCb2qNRAtuqUeWIAKztsOYdcACf2KtARYXg2pSvhkt+9NfoaNY7fxjl6nuMjIQ==",
+      "dev": true,
+      "license": "MPL-2.0",
+      "dependencies": {
+        "detect-libc": "^2.0.3"
+      },
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      },
+      "optionalDependencies": {
+        "lightningcss-android-arm64": "1.30.2",
+        "lightningcss-darwin-arm64": "1.30.2",
+        "lightningcss-darwin-x64": "1.30.2",
+        "lightningcss-freebsd-x64": "1.30.2",
+        "lightningcss-linux-arm-gnueabihf": "1.30.2",
+        "lightningcss-linux-arm64-gnu": "1.30.2",
+        "lightningcss-linux-arm64-musl": "1.30.2",
+        "lightningcss-linux-x64-gnu": "1.30.2",
+        "lightningcss-linux-x64-musl": "1.30.2",
+        "lightningcss-win32-arm64-msvc": "1.30.2",
+        "lightningcss-win32-x64-msvc": "1.30.2"
+      }
+    },
+    "node_modules/lightningcss-android-arm64": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-android-arm64/-/lightningcss-android-arm64-1.30.2.tgz",
+      "integrity": "sha512-BH9sEdOCahSgmkVhBLeU7Hc9DWeZ1Eb6wNS6Da8igvUwAe0sqROHddIlvU06q3WyXVEOYDZ6ykBZQnjTbmo4+A==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "android"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-darwin-arm64": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-darwin-arm64/-/lightningcss-darwin-arm64-1.30.2.tgz",
+      "integrity": "sha512-ylTcDJBN3Hp21TdhRT5zBOIi73P6/W0qwvlFEk22fkdXchtNTOU4Qc37SkzV+EKYxLouZ6M4LG9NfZ1qkhhBWA==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-darwin-x64": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-darwin-x64/-/lightningcss-darwin-x64-1.30.2.tgz",
+      "integrity": "sha512-oBZgKchomuDYxr7ilwLcyms6BCyLn0z8J0+ZZmfpjwg9fRVZIR5/GMXd7r9RH94iDhld3UmSjBM6nXWM2TfZTQ==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-freebsd-x64": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-freebsd-x64/-/lightningcss-freebsd-x64-1.30.2.tgz",
+      "integrity": "sha512-c2bH6xTrf4BDpK8MoGG4Bd6zAMZDAXS569UxCAGcA7IKbHNMlhGQ89eRmvpIUGfKWNVdbhSbkQaWhEoMGmGslA==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "freebsd"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-linux-arm-gnueabihf": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-linux-arm-gnueabihf/-/lightningcss-linux-arm-gnueabihf-1.30.2.tgz",
+      "integrity": "sha512-eVdpxh4wYcm0PofJIZVuYuLiqBIakQ9uFZmipf6LF/HRj5Bgm0eb3qL/mr1smyXIS1twwOxNWndd8z0E374hiA==",
+      "cpu": [
+        "arm"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-linux-arm64-gnu": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-linux-arm64-gnu/-/lightningcss-linux-arm64-gnu-1.30.2.tgz",
+      "integrity": "sha512-UK65WJAbwIJbiBFXpxrbTNArtfuznvxAJw4Q2ZGlU8kPeDIWEX1dg3rn2veBVUylA2Ezg89ktszWbaQnxD/e3A==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-linux-arm64-musl": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-linux-arm64-musl/-/lightningcss-linux-arm64-musl-1.30.2.tgz",
+      "integrity": "sha512-5Vh9dGeblpTxWHpOx8iauV02popZDsCYMPIgiuw97OJ5uaDsL86cnqSFs5LZkG3ghHoX5isLgWzMs+eD1YzrnA==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-linux-x64-gnu": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-linux-x64-gnu/-/lightningcss-linux-x64-gnu-1.30.2.tgz",
+      "integrity": "sha512-Cfd46gdmj1vQ+lR6VRTTadNHu6ALuw2pKR9lYq4FnhvgBc4zWY1EtZcAc6EffShbb1MFrIPfLDXD6Xprbnni4w==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-linux-x64-musl": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-linux-x64-musl/-/lightningcss-linux-x64-musl-1.30.2.tgz",
+      "integrity": "sha512-XJaLUUFXb6/QG2lGIW6aIk6jKdtjtcffUT0NKvIqhSBY3hh9Ch+1LCeH80dR9q9LBjG3ewbDjnumefsLsP6aiA==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-win32-arm64-msvc": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-win32-arm64-msvc/-/lightningcss-win32-arm64-msvc-1.30.2.tgz",
+      "integrity": "sha512-FZn+vaj7zLv//D/192WFFVA0RgHawIcHqLX9xuWiQt7P0PtdFEVaxgF9rjM/IRYHQXNnk61/H/gb2Ei+kUQ4xQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/lightningcss-win32-x64-msvc": {
+      "version": "1.30.2",
+      "resolved": "https://registry.npmjs.org/lightningcss-win32-x64-msvc/-/lightningcss-win32-x64-msvc-1.30.2.tgz",
+      "integrity": "sha512-5g1yc73p+iAkid5phb4oVFMB45417DkRevRbt/El/gKXJk4jid+vPFF/AXbxn05Aky8PapwzZrdJShv5C0avjw==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MPL-2.0",
+      "optional": true,
+      "os": [
+        "win32"
+      ],
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/parcel"
+      }
+    },
+    "node_modules/locate-path": {
+      "version": "6.0.0",
+      "resolved": "https://registry.npmjs.org/locate-path/-/locate-path-6.0.0.tgz",
+      "integrity": "sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "p-locate": "^5.0.0"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/lodash.merge": {
+      "version": "4.6.2",
+      "resolved": "https://registry.npmjs.org/lodash.merge/-/lodash.merge-4.6.2.tgz",
+      "integrity": "sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/loose-envify": {
+      "version": "1.4.0",
+      "resolved": "https://registry.npmjs.org/loose-envify/-/loose-envify-1.4.0.tgz",
+      "integrity": "sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "js-tokens": "^3.0.0 || ^4.0.0"
+      },
+      "bin": {
+        "loose-envify": "cli.js"
+      }
+    },
+    "node_modules/lru-cache": {
+      "version": "5.1.1",
+      "resolved": "https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz",
+      "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "yallist": "^3.0.2"
+      }
+    },
+    "node_modules/lucide-react": {
+      "version": "1.52.0",
+      "resolved": "https://registry.npmjs.org/lucide-react/-/lucide-react-1.52.0.tgz",
+      "integrity": "sha512-TUgPtl5ZI9WgxOcbu4ckaC5B3l1qxPQrCMgb6OfUB9owx/OvSJfcf93SMgUWAxRw5/1XDfh9uI5F5iNGXCcGDQ==",
+      "license": "ISC",
+      "peerDependencies": {
+        "@types/react": "*",
+        "react": "^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+      },
+      "peerDependenciesMeta": {
+        "@types/react": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/magic-string": {
+      "version": "0.30.21",
+      "resolved": "https://registry.npmjs.org/magic-string/-/magic-string-0.30.21.tgz",
+      "integrity": "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@jridgewell/sourcemap-codec": "^1.5.5"
+      }
+    },
+    "node_modules/math-intrinsics": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz",
+      "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/merge2": {
+      "version": "1.4.1",
+      "resolved": "https://registry.npmjs.org/merge2/-/merge2-1.4.1.tgz",
+      "integrity": "sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/micromatch": {
+      "version": "4.0.8",
+      "resolved": "https://registry.npmjs.org/micromatch/-/micromatch-4.0.8.tgz",
+      "integrity": "sha512-PXwfBhYu0hBCPw8Dn0E+WDYb7af3dSLVWKi3HGv84IdF4TyFoC0ysxFd0Goxw7nSv4T/PzEJQxsYsEiFCKo2BA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "braces": "^3.0.3",
+        "picomatch": "^2.3.1"
+      },
+      "engines": {
+        "node": ">=8.6"
+      }
+    },
+    "node_modules/minimatch": {
+      "version": "3.1.5",
+      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.5.tgz",
+      "integrity": "sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "brace-expansion": "^1.1.7"
+      },
+      "engines": {
+        "node": "*"
+      }
+    },
+    "node_modules/minimist": {
+      "version": "1.2.8",
+      "resolved": "https://registry.npmjs.org/minimist/-/minimist-1.2.8.tgz",
+      "integrity": "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==",
+      "dev": true,
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/ms": {
+      "version": "2.1.3",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/nanoid": {
+      "version": "3.3.20",
+      "resolved": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.20.tgz",
+      "integrity": "sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==",
+      "funding": [
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "MIT",
+      "bin": {
+        "nanoid": "bin/nanoid.cjs"
+      },
+      "engines": {
+        "node": "^10 || ^12 || ^13.7 || ^14 || >=15.0.1"
+      }
+    },
+    "node_modules/napi-postinstall": {
+      "version": "0.3.4",
+      "resolved": "https://registry.npmjs.org/napi-postinstall/-/napi-postinstall-0.3.4.tgz",
+      "integrity": "sha512-PHI5f1O0EP5xJ9gQmFGMS6IZcrVvTjpXjz7Na41gTE7eE2hK11lg04CECCYEEjdc17EV4DO+fkGEtt7TpTaTiQ==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "napi-postinstall": "lib/cli.js"
+      },
+      "engines": {
+        "node": "^12.20.0 || ^14.18.0 || >=16.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/napi-postinstall"
+      }
+    },
+    "node_modules/natural-compare": {
+      "version": "1.4.0",
+      "resolved": "https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz",
+      "integrity": "sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/next": {
+      "version": "16.2.6",
+      "resolved": "https://registry.npmjs.org/next/-/next-16.2.6.tgz",
+      "integrity": "sha512-qOVgKJg1+At15NpeUP+eJgCHvTCgXsogweq87Ri/Ix7PkqQHg4sdaXmSFqKlgaIXE4kW0g25LE68W87UANlHtw==",
+      "license": "MIT",
+      "dependencies": {
+        "@next/env": "16.2.6",
+        "@swc/helpers": "0.5.15",
+        "baseline-browser-mapping": "^2.9.19",
+        "caniuse-lite": "^1.0.30001579",
+        "postcss": "8.4.31",
+        "styled-jsx": "5.1.6"
+      },
+      "bin": {
+        "next": "dist/bin/next"
+      },
+      "engines": {
+        "node": ">=20.9.0"
+      },
+      "optionalDependencies": {
+        "@next/swc-darwin-arm64": "16.2.6",
+        "@next/swc-darwin-x64": "16.2.6",
+        "@next/swc-linux-arm64-gnu": "16.2.6",
+        "@next/swc-linux-arm64-musl": "16.2.6",
+        "@next/swc-linux-x64-gnu": "16.2.6",
+        "@next/swc-linux-x64-musl": "16.2.6",
+        "@next/swc-win32-arm64-msvc": "16.2.6",
+        "@next/swc-win32-x64-msvc": "16.2.6",
+        "sharp": "^0.34.5"
+      },
+      "peerDependencies": {
+        "@opentelemetry/api": "^1.1.0",
+        "@playwright/test": "^1.51.1",
+        "babel-plugin-react-compiler": "*",
+        "react": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0",
+        "react-dom": "^18.2.0 || 19.0.0-rc-de68d2f4-20241204 || ^19.0.0",
+        "sass": "^1.3.0"
+      },
+      "peerDependenciesMeta": {
+        "@opentelemetry/api": {
+          "optional": true
+        },
+        "@playwright/test": {
+          "optional": true
+        },
+        "babel-plugin-react-compiler": {
+          "optional": true
+        },
+        "sass": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/next/node_modules/postcss": {
+      "version": "8.4.31",
+      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.4.31.tgz",
+      "integrity": "sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==",
+      "funding": [
+        {
+          "type": "opencollective",
+          "url": "https://opencollective.com/postcss/"
+        },
+        {
+          "type": "tidelift",
+          "url": "https://tidelift.com/funding/github/npm/postcss"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "nanoid": "^3.3.6",
+        "picocolors": "^1.0.0",
+        "source-map-js": "^1.0.2"
+      },
+      "engines": {
+        "node": "^10 || ^12 || >=14"
+      }
+    },
+    "node_modules/node-exports-info": {
+      "version": "1.6.2",
+      "resolved": "https://registry.npmjs.org/node-exports-info/-/node-exports-info-1.6.2.tgz",
+      "integrity": "sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "array.prototype.flatmap": "^1.3.3",
+        "es-errors": "^1.3.0",
+        "object.entries": "^1.1.9",
+        "semver": "^6.3.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/node-releases": {
+      "version": "2.0.57",
+      "resolved": "https://registry.npmjs.org/node-releases/-/node-releases-2.0.57.tgz",
+      "integrity": "sha512-kQK9LGGFiHtrWiNhZtA7Qbw17AQz+dmsEKODRIVTXA9+e5MS/2gZEBhYJt13GrAz5/IOZKddH/0Z3TP/Zgo+yw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=18"
+      }
+    },
+    "node_modules/object-assign": {
+      "version": "4.1.1",
+      "resolved": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz",
+      "integrity": "sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/object-inspect": {
+      "version": "1.13.4",
+      "resolved": "https://registry.npmjs.org/object-inspect/-/object-inspect-1.13.4.tgz",
+      "integrity": "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/object-keys": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/object-keys/-/object-keys-1.1.1.tgz",
+      "integrity": "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/object.assign": {
+      "version": "4.1.7",
+      "resolved": "https://registry.npmjs.org/object.assign/-/object.assign-4.1.7.tgz",
+      "integrity": "sha512-nK28WOo+QIjBkDduTINE4JkF/UJJKyf2EJxvJKfblDpyg0Q+pkOHNTL0Qwy6NP6FhE/EnzV73BxxqcJaXY9anw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.3",
+        "define-properties": "^1.2.1",
+        "es-object-atoms": "^1.0.0",
+        "has-symbols": "^1.1.0",
+        "object-keys": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/object.entries": {
+      "version": "1.1.9",
+      "resolved": "https://registry.npmjs.org/object.entries/-/object.entries-1.1.9.tgz",
+      "integrity": "sha512-8u/hfXFRBD1O0hPUjioLhoWFHRmt6tKA4/vZPyckBr18l1KE9uHrFaFaUi8MDRTpi4uak2goyPTSNJLXX2k2Hw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-object-atoms": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/object.fromentries": {
+      "version": "2.0.8",
+      "resolved": "https://registry.npmjs.org/object.fromentries/-/object.fromentries-2.0.8.tgz",
+      "integrity": "sha512-k6E21FzySsSK5a21KRADBd/NGneRegFO5pLHfdQLpRDETUNJueLXs3WCzyQ3tFRDYgbq3KHGXfTbi2bs8WQ6rQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.2",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/object.groupby": {
+      "version": "1.0.3",
+      "resolved": "https://registry.npmjs.org/object.groupby/-/object.groupby-1.0.3.tgz",
+      "integrity": "sha512-+Lhy3TQTuzXI5hevh8sBGqbmurHbbIjAi0Z4S63nthVLmLxfbj4T54a4CfZrXIrt9iP4mVAPYMo/v99taj3wjQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/object.values": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/object.values/-/object.values-1.2.1.tgz",
+      "integrity": "sha512-gXah6aZrcUxjWg2zR2MwouP2eHlCBzdV4pygudehaKXSGW4v2AsRQUK+lwwXhii6KFZcunEnmSUoYp5CXibxtA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "call-bound": "^1.0.3",
+        "define-properties": "^1.2.1",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/optionator": {
+      "version": "0.9.4",
+      "resolved": "https://registry.npmjs.org/optionator/-/optionator-0.9.4.tgz",
+      "integrity": "sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "deep-is": "^0.1.3",
+        "fast-levenshtein": "^2.0.6",
+        "levn": "^0.4.1",
+        "prelude-ls": "^1.2.1",
+        "type-check": "^0.4.0",
+        "word-wrap": "^1.2.5"
+      },
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/own-keys": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/own-keys/-/own-keys-1.0.2.tgz",
+      "integrity": "sha512-19YVAg7T+WTrxggPukVq7DjTv6+PJ867TmhCvBsYwmbFCsZd344rq2Ld1p0wo8f8Qrrhgp82c6FJRqdXWtSEhg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.4",
+        "get-intrinsic": "^1.3.0",
+        "object-keys": "^1.1.1",
+        "safe-push-apply": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/p-limit": {
+      "version": "3.1.0",
+      "resolved": "https://registry.npmjs.org/p-limit/-/p-limit-3.1.0.tgz",
+      "integrity": "sha512-TYOanM3wGwNGsZN2cVTYPArw454xnXj5qmWF1bEoAc4+cU/ol7GVh7odevjp1FNHduHc3KZMcFduxU5Xc6uJRQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "yocto-queue": "^0.1.0"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/p-locate": {
+      "version": "5.0.0",
+      "resolved": "https://registry.npmjs.org/p-locate/-/p-locate-5.0.0.tgz",
+      "integrity": "sha512-LaNjtRWUBY++zB5nE/NwcaoMylSPk+S+ZHNB1TzdbMJMny6dynpAGt7X/tl/QYq3TIeE6nxHppbo2LGymrG5Pw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "p-limit": "^3.0.2"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/parent-module": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/parent-module/-/parent-module-1.0.1.tgz",
+      "integrity": "sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "callsites": "^3.0.0"
+      },
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/path-exists": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/path-exists/-/path-exists-4.0.0.tgz",
+      "integrity": "sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/path-key": {
+      "version": "3.1.1",
+      "resolved": "https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz",
+      "integrity": "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/path-parse": {
+      "version": "1.0.7",
+      "resolved": "https://registry.npmjs.org/path-parse/-/path-parse-1.0.7.tgz",
+      "integrity": "sha512-LDJzPVEEEPR+y48z93A0Ed0yXb8pAByGWo/k5YYdYgpY2/2EsOsksJrq7lOHxryrVOn1ejG6oAp8ahvOIQD8sw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/picocolors": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+      "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==",
+      "license": "ISC"
+    },
+    "node_modules/picomatch": {
+      "version": "2.3.2",
+      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-2.3.2.tgz",
+      "integrity": "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8.6"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/jonschlinkert"
+      }
+    },
+    "node_modules/possible-typed-array-names": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/possible-typed-array-names/-/possible-typed-array-names-1.1.0.tgz",
+      "integrity": "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/postcss": {
+      "version": "8.5.8",
+      "resolved": "https://registry.npmjs.org/postcss/-/postcss-8.5.8.tgz",
+      "integrity": "sha512-OW/rX8O/jXnm82Ey1k44pObPtdblfiuWnrd8X7GJ7emImCOstunGbXUpp7HdBrFQX6rJzn3sPT397Wp5aCwCHg==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "opencollective",
+          "url": "https://opencollective.com/postcss/"
+        },
+        {
+          "type": "tidelift",
+          "url": "https://tidelift.com/funding/github/npm/postcss"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "nanoid": "^3.3.11",
+        "picocolors": "^1.1.1",
+        "source-map-js": "^1.2.1"
+      },
+      "engines": {
+        "node": "^10 || ^12 || >=14"
+      }
+    },
+    "node_modules/prelude-ls": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/prelude-ls/-/prelude-ls-1.2.1.tgz",
+      "integrity": "sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/prop-types": {
+      "version": "15.8.1",
+      "resolved": "https://registry.npmjs.org/prop-types/-/prop-types-15.8.1.tgz",
+      "integrity": "sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "loose-envify": "^1.4.0",
+        "object-assign": "^4.1.1",
+        "react-is": "^16.13.1"
+      }
+    },
+    "node_modules/punycode": {
+      "version": "2.3.1",
+      "resolved": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz",
+      "integrity": "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/queue-microtask": {
+      "version": "1.2.3",
+      "resolved": "https://registry.npmjs.org/queue-microtask/-/queue-microtask-1.2.3.tgz",
+      "integrity": "sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/feross"
+        },
+        {
+          "type": "patreon",
+          "url": "https://www.patreon.com/feross"
+        },
+        {
+          "type": "consulting",
+          "url": "https://feross.org/support"
+        }
+      ],
+      "license": "MIT"
+    },
+    "node_modules/react": {
+      "version": "19.2.6",
+      "resolved": "https://registry.npmjs.org/react/-/react-19.2.6.tgz",
+      "integrity": "sha512-sfWGGfavi0xr8Pg0sVsyHMAOziVYKgPLNrS7ig+ivMNb3wbCBw3KxtflsGBAwD3gYQlE/AEZsTLgToRrSCjb0Q==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/react-dom": {
+      "version": "19.2.6",
+      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.6.tgz",
+      "integrity": "sha512-0prMI+hvBbPjsWnxDLxlCGyM8PN6UuWjEUCYmZhO67xIV9Xasa/r/vDnq+Xyq4Lo27g8QSbO5YzARu0D1Sps3g==",
+      "license": "MIT",
+      "dependencies": {
+        "scheduler": "^0.27.0"
+      },
+      "peerDependencies": {
+        "react": "^19.2.6"
+      }
+    },
+    "node_modules/react-is": {
+      "version": "16.13.1",
+      "resolved": "https://registry.npmjs.org/react-is/-/react-is-16.13.1.tgz",
+      "integrity": "sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/reflect.getprototypeof": {
+      "version": "1.0.10",
+      "resolved": "https://registry.npmjs.org/reflect.getprototypeof/-/reflect.getprototypeof-1.0.10.tgz",
+      "integrity": "sha512-00o4I+DVrefhv+nX0ulyi3biSHCPDe+yLv5o/p6d/UVlirijB8E16FtfwSAi4g3tcqrQ4lRAqQSoFEZJehYEcw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.9",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.0.0",
+        "get-intrinsic": "^1.2.7",
+        "get-proto": "^1.0.1",
+        "which-builtin-type": "^1.2.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/regexp.prototype.flags": {
+      "version": "1.5.4",
+      "resolved": "https://registry.npmjs.org/regexp.prototype.flags/-/regexp.prototype.flags-1.5.4.tgz",
+      "integrity": "sha512-dYqgNSZbDwkaJ2ceRd9ojCGjBq+mOm9LmtXnAnEGyHhN/5R7iDW2TRw3h+o/jCFxus3P2LfWIIiwowAjANm7IA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "define-properties": "^1.2.1",
+        "es-errors": "^1.3.0",
+        "get-proto": "^1.0.1",
+        "gopd": "^1.2.0",
+        "set-function-name": "^2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/resolve": {
+      "version": "2.0.0-next.7",
+      "resolved": "https://registry.npmjs.org/resolve/-/resolve-2.0.0-next.7.tgz",
+      "integrity": "sha512-tqt+NBWwyaMgw3zDsnygx4CByWjQEJHOPMdslYhppaQSJUtL/D4JO9CcBBlhPoI8lz9oJIDXkwXfhF4aWqP8xQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "is-core-module": "^2.16.2",
+        "node-exports-info": "^1.6.0",
+        "object-keys": "^1.1.1",
+        "path-parse": "^1.0.7",
+        "supports-preserve-symlinks-flag": "^1.0.0"
+      },
+      "bin": {
+        "resolve": "bin/resolve"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/resolve-from": {
+      "version": "4.0.0",
+      "resolved": "https://registry.npmjs.org/resolve-from/-/resolve-from-4.0.0.tgz",
+      "integrity": "sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/resolve-pkg-maps": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/resolve-pkg-maps/-/resolve-pkg-maps-1.0.0.tgz",
+      "integrity": "sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==",
+      "dev": true,
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/privatenumber/resolve-pkg-maps?sponsor=1"
+      }
+    },
+    "node_modules/reusify": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/reusify/-/reusify-1.1.0.tgz",
+      "integrity": "sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "iojs": ">=1.0.0",
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/run-parallel": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/run-parallel/-/run-parallel-1.2.0.tgz",
+      "integrity": "sha512-5l4VyZR86LZ/lDxZTR6jqL8AFE2S0IFLMP26AbjsLVADxHdhB/c0GUsH+y39UfCi3dzz8OlQuPmnaJOMoDHQBA==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/feross"
+        },
+        {
+          "type": "patreon",
+          "url": "https://www.patreon.com/feross"
+        },
+        {
+          "type": "consulting",
+          "url": "https://feross.org/support"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "queue-microtask": "^1.2.2"
+      }
+    },
+    "node_modules/safe-array-concat": {
+      "version": "1.1.4",
+      "resolved": "https://registry.npmjs.org/safe-array-concat/-/safe-array-concat-1.1.4.tgz",
+      "integrity": "sha512-wtZlHyOje6OZTGqAoaDKxFkgRtkF9CnHAVnCHKfuj200wAgL+bSJhdsCD2l0Qx/2ekEXjPWcyKkfGb5CPboslg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "get-intrinsic": "^1.3.0",
+        "has-symbols": "^1.1.0",
+        "isarray": "^2.0.5"
+      },
+      "engines": {
+        "node": ">=0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/safe-push-apply": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/safe-push-apply/-/safe-push-apply-1.0.0.tgz",
+      "integrity": "sha512-iKE9w/Z7xCzUMIZqdBsp6pEQvwuEebH4vdpjcDWnyzaI6yl6O9FHvVpmGelvEHNsoY6wGblkxR6Zty/h00WiSA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "isarray": "^2.0.5"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/safe-regex-test": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/safe-regex-test/-/safe-regex-test-1.1.0.tgz",
+      "integrity": "sha512-x/+Cz4YrimQxQccJf5mKEbIa1NzeCRNI5Ecl/ekmlYaampdNLPalVyIcCZNNH3MvmqBugV5TMYZXv0ljslUlaw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "is-regex": "^1.2.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/scheduler": {
+      "version": "0.27.0",
+      "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.27.0.tgz",
+      "integrity": "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q==",
+      "license": "MIT"
+    },
+    "node_modules/semver": {
+      "version": "6.3.1",
+      "resolved": "https://registry.npmjs.org/semver/-/semver-6.3.1.tgz",
+      "integrity": "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==",
+      "dev": true,
+      "license": "ISC",
+      "bin": {
+        "semver": "bin/semver.js"
+      }
+    },
+    "node_modules/set-function-length": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/set-function-length/-/set-function-length-1.2.2.tgz",
+      "integrity": "sha512-pgRc4hJ4/sNjWCSS9AmnS40x3bNMDTknHgL5UaMBTMyJnU90EgWh1Rz+MC9eFu4BuN/UwZjKQuY/1v3rM7HMfg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-data-property": "^1.1.4",
+        "es-errors": "^1.3.0",
+        "function-bind": "^1.1.2",
+        "get-intrinsic": "^1.2.4",
+        "gopd": "^1.0.1",
+        "has-property-descriptors": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/set-function-name": {
+      "version": "2.0.2",
+      "resolved": "https://registry.npmjs.org/set-function-name/-/set-function-name-2.0.2.tgz",
+      "integrity": "sha512-7PGFlmtwsEADb0WYyvCMa1t+yke6daIG4Wirafur5kcf+MhUnPms1UeR0CKQdTZD81yESwMHbtn+TR+dMviakQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-data-property": "^1.1.4",
+        "es-errors": "^1.3.0",
+        "functions-have-names": "^1.2.3",
+        "has-property-descriptors": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/set-proto": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/set-proto/-/set-proto-1.0.0.tgz",
+      "integrity": "sha512-RJRdvCo6IAnPdsvP/7m6bsQqNnn1FCBX5ZNtFL98MmFF/4xAIJTIg1YbHW5DC2W5SKZanrC6i4HsJqlajw/dZw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "dunder-proto": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/sharp": {
+      "version": "0.34.5",
+      "resolved": "https://registry.npmjs.org/sharp/-/sharp-0.34.5.tgz",
+      "integrity": "sha512-Ou9I5Ft9WNcCbXrU9cMgPBcCK8LiwLqcbywW3t4oDV37n1pzpuNLsYiAV8eODnjbtQlSDwZ2cUEeQz4E54Hltg==",
+      "hasInstallScript": true,
+      "license": "Apache-2.0",
+      "optional": true,
+      "dependencies": {
+        "@img/colour": "^1.0.0",
+        "detect-libc": "^2.1.2",
+        "semver": "^7.7.3"
+      },
+      "engines": {
+        "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
+      },
+      "funding": {
+        "url": "https://opencollective.com/libvips"
+      },
+      "optionalDependencies": {
+        "@img/sharp-darwin-arm64": "0.34.5",
+        "@img/sharp-darwin-x64": "0.34.5",
+        "@img/sharp-libvips-darwin-arm64": "1.2.4",
+        "@img/sharp-libvips-darwin-x64": "1.2.4",
+        "@img/sharp-libvips-linux-arm": "1.2.4",
+        "@img/sharp-libvips-linux-arm64": "1.2.4",
+        "@img/sharp-libvips-linux-ppc64": "1.2.4",
+        "@img/sharp-libvips-linux-riscv64": "1.2.4",
+        "@img/sharp-libvips-linux-s390x": "1.2.4",
+        "@img/sharp-libvips-linux-x64": "1.2.4",
+        "@img/sharp-libvips-linuxmusl-arm64": "1.2.4",
+        "@img/sharp-libvips-linuxmusl-x64": "1.2.4",
+        "@img/sharp-linux-arm": "0.34.5",
+        "@img/sharp-linux-arm64": "0.34.5",
+        "@img/sharp-linux-ppc64": "0.34.5",
+        "@img/sharp-linux-riscv64": "0.34.5",
+        "@img/sharp-linux-s390x": "0.34.5",
+        "@img/sharp-linux-x64": "0.34.5",
+        "@img/sharp-linuxmusl-arm64": "0.34.5",
+        "@img/sharp-linuxmusl-x64": "0.34.5",
+        "@img/sharp-wasm32": "0.34.5",
+        "@img/sharp-win32-arm64": "0.34.5",
+        "@img/sharp-win32-ia32": "0.34.5",
+        "@img/sharp-win32-x64": "0.34.5"
+      }
+    },
+    "node_modules/sharp/node_modules/semver": {
+      "version": "7.8.5",
+      "resolved": "https://registry.npmjs.org/semver/-/semver-7.8.5.tgz",
+      "integrity": "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==",
+      "license": "ISC",
+      "optional": true,
+      "bin": {
+        "semver": "bin/semver.js"
+      },
+      "engines": {
+        "node": ">=10"
+      }
+    },
+    "node_modules/shebang-command": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz",
+      "integrity": "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "shebang-regex": "^3.0.0"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/shebang-regex": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz",
+      "integrity": "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/side-channel": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/side-channel/-/side-channel-1.1.1.tgz",
+      "integrity": "sha512-6x6dK6zJdpTzF4sQeNYxwtvBzf6Eg4GtlesS94HOvTudUeyK2WXAaIfmDgsyslYrRBeFIlsi54AYsFGUuhmvrQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "object-inspect": "^1.13.4",
+        "side-channel-list": "^1.0.1",
+        "side-channel-map": "^1.0.1",
+        "side-channel-weakmap": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-list": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/side-channel-list/-/side-channel-list-1.0.1.tgz",
+      "integrity": "sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "object-inspect": "^1.13.4"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-map": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/side-channel-map/-/side-channel-map-1.0.1.tgz",
+      "integrity": "sha512-VCjCNfgMsby3tTdo02nbjtM/ewra6jPHmpThenkTYh8pG9ucZ/1P8So4u4FGBek/BjpOVsDCMoLA/iuBKIFXRA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.5",
+        "object-inspect": "^1.13.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-weakmap": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/side-channel-weakmap/-/side-channel-weakmap-1.0.2.tgz",
+      "integrity": "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.5",
+        "object-inspect": "^1.13.3",
+        "side-channel-map": "^1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/source-map-js": {
+      "version": "1.2.2",
+      "resolved": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.2.tgz",
+      "integrity": "sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==",
+      "license": "BSD-3-Clause",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/ssf": {
+      "version": "0.11.2",
+      "resolved": "https://registry.npmjs.org/ssf/-/ssf-0.11.2.tgz",
+      "integrity": "sha512-+idbmIXoYET47hH+d7dfm2epdOMUDjqcB4648sTZ+t2JwoyBFL/insLfB/racrDmsKB3diwsDA696pZMieAC5g==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "frac": "~1.1.2"
+      },
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/stable-hash": {
+      "version": "0.0.5",
+      "resolved": "https://registry.npmjs.org/stable-hash/-/stable-hash-0.0.5.tgz",
+      "integrity": "sha512-+L3ccpzibovGXFK+Ap/f8LOS0ahMrHTf3xu7mMLSpEGU0EO9ucaysSylKo9eRDFNhWve/y275iPmIZ4z39a9iA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/stop-iteration-iterator": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/stop-iteration-iterator/-/stop-iteration-iterator-1.1.0.tgz",
+      "integrity": "sha512-eLoXW/DHyl62zxY4SCaIgnRhuMr6ri4juEYARS8E6sCEqzKpOiE521Ucofdx+KnDZl5xmvGYaaKCk5FEOxJCoQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "internal-slot": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/string.prototype.includes": {
+      "version": "2.0.1",
+      "resolved": "https://registry.npmjs.org/string.prototype.includes/-/string.prototype.includes-2.0.1.tgz",
+      "integrity": "sha512-o7+c9bW6zpAdJHTtujeePODAhkuicdAryFsfVKwA+wGw89wJ4GTY484WTucM9hLtDEOpOvI+aHnzqnC5lHp4Rg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.23.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/string.prototype.matchall": {
+      "version": "4.1.0",
+      "resolved": "https://registry.npmjs.org/string.prototype.matchall/-/string.prototype.matchall-4.1.0.tgz",
+      "integrity": "sha512-tHNHTxInrYLCga9O9YGxWA3G9/nnzQw8UGAyqGx3Ar1pSTTzIuM4woFSq4SowkXCjJIwq5sIiQvEfRI9tCH1qQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.24.2",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.2",
+        "get-intrinsic": "^1.3.0",
+        "gopd": "^1.2.0",
+        "has-symbols": "^1.1.0",
+        "internal-slot": "^1.1.0",
+        "regexp.prototype.flags": "^1.5.4",
+        "set-function-name": "^2.0.2",
+        "side-channel": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/string.prototype.repeat": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/string.prototype.repeat/-/string.prototype.repeat-1.0.0.tgz",
+      "integrity": "sha512-0u/TldDbKD8bFCQ/4f5+mNRrXwZ8hg2w7ZR8wa16e8z9XpePWl3eGEcUD0OXpEH/VJH/2G3gjUtR3ZOiBe2S/w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "define-properties": "^1.1.3",
+        "es-abstract": "^1.17.5"
+      }
+    },
+    "node_modules/string.prototype.trim": {
+      "version": "1.2.11",
+      "resolved": "https://registry.npmjs.org/string.prototype.trim/-/string.prototype.trim-1.2.11.tgz",
+      "integrity": "sha512-PwvK7BU+CMTJGYQCTZb5RWXIML92lftJLhQz1tBzgKiqGxJaMlBAa48POXaNAC2s4y8jr3EFqrkF9+44neS46w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "define-data-property": "^1.1.4",
+        "define-properties": "^1.2.1",
+        "es-abstract": "^1.24.2",
+        "es-object-atoms": "^1.1.2",
+        "has-property-descriptors": "^1.0.2",
+        "safe-regex-test": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/string.prototype.trimend": {
+      "version": "1.0.10",
+      "resolved": "https://registry.npmjs.org/string.prototype.trimend/-/string.prototype.trimend-1.0.10.tgz",
+      "integrity": "sha512-2+3aDAOmPTmuFwjDnmJG2ctEkQKVki7vOSqaxkv42Mowj1V6PnvuwFCRrR5lChUux1TBskPjfkeTOhqczDMxTw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "define-properties": "^1.2.1",
+        "es-object-atoms": "^1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/string.prototype.trimstart": {
+      "version": "1.0.8",
+      "resolved": "https://registry.npmjs.org/string.prototype.trimstart/-/string.prototype.trimstart-1.0.8.tgz",
+      "integrity": "sha512-UXSH262CSZY1tfu3G3Secr6uGLCFVPMhIqHjlgCUtCCcgihYc/xKs9djMTMUOb2j1mVSeU8EU6NWc/iQKU6Gfg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.7",
+        "define-properties": "^1.2.1",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/strip-bom": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/strip-bom/-/strip-bom-3.0.0.tgz",
+      "integrity": "sha512-vavAMRXOgBVNF6nyEEmL3DBK19iRpDcoIwW+swQ+CbGiu7lju6t+JklA1MHweoWtadgt4ISVUsXLyDq34ddcwA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/strip-json-comments": {
+      "version": "3.1.1",
+      "resolved": "https://registry.npmjs.org/strip-json-comments/-/strip-json-comments-3.1.1.tgz",
+      "integrity": "sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/styled-jsx": {
+      "version": "5.1.6",
+      "resolved": "https://registry.npmjs.org/styled-jsx/-/styled-jsx-5.1.6.tgz",
+      "integrity": "sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==",
+      "license": "MIT",
+      "dependencies": {
+        "client-only": "0.0.1"
+      },
+      "engines": {
+        "node": ">= 12.0.0"
+      },
+      "peerDependencies": {
+        "react": ">= 16.8.0 || 17.x.x || ^18.0.0-0 || ^19.0.0-0"
+      },
+      "peerDependenciesMeta": {
+        "@babel/core": {
+          "optional": true
+        },
+        "babel-plugin-macros": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/supports-color": {
+      "version": "7.2.0",
+      "resolved": "https://registry.npmjs.org/supports-color/-/supports-color-7.2.0.tgz",
+      "integrity": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "has-flag": "^4.0.0"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/supports-preserve-symlinks-flag": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/supports-preserve-symlinks-flag/-/supports-preserve-symlinks-flag-1.0.0.tgz",
+      "integrity": "sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/tailwindcss": {
+      "version": "4.1.17",
+      "resolved": "https://registry.npmjs.org/tailwindcss/-/tailwindcss-4.1.17.tgz",
+      "integrity": "sha512-j9Ee2YjuQqYT9bbRTfTZht9W/ytp5H+jJpZKiYdP/bpnXARAuELt9ofP0lPnmHjbga7SNQIxdTAXCmtKVYjN+Q==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/tapable": {
+      "version": "2.3.3",
+      "resolved": "https://registry.npmjs.org/tapable/-/tapable-2.3.3.tgz",
+      "integrity": "sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/webpack"
+      }
+    },
+    "node_modules/tinyglobby": {
+      "version": "0.2.17",
+      "resolved": "https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz",
+      "integrity": "sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fdir": "^6.5.0",
+        "picomatch": "^4.0.4"
+      },
+      "engines": {
+        "node": ">=12.0.0"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/SuperchupuDev"
+      }
+    },
+    "node_modules/tinyglobby/node_modules/fdir": {
+      "version": "6.5.0",
+      "resolved": "https://registry.npmjs.org/fdir/-/fdir-6.5.0.tgz",
+      "integrity": "sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=12.0.0"
+      },
+      "peerDependencies": {
+        "picomatch": "^3 || ^4"
+      },
+      "peerDependenciesMeta": {
+        "picomatch": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/tinyglobby/node_modules/picomatch": {
+      "version": "4.0.7",
+      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.7.tgz",
+      "integrity": "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=12"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/jonschlinkert"
+      }
+    },
+    "node_modules/to-regex-range": {
+      "version": "5.0.1",
+      "resolved": "https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz",
+      "integrity": "sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-number": "^7.0.0"
+      },
+      "engines": {
+        "node": ">=8.0"
+      }
+    },
+    "node_modules/ts-api-utils": {
+      "version": "2.5.0",
+      "resolved": "https://registry.npmjs.org/ts-api-utils/-/ts-api-utils-2.5.0.tgz",
+      "integrity": "sha512-OJ/ibxhPlqrMM0UiNHJ/0CKQkoKF243/AEmplt3qpRgkW8VG7IfOS41h7V8TjITqdByHzrjcS/2si+y4lIh8NA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=18.12"
+      },
+      "peerDependencies": {
+        "typescript": ">=4.8.4"
+      }
+    },
+    "node_modules/tsconfig-paths": {
+      "version": "3.15.0",
+      "resolved": "https://registry.npmjs.org/tsconfig-paths/-/tsconfig-paths-3.15.0.tgz",
+      "integrity": "sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@types/json5": "^0.0.29",
+        "json5": "^1.0.2",
+        "minimist": "^1.2.6",
+        "strip-bom": "^3.0.0"
+      }
+    },
+    "node_modules/tsconfig-paths/node_modules/json5": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/json5/-/json5-1.0.2.tgz",
+      "integrity": "sha512-g1MWMLBiz8FKi1e4w0UyVL3w+iJceWAFBAaBnnGKOpNa5f8TLktkbre1+s6oICydWAm+HRUGTmI+//xv2hvXYA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "minimist": "^1.2.0"
+      },
+      "bin": {
+        "json5": "lib/cli.js"
+      }
+    },
+    "node_modules/tslib": {
+      "version": "2.8.1",
+      "resolved": "https://registry.npmjs.org/tslib/-/tslib-2.8.1.tgz",
+      "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==",
+      "license": "0BSD"
+    },
+    "node_modules/type-check": {
+      "version": "0.4.0",
+      "resolved": "https://registry.npmjs.org/type-check/-/type-check-0.4.0.tgz",
+      "integrity": "sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "prelude-ls": "^1.2.1"
+      },
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/typed-array-buffer": {
+      "version": "1.0.3",
+      "resolved": "https://registry.npmjs.org/typed-array-buffer/-/typed-array-buffer-1.0.3.tgz",
+      "integrity": "sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "es-errors": "^1.3.0",
+        "is-typed-array": "^1.1.14"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/typed-array-byte-length": {
+      "version": "1.0.3",
+      "resolved": "https://registry.npmjs.org/typed-array-byte-length/-/typed-array-byte-length-1.0.3.tgz",
+      "integrity": "sha512-BaXgOuIxz8n8pIq3e7Atg/7s+DpiYrxn4vdot3w9KbnBhcRQq6o3xemQdIfynqSeXeDrF32x+WvfzmOjPiY9lg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.8",
+        "for-each": "^0.3.3",
+        "gopd": "^1.2.0",
+        "has-proto": "^1.2.0",
+        "is-typed-array": "^1.1.14"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/typed-array-byte-offset": {
+      "version": "1.0.5",
+      "resolved": "https://registry.npmjs.org/typed-array-byte-offset/-/typed-array-byte-offset-1.0.5.tgz",
+      "integrity": "sha512-0FHJvLPqZ7KJzp17O13jfsAjsqazgrxBu2zEK95PmUz8lv2+GjRuxUInCr2Rk9Dms3ihN21zJ929ZO43yJ95QQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "available-typed-arrays": "^1.0.7",
+        "call-bind": "^1.0.9",
+        "for-each": "^0.3.5",
+        "gopd": "^1.2.0",
+        "is-typed-array": "^1.1.15",
+        "reflect.getprototypeof": "^1.0.10"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/typed-array-length": {
+      "version": "1.0.8",
+      "resolved": "https://registry.npmjs.org/typed-array-length/-/typed-array-length-1.0.8.tgz",
+      "integrity": "sha512-phPGCwqr2+Qo0fwniCE8e4pKnGu/yFb5nD5Y8bf0EEeiI5GklnACYA9GFy/DrAeRrKHXvHn+1SUsOWgJp6RO+g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bind": "^1.0.9",
+        "for-each": "^0.3.5",
+        "gopd": "^1.2.0",
+        "is-typed-array": "^1.1.15",
+        "possible-typed-array-names": "^1.1.0",
+        "reflect.getprototypeof": "^1.0.10"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/typescript": {
+      "version": "5.9.3",
+      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+      "dev": true,
+      "license": "Apache-2.0",
+      "bin": {
+        "tsc": "bin/tsc",
+        "tsserver": "bin/tsserver"
+      },
+      "engines": {
+        "node": ">=14.17"
+      }
+    },
+    "node_modules/typescript-eslint": {
+      "version": "8.71.1",
+      "resolved": "https://registry.npmjs.org/typescript-eslint/-/typescript-eslint-8.71.1.tgz",
+      "integrity": "sha512-oiNVPC3/NbV1FpaHU07l8O6ynqG9v4PAiW2WvTrAmZdR0f2HI/gE668ElMLCK7Xbsu5k2fK5C4fXNiq05j7/nQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "@typescript-eslint/eslint-plugin": "8.71.1",
+        "@typescript-eslint/parser": "8.71.1",
+        "@typescript-eslint/typescript-estree": "8.71.1",
+        "@typescript-eslint/utils": "8.71.1"
+      },
+      "engines": {
+        "node": "^18.18.0 || ^20.9.0 || >=21.1.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/typescript-eslint"
+      },
+      "peerDependencies": {
+        "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0",
+        "typescript": ">=4.8.4 <6.1.0"
+      }
+    },
+    "node_modules/unbox-primitive": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/unbox-primitive/-/unbox-primitive-1.1.0.tgz",
+      "integrity": "sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.3",
+        "has-bigints": "^1.0.2",
+        "has-symbols": "^1.1.0",
+        "which-boxed-primitive": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/undici-types": {
+      "version": "6.21.0",
+      "resolved": "https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz",
+      "integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/unrs-resolver": {
+      "version": "1.12.2",
+      "resolved": "https://registry.npmjs.org/unrs-resolver/-/unrs-resolver-1.12.2.tgz",
+      "integrity": "sha512-dmlRxBJJayXjqTwC+JtF1HhJmgf3ftQ3YejFcZrf4+KKtJv0qDsK1pjqaaVjG7wJ5NJ6UVP1OqRMQ71Z4C3rxQ==",
+      "dev": true,
+      "hasInstallScript": true,
+      "license": "MIT",
+      "dependencies": {
+        "napi-postinstall": "^0.3.4"
+      },
+      "funding": {
+        "url": "https://opencollective.com/unrs-resolver"
+      },
+      "optionalDependencies": {
+        "@unrs/resolver-binding-android-arm-eabi": "1.12.2",
+        "@unrs/resolver-binding-android-arm64": "1.12.2",
+        "@unrs/resolver-binding-darwin-arm64": "1.12.2",
+        "@unrs/resolver-binding-darwin-x64": "1.12.2",
+        "@unrs/resolver-binding-freebsd-x64": "1.12.2",
+        "@unrs/resolver-binding-linux-arm-gnueabihf": "1.12.2",
+        "@unrs/resolver-binding-linux-arm-musleabihf": "1.12.2",
+        "@unrs/resolver-binding-linux-arm64-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-arm64-musl": "1.12.2",
+        "@unrs/resolver-binding-linux-loong64-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-loong64-musl": "1.12.2",
+        "@unrs/resolver-binding-linux-ppc64-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-riscv64-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-riscv64-musl": "1.12.2",
+        "@unrs/resolver-binding-linux-s390x-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-x64-gnu": "1.12.2",
+        "@unrs/resolver-binding-linux-x64-musl": "1.12.2",
+        "@unrs/resolver-binding-openharmony-arm64": "1.12.2",
+        "@unrs/resolver-binding-wasm32-wasi": "1.12.2",
+        "@unrs/resolver-binding-win32-arm64-msvc": "1.12.2",
+        "@unrs/resolver-binding-win32-ia32-msvc": "1.12.2",
+        "@unrs/resolver-binding-win32-x64-msvc": "1.12.2"
+      }
+    },
+    "node_modules/update-browserslist-db": {
+      "version": "1.3.3",
+      "resolved": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz",
+      "integrity": "sha512-pJ2sYawQS0R/WI928Gj5GlPhTGzbMelq0+4INtSYNDV9ErKJcX6xjGWkoG/VnB3dpUm00zALaqkrUD77pO5TDQ==",
+      "dev": true,
+      "funding": [
+        {
+          "type": "opencollective",
+          "url": "https://opencollective.com/browserslist"
+        },
+        {
+          "type": "tidelift",
+          "url": "https://tidelift.com/funding/github/npm/browserslist"
+        },
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/ai"
+        }
+      ],
+      "license": "MIT",
+      "dependencies": {
+        "escalade": "^3.2.0",
+        "picocolors": "^1.1.1"
+      },
+      "bin": {
+        "update-browserslist-db": "cli.js"
+      },
+      "peerDependencies": {
+        "browserslist": ">= 4.21.0"
+      }
+    },
+    "node_modules/uri-js": {
+      "version": "4.4.1",
+      "resolved": "https://registry.npmjs.org/uri-js/-/uri-js-4.4.1.tgz",
+      "integrity": "sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==",
+      "dev": true,
+      "license": "BSD-2-Clause",
+      "dependencies": {
+        "punycode": "^2.1.0"
+      }
+    },
+    "node_modules/which": {
+      "version": "2.0.2",
+      "resolved": "https://registry.npmjs.org/which/-/which-2.0.2.tgz",
+      "integrity": "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "isexe": "^2.0.0"
+      },
+      "bin": {
+        "node-which": "bin/node-which"
+      },
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/which-boxed-primitive": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/which-boxed-primitive/-/which-boxed-primitive-1.1.1.tgz",
+      "integrity": "sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-bigint": "^1.1.0",
+        "is-boolean-object": "^1.2.1",
+        "is-number-object": "^1.1.1",
+        "is-string": "^1.1.1",
+        "is-symbol": "^1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/which-builtin-type": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/which-builtin-type/-/which-builtin-type-1.2.1.tgz",
+      "integrity": "sha512-6iBczoX+kDQ7a3+YJBnh3T+KZRxM/iYNPXicqk66/Qfm1b93iu+yOImkg0zHbj5LNOcNv1TEADiZ0xa34B4q6Q==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "function.prototype.name": "^1.1.6",
+        "has-tostringtag": "^1.0.2",
+        "is-async-function": "^2.0.0",
+        "is-date-object": "^1.1.0",
+        "is-finalizationregistry": "^1.1.0",
+        "is-generator-function": "^1.0.10",
+        "is-regex": "^1.2.1",
+        "is-weakref": "^1.0.2",
+        "isarray": "^2.0.5",
+        "which-boxed-primitive": "^1.1.0",
+        "which-collection": "^1.0.2",
+        "which-typed-array": "^1.1.16"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/which-collection": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/which-collection/-/which-collection-1.0.2.tgz",
+      "integrity": "sha512-K4jVyjnBdgvc86Y6BkaLZEN933SwYOuBFkdmBu9ZfkcAbdVbpITnDmjvZ/aQjRXQrv5EPkTnD1s39GiiqbngCw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-map": "^2.0.3",
+        "is-set": "^2.0.3",
+        "is-weakmap": "^2.0.2",
+        "is-weakset": "^2.0.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/which-typed-array": {
+      "version": "1.1.24",
+      "resolved": "https://registry.npmjs.org/which-typed-array/-/which-typed-array-1.1.24.tgz",
+      "integrity": "sha512-wk4Mf4pR5mRP7eYuuTBCIQ9d0ud2Fv2jRLQpfgnRjbOxAFHmjKFValgTpitVKzJJS8ajnYQV2Du1SZ8j6b/EUQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "available-typed-arrays": "^1.0.7",
+        "call-bind": "^1.0.9",
+        "call-bound": "^1.0.4",
+        "for-each": "^0.3.5",
+        "get-proto": "^1.0.1",
+        "gopd": "^1.2.0",
+        "has-tostringtag": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/wmf": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/wmf/-/wmf-1.0.2.tgz",
+      "integrity": "sha512-/p9K7bEh0Dj6WbXg4JG0xvLQmIadrner1bi45VMJTfnbVHsc7yIajZyoSoK60/dtVBs12Fm6WkUI5/3WAVsNMw==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/word": {
+      "version": "0.3.0",
+      "resolved": "https://registry.npmjs.org/word/-/word-0.3.0.tgz",
+      "integrity": "sha512-OELeY0Q61OXpdUfTp+oweA/vtLVg5VDOXh+3he3PNzLGG/y0oylSOC1xRVj0+l4vQ3tj/bB1HVHv1ocXkQceFA==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/word-wrap": {
+      "version": "1.2.5",
+      "resolved": "https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz",
+      "integrity": "sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/xlsx": {
+      "version": "0.18.5",
+      "resolved": "https://registry.npmjs.org/xlsx/-/xlsx-0.18.5.tgz",
+      "integrity": "sha512-dmg3LCjBPHZnQp5/F/+nnTa+miPJxUXB6vtk42YjBBKayDNagxGEeIdWApkYPOf3Z3pm3k62Knjzp7lMeTEtFQ==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "adler-32": "~1.3.0",
+        "cfb": "~1.2.1",
+        "codepage": "~1.15.0",
+        "crc-32": "~1.2.1",
+        "ssf": "~0.11.2",
+        "wmf": "~1.0.1",
+        "word": "~0.3.0"
+      },
+      "bin": {
+        "xlsx": "bin/xlsx.njs"
+      },
+      "engines": {
+        "node": ">=0.8"
+      }
+    },
+    "node_modules/yallist": {
+      "version": "3.1.1",
+      "resolved": "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz",
+      "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/yocto-queue": {
+      "version": "0.1.0",
+      "resolved": "https://registry.npmjs.org/yocto-queue/-/yocto-queue-0.1.0.tgz",
+      "integrity": "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/zod": {
+      "version": "4.6.5",
+      "resolved": "https://registry.npmjs.org/zod/-/zod-4.6.5.tgz",
+      "integrity": "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==",
+      "dev": true,
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/colinhacks"
+      }
+    },
+    "node_modules/zod-validation-error": {
+      "version": "4.0.2",
+      "resolved": "https://registry.npmjs.org/zod-validation-error/-/zod-validation-error-4.0.2.tgz",
+      "integrity": "sha512-Q6/nZLe6jxuU80qb/4uJ4t5v2VEZ44lzQjPDhYJNztRQ4wyWc6VF3D3Kb/fAuPetZQnhS3hnajCf9CsWesghLQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=18.0.0"
+      },
+      "peerDependencies": {
+        "zod": "^3.25.0 || ^4.0.0"
+      }
+    }
+  }
+}
+````
+
+### `postcss.config.mjs`
+
+````javascript
 const postcssConfig = {
   plugins: {
     "@tailwindcss/postcss": {},
@@ -147,11 +7085,11 @@ const postcssConfig = {
 };
 
 export default postcssConfig;
-```
+````
 
-### tsconfig.json
+### `tsconfig.json`
 
-```json
+````json
 {
   "compilerOptions": {
     "target": "ES2017",
@@ -194,125 +7132,34 @@ export default postcssConfig;
     "node_modules"
   ]
 }
-```
+````
 
-### .gitignore
+### `next-env.d.ts`
 
-```gitignore
-# dependencies
-node_modules/
-.pnp
-.pnp.*
+````typescript
+/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+import "./.next/types/routes.d.ts";
 
-# next.js
-.next/
-out/
-build/
-dist/
+// NOTE: This file should not be edited
+// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+````
 
-# production
-*.tsbuildinfo
+### `public/.nojekyll`
 
-# environment
-.env
-.env.*
-!.env.example
+````text
 
-# drizzle
-drizzle/
+````
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+## Páginas
 
-# os
-.DS_Store
-Thumbs.db
-desktop.ini
+### `src/app/layout.tsx`
 
-# ide
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# misc
-*.local
-```
-
----
-
-## API (src/app/api/)
-
-> **Branch gh-pages:** O diretório `src/app/api/` foi removido nesta branch. API routes não funcionam em exportação estática (GitHub Pages) pois exigem um servidor. As rotas abaixo existem apenas na branch `main` (para deploy em Vercel). O conteúdo completo das rotas está preservado no histórico do repositório: https://github.com/lucasdorta-a11y/Atas
-
-### Rotas removidas na branch gh-pages
-
-| Rota | Métodos | Descrição |
-| --- | --- | --- |
-| `dashboard/route.ts` | GET | Visão consolidada do panorama (KPIs, áreas, fornecedores, evolução, renovações, previsões, variações) |
-| `datasets/route.ts` | GET, DELETE | Lista bases importadas; exclui base por ID (cascade) |
-| `documentos/route.ts` | GET, POST, DELETE | CRUD de documentos de apoio com validação de URL |
-| `health/route.ts` | GET | Verifica conectividade com o banco |
-| `import/route.ts` | POST | Valida e grava importação de planilhas (fases validate/commit) |
-| `processos/route.ts` | GET | Lista processos com busca, filtros, ordenação, paginação e facetas |
-| `processos/export/route.ts` | GET | Exporta processos filtrados em CSV (BOM UTF-8, `;`, anti-injeção) |
-
-```typescript
-// dashboard/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// datasets/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// documentos/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// health/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// import/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// processos/export/route.ts — removido na branch gh-pages (ver branch main)
-```
-
-```typescript
-// processos/route.ts — removido na branch gh-pages (ver branch main)
-```
-
----
-
-## Páginas (src/app/)
-
-### layout.tsx
-
-```tsx
+````tsx
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Inter, Archivo } from "next/font/google";
 import { AppShell } from "@/components/app-shell";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const archivo = Archivo({
-  subsets: ["latin"],
-  variable: "--font-archivo",
-  weight: ["600", "700"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: {
@@ -329,7 +7176,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${archivo.variable}`}>
+    <html lang="pt-BR">
       <body className="antialiased font-sans">
         <a href="#conteudo" className="skip-link">
           Pular para o conteúdo
@@ -339,71 +7186,80 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
-```
+````
 
-### page.tsx (Panorama)
+### `src/app/page.tsx`
 
-> **Branch gh-pages:** Convertido para client component. Removido `getDashboardData` (servidor), `force-dynamic`, `Metadata` e todos os KPIs/gráficos que dependiam de dados do banco. Agora mostra apenas o estado vazio orientando importação + o painel de auditoria de bases (que tenta fetch da API e lida com erro graciosamente). O código completo do servidor (KPIs, gráficos, renovações, previsões) está preservado na branch `main`.
-
-```tsx
+````tsx
 "use client";
 
 import Link from "next/link";
-import { FileStack, FileUp } from "lucide-react";
+import { FileStack, FileUp, RefreshCw } from "lucide-react";
+import { getStaticDashboardData, type StaticDashboardData } from "@/lib/static-dashboard";
+import { STATIC_DATA_EVENT } from "@/lib/static-store";
+import type { ForecastBand, SnapshotArea, SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
+import { useCallback, useEffect, useState } from "react";
+import { DatasetsPanel } from "@/components/datasets-panel";
 import { EmptyState, PageHeader } from "@/components/ui";
-import { DatasetsPanel } from "@/components/datasets-panel";
-
-export default function PanoramaPage() {
-  return (
-    <div className="space-y-8">
-      <PageHeader
-        overline="Panorama geral"
-        title="Giro de Atas"
-        description="Painel interno de compras e Atas de Registro de Preços. Importe suas planilhas operacionais e de snapshots para alimentar os indicadores."
-      />
-      <EmptyState
-        icon={<FileStack />}
-        title="Comece importando as planilhas"
-        description="Os números do painel são alimentados pelas planilhas Excel ou CSV. Use as planilhas da equipe para espelhar as visões do SharePoint aqui."
-        action={
-          <Link
-            href="/importar"
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent-600 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-accent-700"
-          >
-            <FileUp size={17} aria-hidden="true" />
-            Importar planilhas
-          </Link>
-        }
-      />
-
-      <section className="mt-12 border-t border-line pt-8" data-no-print>
-        <h2 className="text-[16px] font-bold text-navy-950 mb-4">Auditoria das Bases de Dados</h2>
-        <DatasetsPanel />
-      </section>
-    </div>
-  );
-}
-```
-
-<details>
-<summary>Código completo da branch <code>main</code> (servidor, com KPIs e gráficos)</summary>
-
-```tsx
-import Link from "next/link";
-import type { Metadata } from "next";
-import { FileStack, FileUp, ShieldAlert, AlertTriangle } from "lucide-react";
-import { getDashboardData } from "@/lib/dashboard-data";
-import { DatasetsPanel } from "@/components/datasets-panel";
-import { AreaTag, EmptyState, PageHeader } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
 import clsx from "clsx";
 
-export const dynamic = "force-dynamic";
+const MONTH_NAMES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+] as const;
 
-export const metadata: Metadata = { title: "Panorama" };
+export default function PanoramaPage() {
+  const [data, setData] = useState<StaticDashboardData | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
 
-export default async function PanoramaPage() {
-  const data = await getDashboardData();
+  const carregar = useCallback(async () => {
+    setAtualizando(true);
+    try {
+      setErro(null);
+      setData(await getStaticDashboardData());
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível carregar os dados locais.");
+    } finally {
+      setAtualizando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    carregar();
+    const onUpdate = () => carregar();
+    window.addEventListener(STATIC_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
+  }, [carregar]);
+
+  if (!data) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          overline="Panorama geral"
+          title="Giro de Atas"
+          description="Carregando a base local deste navegador."
+        />
+        {erro ? (
+          <div className="card border-danger-600/30 bg-danger-100/40 p-5 text-[13.5px] font-semibold text-danger-700" role="alert">
+            {erro}
+          </div>
+        ) : (
+          <div className="card space-y-4 p-6" aria-busy="true" aria-label="Carregando panorama">
+            <div className="skeleton h-8 w-1/3" />
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="skeleton h-32" />
+              <div className="skeleton h-32" />
+              <div className="skeleton h-32" />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const hoje = new Date().toISOString().slice(0, 10);
 
   if (!data.hasData) {
@@ -412,7 +7268,19 @@ export default async function PanoramaPage() {
         <PageHeader
           overline="Panorama geral"
           title="Giro de Atas"
-          description="Painel interno de compras e Atas de Registro de Preços. Importe suas planilhas operacionais e de snapshots para alimentar os indicadores."
+          description="Painel interno de compras e Atas de Registro de Preços. Os dados são calculados a partir das planilhas importadas neste navegador."
+          actions={(
+            <button
+              type="button"
+              onClick={carregar}
+              disabled={atualizando}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+              aria-label="Atualizar e reprocessar o panorama com os dados locais"
+            >
+              <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
+              {atualizando ? "Atualizando…" : "Atualizar panorama"}
+            </button>
+          )}
         />
         <EmptyState
           icon={<FileStack />}
@@ -432,7 +7300,10 @@ export default async function PanoramaPage() {
     );
   }
 
-  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes } = data;
+  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes, currentSnapshot, previousSnapshot, savingTotal } = data;
+  const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
+  const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
+  const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
 
   // Helpers para o funil de renovação
   const getRenov = (area: string, status: string) => {
@@ -440,18 +7311,80 @@ export default async function PanoramaPage() {
     return { atas: row?.atas || 0, itens: row?.itens || 0 };
   };
 
-  // Previsões de Conclusão por Faixa
-  const prevByAreaAndRange = (area: string, rangeFunc: (dias: number) => boolean) => {
-    const rows = (previsoes as any[]).filter(r => r.area === area && r.dias !== null && rangeFunc(r.dias));
-    const atas = rows.reduce((acc, r) => acc + r.atas, 0);
-    const itens = rows.reduce((acc, r) => acc + r.itens, 0);
-    // Agrupa por comprador
-    const buyersMap = new Map<string, number>();
-    for (const r of rows) {
-      buyersMap.set(r.responsavel, (buyersMap.get(r.responsavel) || 0) + r.atas);
+  const prevByBand = (area: string, band: ForecastBand) => {
+    const key = area.toUpperCase() as SnapshotArea;
+    const source = currentSnapshot?.coverage.found.includes("previsao-faixas")
+      ? currentSnapshot.previsoes?.[band]?.[key]
+      : undefined;
+    if (source) {
+      return {
+        atas: source.atas ?? 0,
+        itens: source.itens ?? 0,
+        buyers: source.buyers.map((buyer) => ({ name: buyer.name, atas: buyer.atas, itens: buyer.itens })),
+      };
     }
-    const buyers = Array.from(buyersMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total);
-    return { atas, itens, buyers };
+    const rows = (previsoes as any[]).filter((row) => {
+      if (String(row.area).toUpperCase() !== area.toUpperCase()) return false;
+      if (row.band) return row.band === band;
+      const days = Number(row.dias);
+      if (band === "vencidas") return days < 0;
+      if (band === "ate_15") return days >= 0 && days <= 15;
+      if (band === "ate_30") return days > 15 && days <= 30;
+      if (band === "ate_60") return days > 30 && days <= 60;
+      return days > 60;
+    });
+    const buyersMap = new Map<string, { atas: number; itens: number }>();
+    for (const row of rows) {
+      if (!row.responsavel) continue;
+      const current = buyersMap.get(row.responsavel) ?? { atas: 0, itens: 0 };
+      current.atas += Number(row.atas ?? 0);
+      current.itens += Number(row.itens ?? 0);
+      buyersMap.set(row.responsavel, current);
+    }
+    return {
+      atas: rows.reduce((sum, row) => sum + Number(row.atas ?? 0), 0),
+      itens: rows.reduce((sum, row) => sum + Number(row.itens ?? 0), 0),
+      buyers: [...buyersMap.entries()].map(([name, values]) => ({ name, ...values })),
+    };
+  };
+
+  const monthlyForArea = (area: string) => {
+    const key = area.toUpperCase() as SnapshotArea;
+    const sourceRows: SnapshotMonthlyForecastRow[] = currentSnapshot?.previsaoMeses?.[key]?.rows ?? [];
+    const reference = currentSnapshot?.referenceDate ?? hoje;
+    const [year, month] = reference.split("-").map(Number);
+    const baseDate = new Date(year || new Date().getFullYear(), (month || new Date().getMonth() + 1) - 1, 1);
+
+    const sumRows = (rows: SnapshotMonthlyForecastRow[]) => ({
+      atas: rows.reduce((sum, row) => sum + Number(row.atas ?? 0), 0),
+      itens: rows.reduce((sum, row) => sum + Number(row.itens ?? 0), 0),
+    });
+    const buckets = [0, 1, 2].map((offset) => {
+      const date = new Date(baseDate.getFullYear(), baseDate.getMonth() + offset, 1);
+      const monthNumber = date.getMonth() + 1;
+      const rows = sourceRows.filter((row) => row.month === monthNumber && row.year === date.getFullYear());
+      return {
+        label: `${MONTH_NAMES_PT[monthNumber - 1]}/${date.getFullYear()}`,
+        ...sumRows(rows),
+      };
+    });
+    const explicitLast = sumRows(sourceRows.filter((row) => row.month === null));
+    const overdue = explicitLast.atas || explicitLast.itens ? explicitLast : prevByBand(area, "vencidas");
+    return [...buckets, { label: "Vencida/Sem Previsão", ...overdue }];
+  };
+
+  const areaPercent = (area: string) => {
+    const ordered = ["INDIRETOS", "DIRETOS", "CAPEX"];
+    const index = ordered.indexOf(area);
+    const total = (porArea as any[]).reduce((sum, item) => sum + Number(item.processos || 0), 0);
+    if (total <= 0 || index < 0) return 0;
+    if (index === ordered.length - 1) {
+      const prior = (porArea as any[]).filter((item) => ordered.indexOf(String(item.area).toUpperCase()) < index)
+        .reduce((sum, item) => sum + Number(((Number(item.processos || 0) / total) * 100).toFixed(2)), 0);
+      return Math.max(0, Number((100 - prior).toFixed(2)));
+    }
+    const current = (porArea as any[]).find((item) => String(item.area).toUpperCase() === area);
+    return Number(((Number(current?.processos || 0) / total) * 100).toFixed(2));
   };
 
   return (
@@ -459,43 +7392,62 @@ export default async function PanoramaPage() {
       <PageHeader
         overline={`Panorama geral · calculado em ${fmtDateLong(hoje)}`}
         title="Gestão Atas Concluídas - Compras"
+        actions={(
+          <button
+            type="button"
+            onClick={carregar}
+            disabled={atualizando}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+            aria-label="Atualizar e reprocessar o panorama com os dados locais"
+          >
+            <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
+            {atualizando ? "Atualizando…" : "Atualizar panorama"}
+          </button>
+        )}
       />
 
-      {/* Bloco 1: KPIs Principais */}
-      <section className="grid gap-4 md:grid-cols-3">
-        <KpiChartCard 
-          title="ATA CONCLUÍDAS (VÁLIDAS)" 
-          bars={[{ label: "ATAS", val: kpis.concluidosAtas, color: "#0c2338" }, { label: "ITENS", val: kpis.concluidosItens, color: "#e06e1f" }]}
-          groupLabel="VÁLIDO"
-        />
-        <KpiChartCard 
-          title="ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)" 
-          bars={[{ label: "COM SALDO", val: kpis.saldoItens, color: "#0c2338" }, { label: "CONSUMIDO", val: kpis.consumidoItens, color: "#e06e1f" }]}
-        />
-        <KpiChartCard 
-          title="ATAS VENCIDAS E A VENCER" 
-          bars={[
-            { label: "RENOVAR", val: kpis.vencidasVencerAtas, color: "#0c2338" }, 
-            { label: "VENCIDO", val: kpis.vencidasVencerItens, color: "#e06e1f" }
-          ]}
+      {/* Bloco 1: três gráficos da semana anterior e três da semana atual. */}
+      <section aria-labelledby="comparacao-semanal" className="space-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Leitura dos gráficos</h2>
+            <p className="mt-1 text-[12.5px] text-ink-soft">A semana anterior é preservada no IndexedDB deste navegador e substituída pela leitura imediatamente anterior após uma nova importação.</p>
+          </div>
+          <span className="rounded-full bg-navy-50 px-3 py-1 text-[12px] font-semibold text-navy-700">
+            Referência anterior: {formatReferenceDate(previousSnapshot?.referenceDate)}
+          </span>
+        </div>
+        {previousSnapshot && <SnapshotCharts title={`Semana anterior · ${formatReferenceDate(previousSnapshot.referenceDate)}`} kpis={previousSnapshot.kpis} muted />}
+        <SnapshotCharts
+          title={`Semana atual${currentSnapshot?.referenceDate ? ` · ${formatReferenceDate(currentSnapshot.referenceDate)}` : ""}`}
+          kpis={{
+            concluidasAtas: kpis.concluidosAtas,
+            concluidasItens: kpis.concluidosItens,
+            saldoItens: kpis.saldoItens,
+            consumidoItens: kpis.consumidoItens,
+            aVencerAtas: kpis.aVencerAtas,
+            aVencerItens: kpis.aVencerItens,
+            vencidasAtas: kpis.vencidasAtas,
+            vencidasItens: kpis.vencidasItens,
+          }}
         />
       </section>
 
-      {/* Bloco 2: Valor Contratado & Saving */}
+      {/* Bloco 2: Valor Contratado & Saving (Ref: Screenshot 2 & 12) */}
       <section className="card overflow-hidden text-[13px]">
-        <div className="grid lg:grid-cols-2 divide-x divide-line">
-          <div>
-            <h3 className="px-5 py-3 text-[18px] text-navy-900 font-display">Valor Contratado Por Área</h3>
-            <table className="w-full text-left">
+        <div className="grid items-stretch lg:grid-cols-2 divide-x divide-line">
+          <div className="flex h-full min-h-full flex-col">
+            <h3 className="flex min-h-[58px] items-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Valor Contratado Por Área</h3>
+            <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold">
                   <th className="px-5 py-3">ÁREAS</th>
                   <th className="px-5 py-3 text-right">VALOR CONTRATADO R$</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white border-b-4 border-white">
-                {(porArea as any[]).map(a => (
-                  <tr key={a.area} className={a.area === "DIRETOS" ? "bg-diretos-500 text-white font-bold" : a.area === "INDIRETOS" ? "bg-indiretos-500 text-white font-bold" : a.area === "CAPEX" ? "bg-capex-100 font-bold" : "bg-neutral-100 font-bold"}>
+              <tbody className="h-full divide-y divide-white border-b-4 border-white">
+                {porAreaVisual.map((a) => (
+                  <tr key={a.area} className={a.area.toUpperCase() === "DIRETOS" ? "bg-diretos-500 text-white font-bold" : a.area.toUpperCase() === "INDIRETOS" ? "bg-indiretos-500 text-white font-bold" : a.area.toUpperCase() === "CAPEX" ? "bg-[#37474f] text-white font-bold" : "bg-neutral-100 font-bold"}>
                     <td className="px-5 py-3 uppercase">{a.area}</td>
                     <td className="px-5 py-3 text-right">{fmtCurrency(a.valor)}</td>
                   </tr>
@@ -507,9 +7459,9 @@ export default async function PanoramaPage() {
               </tbody>
             </table>
           </div>
-          <div>
-            <h3 className="px-5 py-3 text-[18px] text-navy-900 font-display">Saving <span className="text-[14px] text-danger-700 block mt-1 font-sans">Mapeamento iniciado em abr.2026</span></h3>
-            <table className="w-full text-left">
+          <div className="flex h-full min-h-full flex-col">
+            <h3 className="flex min-h-[58px] flex-col justify-center px-5 py-3 text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Saving <span className="text-[14px] text-danger-700 block mt-1 font-sans">Mapeamento iniciado em abr.2026</span></h3>
+            <table className="w-full flex-1 text-left">
               <thead>
                 <tr className="bg-navy-950 text-white font-bold text-[11px] text-center">
                   <th className="px-2 py-3">VALOR CONTRATADO R$</th>
@@ -518,28 +7470,32 @@ export default async function PanoramaPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white border-b-4 border-white text-center font-medium bg-[#E6E6E6]">
-                {(porArea as any[]).map(a => (
+                {porAreaVisual.map((a: any) => (
                   <tr key={a.area}>
-                    <td className="px-2 py-3">{fmtCurrency(a.valor)}</td>
+                    <td className="px-2 py-3">{fmtCurrency(a.valorSaving ?? a.valor)}</td>
                     <td className="px-2 py-3 border-l border-white">
                       {fmtCurrency(a.saving_hist)}<br/>
-                      <span className="text-[11px] font-normal">{a.valor > 0 ? fmtNum((a.saving_hist / a.valor) * 100) : "0"}%</span>
+                      <span className="text-[11px] font-normal">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
                     </td>
                     <td className="px-2 py-3 border-l border-white">
                       {fmtCurrency(a.saving_prop)}<br/>
-                      <span className="text-[11px] font-normal">{a.valor > 0 ? fmtNum((a.saving_prop / a.valor) * 100) : "0"}%</span>
+                      <span className="text-[11px] font-normal">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
                     </td>
                   </tr>
                 ))}
                 <tr className="bg-[#b3d482] font-bold">
-                  <td className="px-2 py-3">{fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.valor, 0))}</td>
+                  <td className="px-2 py-3">{fmtCurrency(savingTotal?.valorSaving ?? (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))}</td>
                   <td className="px-2 py-3 border-l border-white">
-                    {fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
-                    <span className="text-[11px] font-normal">{fmtNum(((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + a.valor, 0))) * 100)}%</span>
+                    {fmtCurrency(savingTotal?.saving_hist ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
+                    <span className="text-[11px] font-normal">{savingTotal?.reducao_hist_pct !== null && savingTotal?.reducao_hist_pct !== undefined
+                      ? `${fmtNum(savingTotal.reducao_hist_pct)}%`
+                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
                   </td>
                   <td className="px-2 py-3 border-l border-white">
-                    {fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
-                    <span className="text-[11px] font-normal">{fmtNum(((porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + a.valor, 0))) * 100)}%</span>
+                    {fmtCurrency(savingTotal?.saving_prop ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
+                    <span className="text-[11px] font-normal">{savingTotal?.reducao_prop_pct !== null && savingTotal?.reducao_prop_pct !== undefined
+                      ? `${fmtNum(savingTotal.reducao_prop_pct)}%`
+                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
                   </td>
                 </tr>
               </tbody>
@@ -548,24 +7504,25 @@ export default async function PanoramaPage() {
         </div>
       </section>
 
-      {/* Bloco 3: Distribuição de Volume & Fornecedores */}
+      {/* Bloco 3: Distribuição de Volume & Fornecedores (Ref: Screenshot 3 & 13) */}
       <section className="space-y-6">
         <div>
-          <h2 className="text-[20px] font-display text-navy-900 mb-4">Distribuição de Volume por Área (% Atas)</h2>
+          <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Distribuição de Volume por Área (% Atas)</h2>
           <div className="grid gap-4 md:grid-cols-3">
             {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
               const areaStats = (porArea as any[]).find(a => a.area.toUpperCase() === area) || { processos: 0 };
-              const percent = kpis.processos > 0 ? (areaStats.processos / kpis.processos) * 100 : 0;
+              const percent = areaPercent(area);
               const tCompradores = (topCompradores as any[]).filter(t => t.area.toUpperCase() === area);
               
               return (
                 <div key={area} className="card overflow-hidden">
                   <div className="bg-navy-950 text-white text-center py-3">
                     <div className="font-bold">{area}</div>
-                    <div className="text-[13px]">{areaStats.processos} ATAS — {fmtNum(percent)}% DO TOTAL</div>
+                    <div className="text-[13px]">{fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))} ATAS (TOP 5) — {fmtNum(percent)}% DO TOTAL</div>
+                    <div className="text-[10px] text-white/75">Área: {fmtInt(areaStats.processos)} ATAS</div>
                   </div>
                   <div className="p-4 bg-neutral-100">
-                    <div className="text-center font-bold text-[12px] uppercase text-navy-900 mb-3 underline underline-offset-4">TOP {Math.max(4, tCompradores.length)} COMPRADORES</div>
+                    <div className="text-center font-bold text-[12px] uppercase text-navy-900 mb-3 underline underline-offset-4">TOP 5 COMPRADORES · ATAS SOMADAS: {fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))}</div>
                     <ul className="space-y-1 text-[11px]">
                       {tCompradores.map(c => (
                         <li key={c.responsavel} className="flex justify-between items-center text-navy-800">
@@ -582,34 +7539,34 @@ export default async function PanoramaPage() {
         </div>
 
         <div>
-          <h2 className="text-[20px] font-display text-navy-900 mb-4">Representatividade Fornecedores (Top 20)</h2>
-          <div className="card overflow-hidden overflow-x-auto text-[12px]">
-            <table className="w-full text-left">
+          <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Representatividade Fornecedores</h2>
+          <div className="card overflow-hidden overflow-x-auto text-[11px]">
+            <h3 className="bg-[#111c75] px-3 py-3 text-center font-bold text-white">FORNECEDORES GERAL</h3>
+            <table className="w-full min-w-[720px] text-left">
               <thead>
                 <tr className="bg-navy-950 text-white text-center font-bold">
-                  <th className="px-4 py-2 border-r border-white/20">FORNECEDOR</th>
-                  <th className="px-4 py-2 border-r border-white/20 w-24">QTD ATAS</th>
-                  <th className="px-4 py-2 border-r border-white/20 w-24">QTD ITENS</th>
-                  <th className="px-4 py-2 border-r border-white/20 w-44">% CONCENTRAÇÃO DE ITENS</th>
-                  <th className="px-4 py-2 w-48">ANÁLISE</th>
+                  <th className="px-2 py-2">FORNECEDOR</th>
+                  <th className="px-2 py-2">QTD ATAS</th>
+                  <th className="px-2 py-2">QTD ITENS</th>
+                  <th className="px-2 py-2">% CONCENTRAÇÃO DE ITENS</th>
+                  <th className="px-2 py-2">ANÁLISE</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-center font-medium">
-                {(fornecedores as any[]).map(f => {
-                  let badge = "Pulverizado";
-                  let bgBadge = "bg-[#f2e6b1]";
-                  if (f.concentracao >= 15) { badge = "Alta Concentração"; bgBadge = "bg-[#f3baba]"; }
-                  else if (f.concentracao >= 5) { badge = "Volume Médio"; bgBadge = "bg-[#fdf0a6]"; }
-                  
+                {(fornecedores as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-3 py-5 text-ink-soft">Nenhuma linha específica reconhecida.</td></tr>
+                ) : (fornecedores as any[]).map((f: any, index: number) => {
+                  const analysis = f.analise || (f.concentracao >= 15 ? "Alta Concentração" : f.concentracao >= 5 ? "Volume Médio" : "Pulverizado");
+                  const analysisTone = analysis.toUpperCase().includes("ALTA") ? "bg-[#f3baba]" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "bg-[#fdf0a6]" : "bg-[#f2e6b1]";
                   return (
-                    <tr key={f.fornecedor}>
-                      <td className="px-4 py-2 text-left uppercase text-navy-950">{f.fornecedor}</td>
-                      <td className="px-4 py-2 border-l border-white">{f.atas}</td>
-                      <td className="px-4 py-2 border-l border-white">{f.itens}</td>
-                      <td className="px-4 py-2 border-l border-white">{fmtNum(f.concentracao)}%</td>
-                      <td className={clsx("px-4 py-2 border-l border-white text-left", bgBadge)}>{badge}</td>
+                    <tr key={`${f.fornecedor}-${index}`}>
+                      <td className="px-2 py-2 text-left uppercase text-navy-950">{f.fornecedor}</td>
+                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.atas)}</td>
+                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.itens)}</td>
+                      <td className="px-2 py-2 border-l border-white">{fmtNum(f.concentracao)}%</td>
+                      <td className={clsx("px-2 py-2 border-l border-white text-left", analysisTone)}>{analysis}</td>
                     </tr>
-                  )
+                  );
                 })}
               </tbody>
             </table>
@@ -617,9 +7574,9 @@ export default async function PanoramaPage() {
         </div>
       </section>
 
-      {/* Bloco 4: Evolução Por Área */}
+      {/* Bloco 4: Evolução Por Área (Ref: Screenshot 4 & 14) */}
       <section>
-        <h2 className="text-[20px] font-display text-navy-900 mb-4">Evolução Por Área (Por Status Atual)</h2>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Evolução Por Área (Por Status Atual)</h2>
         <div className="card overflow-x-auto text-[12px]">
           <table className="w-full text-center">
             <thead>
@@ -634,9 +7591,9 @@ export default async function PanoramaPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-navy-900 font-medium">
-              {(evolucao as any[]).map(e => (
+              {evolucaoVisual.map((e: any) => (
                 <tr key={e.area}>
-                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", e.area === "DIRETOS" ? "bg-diretos-500" : e.area === "INDIRETOS" ? "bg-indiretos-500" : e.area === "CAPEX" ? "bg-capex-500" : "bg-neutral-500")}>
+                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", e.area.toUpperCase() === "DIRETOS" ? "bg-diretos-500" : e.area.toUpperCase() === "INDIRETOS" ? "bg-indiretos-500" : e.area.toUpperCase() === "CAPEX" ? "bg-capex-500" : "bg-neutral-500")}>
                     {e.area}
                   </td>
                   <td className="px-3 py-3 border-l border-white">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
@@ -652,9 +7609,9 @@ export default async function PanoramaPage() {
         </div>
       </section>
 
-      {/* Bloco 5: Status de Renovações */}
+      {/* Bloco 5: Status de Renovações (Ref: Screenshots 5, 6, 7 & 15, 16, 17) */}
       <section>
-        <h2 className="text-[24px] font-display text-accent-500 mb-6 font-bold">Status de Renovações</h2>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Status de Renovações</h2>
         <div className="space-y-8">
           {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
             const naoIniciado = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Iniciado");
@@ -679,27 +7636,49 @@ export default async function PanoramaPage() {
         </div>
       </section>
 
-      {/* Bloco 6: Previsão de Conclusão Por Faixa */}
+      {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
       <section>
-        <h2 className="text-[24px] font-display text-accent-500 mb-6 font-bold">Indicadores - Atas em andamento</h2>
-        <h3 className="text-[18px] text-navy-900 mb-4 font-display">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
+        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Indicadores - Atas em andamento</h2>
+        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
         
         <div className="space-y-8">
+          <FaixaPrevisao title="Previsões para concluir acima de 60 dias" areaStats={[
+            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "acima_60") },
+            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "acima_60") },
+            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "acima_60") },
+          ]}/>
           <FaixaPrevisao title="Previstas para concluir nos próximos 15 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByAreaAndRange("Indiretos", d => d >= 0 && d <= 15) },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByAreaAndRange("Diretos", d => d >= 0 && d <= 15) },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByAreaAndRange("CAPEX", d => d >= 0 && d <= 15) }
+            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_15") },
+            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_15") },
+            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_15") },
           ]}/>
           <FaixaPrevisao title="Previstas para concluir até 30 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByAreaAndRange("Indiretos", d => d > 15 && d <= 30) },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByAreaAndRange("Diretos", d => d > 15 && d <= 30) },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByAreaAndRange("CAPEX", d => d > 15 && d <= 30) }
+            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_30") },
+            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_30") },
+            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_30") },
           ]}/>
           <FaixaPrevisao title="Previstas para concluir até 60 dias" areaStats={[
-            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByAreaAndRange("Indiretos", d => d > 30 && d <= 60) },
-            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByAreaAndRange("Diretos", d => d > 30 && d <= 60) },
-            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByAreaAndRange("CAPEX", d => d > 30 && d <= 60) }
+            { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "ate_60") },
+            { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "ate_60") },
+            { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "ate_60") },
           ]}/>
+          <FaixaPrevisao
+            title="Previsões vencidas"
+            titleClass="bg-[#b42318] text-white border-danger-700"
+            areaStats={[
+              { area: "INDIRETOS", bg: "bg-[#0b7c7b]", ...prevByBand("Indiretos", "vencidas") },
+              { area: "DIRETOS", bg: "bg-[#008cff]", ...prevByBand("Diretos", "vencidas") },
+              { area: "CAPEX", bg: "bg-[#fca500]", ...prevByBand("CAPEX", "vencidas") },
+            ]}
+          />
+
+          <PrevisaoMensal
+            areas={[
+              { area: "INDIRETOS", bg: "bg-[#0b7c7b]", buckets: monthlyForArea("Indiretos") },
+              { area: "DIRETOS", bg: "bg-[#008cff]", buckets: monthlyForArea("Diretos") },
+              { area: "CAPEX", bg: "bg-[#fca500]", buckets: monthlyForArea("CAPEX") },
+            ]}
+          />
         </div>
       </section>
 
@@ -713,6 +7692,78 @@ export default async function PanoramaPage() {
 }
 
 /* --- Componentes de Gráficos --- */
+
+function formatReferenceDate(value: string | null | undefined): string {
+  if (!value) return "sem data";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("pt-BR");
+}
+
+type SnapshotChartKpis = {
+  concluidasAtas: number | null;
+  concluidasItens: number | null;
+  saldoItens: number | null;
+  consumidoItens: number | null;
+  aVencerAtas: number | null;
+  aVencerItens: number | null;
+  vencidasAtas: number | null;
+  vencidasItens: number | null;
+};
+
+function SnapshotCharts({ title, kpis, muted = false }: { title: string; kpis: SnapshotChartKpis; muted?: boolean }) {
+  return (
+    <div className={clsx("rounded-2xl border p-4 sm:p-5", muted ? "border-line bg-navy-50/40" : "border-line bg-surface")}>
+      <h3 className="mb-4 text-[15px] font-bold uppercase tracking-wide text-navy-900">{title}</h3>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <MiniMetricChart
+          title="ATA CONCLUÍDAS (VÁLIDAS)"
+          groups={[{ label: "VÁLIDO", bars: [{ label: "ATAS", value: kpis.concluidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.concluidasItens, color: "#e06e1f" }] }]}
+        />
+        <MiniMetricChart
+          title="ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)"
+          groups={[{ label: "COM SALDO", bars: [{ label: "ITENS", value: kpis.saldoItens, color: "#0c2338" }] }, { label: "CONSUMIDO", bars: [{ label: "ITENS", value: kpis.consumidoItens, color: "#e06e1f" }] }]}
+        />
+        <MiniMetricChart
+          title="ATAS VENCIDAS E A VENCER"
+          groups={[{ label: "RENOVAR", bars: [{ label: "ATAS", value: kpis.aVencerAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.aVencerItens, color: "#e06e1f" }] }, { label: "VENCIDO", bars: [{ label: "ATAS", value: kpis.vencidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.vencidasItens, color: "#e06e1f" }] }]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MiniMetricChart({ title, groups }: { title: string; groups: Array<{ label: string; bars: Array<{ label: string; value: number | null; color: string }> }> }) {
+  const max = Math.max(1, ...groups.flatMap((group) => group.bars.map((bar) => bar.value ?? 0)));
+  return (
+    <div className="rounded-xl border border-line bg-white p-3" aria-label={title}>
+      <h4 className="min-h-8 text-center text-[11px] font-bold uppercase leading-tight text-navy-900">{title}</h4>
+      <div className="mt-3 flex h-32 items-end justify-around gap-2 border-b border-line px-1">
+        {groups.map((group) => (
+          <div key={group.label} className="flex h-full flex-1 items-end justify-center gap-1">
+            {group.bars.map((bar) => {
+              const value = bar.value ?? 0;
+              return (
+                <div key={`${group.label}-${bar.label}`} className="flex h-full w-7 flex-col items-center justify-end">
+                  <span className="mb-1 text-[10px] font-bold text-navy-900">{fmtInt(value)}</span>
+                  <div className="w-full rounded-t-sm" style={{ height: `${Math.max(value ? 5 : 2, (value / max) * 78)}px`, backgroundColor: bar.color }} />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex justify-around gap-2 text-center text-[9px] font-bold uppercase text-ink-soft">
+        {groups.map((group) => <span key={group.label} className="flex-1">{group.label}</span>)}
+      </div>
+      <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[9px] text-ink-soft">
+        {[...new Map(groups.flatMap((group) => group.bars.map((bar) => [bar.label, bar.color] as const))).entries()].map(([label, color]) => (
+          <span key={label} className="inline-flex items-center gap-1"><span className="h-2 w-2" style={{ backgroundColor: color }} aria-hidden="true" />{label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function KpiChartCard({ title, bars, groupLabel }: { title: string, bars: { label: string, val: number, color: string }[], groupLabel?: string }) {
   const max = Math.max(...bars.map(b => b.val), 1);
@@ -766,28 +7817,26 @@ function RenovBox({ title, data, bg }: { title: string, data: { atas: number, it
   );
 }
 
-function FaixaPrevisao({ title, areaStats }: { title: string, areaStats: any[] }) {
+function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
   return (
     <div>
-      <div className="bg-[#dcf0cf] border border-line py-2 text-center text-navy-950 font-bold mb-4">{title}</div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className={clsx("border border-line py-2 text-center font-bold mb-4", titleClass)}>{title}</div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {areaStats.map(s => (
           <div key={s.area}>
             <div className={clsx("py-1 text-center text-white text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
-            <div className="text-[#0d952e] font-display mb-6">
+            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-[#0d952e]">
               <div className="text-[18px] font-bold">{String(s.atas).padStart(2, '0')} ATAS</div>
               <div className="text-[18px] font-bold">{String(s.itens).padStart(2, '0')} ITENS</div>
             </div>
             <div className="space-y-3">
-              {s.buyers.map((b: any) => (
-                <div key={b.name} className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-neutral-200 shrink-0" />
-                  <div className="leading-tight">
-                    <div className="text-[11px] font-bold text-navy-900 uppercase truncate" title={b.name}>{b.name}</div>
-                    <div className="text-[9px] text-neutral-500 uppercase">ANALISTA DE COMPRAS</div>
-                  </div>
+              {s.buyers.map((b: any, index: number) => (
+                <div key={`${b.name}-${index}`} className="border-b border-line/60 pb-2 leading-tight">
+                  <div className="text-[11px] font-bold text-navy-900 uppercase truncate" title={b.name}>{b.name}</div>
+                  <div className="text-[10px] font-semibold text-ink-soft">{fmtInt(b.atas)} ATAS · {fmtInt(b.itens)} ITENS</div>
                 </div>
               ))}
+              {s.buyers.length === 0 && <p className="text-[11px] text-ink-soft">Nenhum comprador reconhecido nesta faixa.</p>}
             </div>
           </div>
         ))}
@@ -795,13 +7844,43 @@ function FaixaPrevisao({ title, areaStats }: { title: string, areaStats: any[] }
     </div>
   );
 }
-```
 
-</details>
+function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; buckets: Array<{ label: string; atas: number; itens: number }> }> }) {
+  const bucketColors = ["bg-[#e2e2e2]", "bg-[#f9dfa8]", "bg-[#edf8df]", "bg-[#f7e7e7]"];
+  return (
+    <section className="space-y-6 border-t border-line pt-2" aria-labelledby="previsao-por-mes">
+      <h3 id="previsao-por-mes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">
+        Previsão de Conclusão por Mês
+      </h3>
+      <div className="space-y-7">
+        {areas.map(({ area, bg, buckets }) => (
+          <div key={area}>
+            <div className={clsx("mb-3 border border-navy-900 py-2 text-center text-[16px] font-bold text-white", bg)}>{area}</div>
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              {buckets.map((bucket, index) => (
+                <div key={`${area}-${bucket.label}`} className="relative min-w-0">
+                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index])}>
+                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.atas).padStart(2, "0")} ATAS</span>
+                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.itens).padStart(2, "0")} ITENS</span>
+                  </div>
+                  <div className="mt-2 flex min-h-7 items-start justify-center text-center text-[11px] font-sans leading-tight tracking-normal text-ink-soft">
+                    <span>{bucket.label}</span>
+                    {index < buckets.length - 1 && <span className="ml-2 hidden font-bold text-navy-900 sm:inline" aria-hidden="true">→</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+````
 
-### globals.css
+### `src/app/globals.css`
 
-```css
+````css
 @import "tailwindcss";
 
 @theme {
@@ -865,8 +7944,11 @@ function FaixaPrevisao({ title, areaStats }: { title: string, areaStats: any[] }
   --color-ink-soft: #475467;
   --color-line: #e3e7ec;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-archivo), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Fontes locais/sistema: o site estático não depende de CDN nem de rede para renderizar. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* A tipografia de títulos não usa Arial Narrow: em alguns navegadores ela
+     comprime/estica os caracteres e prejudica a leitura do panorama. */
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 
   --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-pop: 0 12px 32px -8px rgba(7, 24, 43, 0.18);
@@ -882,6 +7964,11 @@ body {
   color: var(--color-ink);
   font-feature-settings: "cv11", "ss01";
   text-rendering: optimizeLegibility;
+}
+
+.font-display {
+  font-stretch: normal;
+  letter-spacing: normal;
 }
 
 ::selection {
@@ -1002,13 +8089,11 @@ dialog::backdrop {
   .card { border: 1px solid #d0d5dd; box-shadow: none; break-inside: avoid; }
   a { color: #101828; text-decoration: none; }
 }
-```
+````
 
-### documentos/page.tsx
+### `src/app/documentos/page.tsx`
 
-> **Branch gh-pages:** Sem `import { db }`, sem `force-dynamic`. Passa array vazio para `DocumentsManager`.
-
-```tsx
+````tsx
 import { DocumentsManager } from "@/components/documents-manager";
 
 export const metadata = { title: "Documentos de apoio" };
@@ -1016,13 +8101,11 @@ export const metadata = { title: "Documentos de apoio" };
 export default function DocumentosPage() {
   return <DocumentsManager documentos={[]} erroInicial={false} />;
 }
-```
+````
 
-### importar/page.tsx
+### `src/app/importar/page.tsx`
 
-> **Branch gh-pages:** Removido `force-dynamic` e `Metadata` (não suportados em export estático).
-
-```tsx
+````tsx
 import { ImportWizard } from "@/components/import-wizard";
 
 export const metadata = { title: "Importar dados" };
@@ -1030,13 +8113,11 @@ export const metadata = { title: "Importar dados" };
 export default function ImportarPage() {
   return <ImportWizard />;
 }
-```
+````
 
-### processos/page.tsx
+### `src/app/processos/page.tsx`
 
-> **Branch gh-pages:** Removido `force-dynamic` e `Metadata` (não suportados em export estático).
-
-```tsx
+````tsx
 import { Suspense } from "react";
 import { ProcessosBrowser } from "@/components/processos-browser";
 
@@ -1049,23 +8130,23 @@ export default function ProcessosPage() {
     </Suspense>
   );
 }
-```
+````
 
----
+## Componentes
 
-## Componentes (src/components/)
+### `src/components/app-shell.tsx`
 
-### app-shell.tsx
-
-```tsx
+````tsx
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { BookOpen, LayoutDashboard, Table2, Upload } from "lucide-react";
+import { BookOpen, LayoutDashboard, Maximize2, Minimize2, Table2, Upload } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate } from "@/lib/format";
+import { getStaticBaseSummary } from "@/lib/static-dashboard";
+import { STATIC_DATA_EVENT } from "@/lib/static-store";
 
 const NAV = [
   { href: "/", label: "Panorama", icon: LayoutDashboard, match: (p: string) => p === "/" },
@@ -1099,31 +8180,28 @@ function BaseChip() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/dashboard", { cache: "no-store" });
-      const data = await res.json();
-      const ativas = (data.datasets ?? []).filter((d: { status: string }) => d.status === "active");
-      if (!ativas.length) {
+      const data = await getStaticBaseSummary();
+      if (!data.hasData) {
         setInfo({ label: "Nenhuma base carregada", detalhe: "Importe uma planilha para começar" });
       } else {
-        const refs = ativas.map((d: { reference_date: string | null }) => d.reference_date).filter(Boolean) as string[];
-        const ref = refs.length ? refs.sort().reverse()[0] : null;
         setInfo({
-          label: ref ? `Base de referência: ${fmtDate(ref)}` : "Base sem data de referência",
-          detalhe: `${ativas.length} ${ativas.length === 1 ? "base ativa" : "bases ativas"} · ${Number(data.kpis?.processos ?? 0).toLocaleString("pt-BR")} processos`,
+          label: data.referenceDate ? `Base de referência: ${fmtDate(data.referenceDate)}` : "Base sem data de referência",
+          detalhe: `${data.activeCount} ${data.activeCount === 1 ? "base ativa" : "bases ativas"} · ${data.processCount.toLocaleString("pt-BR")} registros`,
         });
       }
     } catch {
-      setInfo({ label: "Base indisponível", detalhe: "não foi possível ler o banco de dados" });
+      setInfo({ label: "Armazenamento local indisponível", detalhe: "verifique as permissões do navegador" });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const onUpdate = () => load();
-    window.addEventListener("giro:base-updated", onUpdate);
-    return () => window.removeEventListener("giro:base-updated", onUpdate);
+    window.addEventListener(STATIC_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
   }, [load]);
 
   return (
@@ -1147,11 +8225,20 @@ function BaseChip() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const isPanorama = pathname === "/" || pathname === "/Atas" || pathname === "/Atas/";
   const onImport = pathname.startsWith("/importar");
+  const [panoramaFocus, setPanoramaFocus] = useState(false);
+
+  useEffect(() => {
+    // A visualização limpa é exclusiva do panorama; as demais rotas mantêm a navegação.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!isPanorama) setPanoramaFocus(false);
+  }, [isPanorama, pathname]);
 
   return (
-    <div className="min-h-dvh">
+    <div className={clsx("min-h-dvh", panoramaFocus && isPanorama && "bg-canvas")}>
       {/* ================= Sidebar (desktop) ================= */}
+      {!panoramaFocus && (
       <aside
         className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col bg-navy-950 lg:flex"
         aria-label="Navegação principal"
@@ -1191,12 +8278,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="border-t border-navy-800/70 px-5 py-4">
           <p className="text-[11.5px] leading-relaxed text-navy-400">
-            Dados armazenados no banco interno (PostgreSQL). Não há sincronização automática com o SharePoint.
+            Dados armazenados neste navegador (IndexedDB). Não há sincronização automática com o SharePoint nem entre usuários.
           </p>
         </div>
       </aside>
+      )}
 
       {/* ================= Topbar ================= */}
+      {!panoramaFocus && (
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm lg:pl-[248px]">
         <div className="flex h-[60px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-3 lg:hidden">
@@ -1208,7 +8297,18 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="hidden items-center gap-2 lg:flex" aria-hidden="true">
             <span className="text-[13px] font-medium text-ink-soft">Painel de Compras e Atas de Registro de Preços</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            {isPanorama && (
+              <button
+                type="button"
+                onClick={() => setPanoramaFocus(true)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-navy-200 bg-white px-3 text-[12.5px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50"
+                aria-label="Abrir o panorama em tela cheia, sem navegação"
+              >
+                <Maximize2 size={16} aria-hidden="true" />
+                <span className="hidden sm:inline">Tela cheia</span>
+              </button>
+            )}
             <BaseChip />
             {!onImport && (
               <Link
@@ -1223,13 +8323,36 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      )}
 
       {/* ================= Conteúdo ================= */}
-      <main id="conteudo" tabIndex={-1} className="anim-fade-up mx-auto w-full max-w-[1280px] px-4 pb-28 pt-6 sm:px-6 lg:pl-[272px] lg:pr-8 lg:pt-8 lg:pb-14 lg:max-w-none">
+      <main
+        id="conteudo"
+        tabIndex={-1}
+        className={clsx(
+          "anim-fade-up mx-auto w-full",
+          panoramaFocus && isPanorama
+            ? "max-w-none px-5 pb-14 pt-8 sm:px-8 lg:px-12"
+            : "max-w-[1280px] px-4 pb-28 pt-6 sm:px-6 lg:pl-[272px] lg:pr-8 lg:pt-8 lg:pb-14 lg:max-w-none",
+        )}
+      >
         {children}
       </main>
 
+      {panoramaFocus && isPanorama && (
+        <button
+          type="button"
+          onClick={() => setPanoramaFocus(false)}
+          className="fixed right-4 top-4 z-50 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/20 bg-navy-950/90 px-3 text-[12.5px] font-semibold text-white shadow-pop backdrop-blur-sm transition-colors hover:bg-navy-800"
+          aria-label="Sair da tela cheia e restaurar a navegação"
+        >
+          <Minimize2 size={16} aria-hidden="true" />
+          <span className="hidden sm:inline">Sair da tela cheia</span>
+        </button>
+      )}
+
       {/* ================= Navegação inferior (mobile) ================= */}
+      {!panoramaFocus && (
       <nav
         className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
         aria-label="Navegação principal (móvel)"
@@ -1263,14 +8386,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </ul>
       </nav>
+      )}
     </div>
   );
 }
-```
+````
 
-### charts.tsx
+### `src/components/charts.tsx`
 
-```tsx
+````tsx
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { fmtInt } from "@/lib/format";
@@ -1344,29 +8468,28 @@ export interface Segment {
 export function Donut({ segments, total }: { segments: Segment[]; total: number }) {
   const R = 54;
   const C = 2 * Math.PI * R;
-  let acc = 0;
-  const arcs = segments
-    .filter((s) => s.value > 0)
-    .map((s) => {
-      const frac = total > 0 ? s.value / total : 0;
-      const dash = frac * C;
-      const el = (
-        <circle
-          key={s.label}
-          cx="70"
-          cy="70"
-          r={R}
-          fill="none"
-          stroke={s.color}
-          strokeWidth="20"
-          strokeDasharray={`${dash} ${C - dash}`}
-          strokeDashoffset={-acc}
-          transform="rotate(-90 70 70)"
-        />
-      );
-      acc += dash;
-      return el;
-    });
+  const visibleSegments = segments.filter((s) => s.value > 0);
+  const arcs = visibleSegments.map((s, index) => {
+    const frac = total > 0 ? s.value / total : 0;
+    const dash = frac * C;
+    const offset = visibleSegments.slice(0, index).reduce((sum, item) => {
+      return sum + (total > 0 ? item.value / total : 0) * C;
+    }, 0);
+    return (
+      <circle
+        key={s.label}
+        cx="70"
+        cy="70"
+        r={R}
+        fill="none"
+        stroke={s.color}
+        strokeWidth="20"
+        strokeDasharray={`${dash} ${C - dash}`}
+        strokeDashoffset={-offset}
+        transform="rotate(-90 70 70)"
+      />
+    );
+  });
 
   return (
     <div className="mt-3 flex flex-col items-center gap-5 sm:flex-row sm:gap-8">
@@ -1480,11 +8603,11 @@ export function StackedRow({
     </li>
   );
 }
-```
+````
 
-### datasets-panel.tsx
+### `src/components/datasets-panel.tsx`
 
-```tsx
+````tsx
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -1492,6 +8615,7 @@ import { Database, FileSpreadsheet, Trash2, CircleAlert } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 import { KIND_LABEL } from "@/lib/domain";
+import { deleteDataset, formatStoredDataset, listDatasets, notifyStaticDataChanged } from "@/lib/static-store";
 
 interface DatasetItem {
   id: number;
@@ -1509,10 +8633,12 @@ interface DatasetItem {
   dup_count: number;
   warning_count: number;
   registros: number;
+  has_snapshot?: boolean;
+  snapshot_coverage?: { found: string[]; missing: string[] } | null;
 }
 
 function notifyBaseUpdated() {
-  window.dispatchEvent(new Event("giro:base-updated"));
+  notifyStaticDataChanged();
 }
 
 export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
@@ -1525,16 +8651,16 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/datasets", { cache: "no-store" });
-      const data = await res.json();
-      setItems(data.datasets ?? []);
+      const data = await listDatasets();
+      setItems(data.map(formatStoredDataset));
       setErro(null);
     } catch {
-      setErro("Não foi possível carregar a lista de bases.");
+      setErro("Não foi possível carregar as bases deste navegador.");
     }
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
@@ -1549,11 +8675,7 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
     if (confirmId === null) return;
     setExcluindo(true);
     try {
-      const res = await fetch(`/api/datasets?id=${confirmId}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.erro ?? "Falha ao excluir.");
-      }
+      await deleteDataset(confirmId);
       dialogRef.current?.close();
       setConfirmId(null);
       await load();
@@ -1620,7 +8742,7 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-semibold text-navy-950" title={d.file_name}>
                     {d.file_name}
-                    {d.sheet_name && <span className="font-normal text-ink-soft"> · aba "{d.sheet_name}"</span>}
+                    {d.sheet_name && <span className="font-normal text-ink-soft"> · aba “{d.sheet_name}”</span>}
                   </p>
                   <p className="mt-0.5 text-[12.5px] text-ink-soft">
                     {KIND_LABEL[d.kind as keyof typeof KIND_LABEL] ?? d.kind}
@@ -1652,6 +8774,11 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
                     {d.warning_count > 0 && (
                       <span className="tnum rounded-full bg-navy-100 px-2 py-0.5 font-medium text-navy-700">
                         {fmtInt(d.warning_count)} avisos
+                      </span>
+                    )}
+                    {d.has_snapshot && (
+                      <span className="rounded-full bg-accent-100 px-2 py-0.5 font-medium text-accent-700" title={d.snapshot_coverage?.found.join(", ") || "Snapshot local"}>
+                        snapshot local{d.snapshot_coverage?.found.length ? ` · ${d.snapshot_coverage.found.length} blocos` : ""}
                       </span>
                     )}
                   </div>
@@ -1711,135 +8838,2368 @@ export function DatasetsPanel({ onChanged }: { onChanged?: () => void }) {
 }
 
 export { notifyBaseUpdated };
-```
+````
 
-> **Nota:** Os componentes `documents-manager.tsx`, `import-wizard.tsx`, `processos-browser.tsx` e `ui.tsx` contêm o código completo exibido na leitura acima. Devido ao tamanho extenso, seus códigos completos estão preservados no repositório GitHub: https://github.com/lucasdorta-a11y/Atas
+### `src/components/documents-manager.tsx`
 
----
+````tsx
+"use client";
 
-## Banco de dados (src/db/)
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { BookOpen, ExternalLink, Plus, Search, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/ui";
+import { createDocument, deleteDocument, listDocuments } from "@/lib/static-store";
 
-### index.ts
-
-```typescript
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
+export interface DocItem {
+  id: number;
+  titulo: string;
+  url: string;
+  categoria: string;
+  descricao: string | null;
 }
 
-const globalForDb = globalThis as typeof globalThis & {
-  __arenaNextJsPostgresqlPool?: Pool;
+const CATEGORIAS = ["Procedimento", "Norma", "Manual", "Link SharePoint", "Outro"];
+
+export function DocumentsManager({ documentos, erroInicial }: { documentos: DocItem[]; erroInicial: boolean }) {
+  const [docs, setDocs] = useState<DocItem[]>(documentos);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [erro, setErro] = useState<string | null>(erroInicial ? "Não foi possível carregar os documentos." : null);
+  const [excluindo, setExcluindo] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    listDocuments()
+      .then((items) => {
+        if (ativo) setDocs(items);
+      })
+      .catch(() => {
+        if (ativo) setErro("Não foi possível carregar os documentos deste navegador.");
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  const filtrados = useMemo(() => {
+    const t = busca.toLowerCase().trim();
+    if (!t) return docs;
+    return docs.filter((d) => `${d.titulo} ${d.descricao ?? ""} ${d.categoria}`.toLowerCase().includes(t));
+  }, [docs, busca]);
+
+  const agrupados = useMemo(() => {
+    const map = new Map<string, DocItem[]>();
+    for (const d of filtrados) {
+      const arr = map.get(d.categoria) ?? [];
+      arr.push(d);
+      map.set(d.categoria, arr);
+    }
+    return [...map.entries()];
+  }, [filtrados]);
+
+  async function excluir(id: number) {
+    setExcluindo(id);
+    setErro(null);
+    try {
+      await deleteDocument(id);
+      setDocs((ds) => ds.filter((d) => d.id !== id));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao excluir.");
+    } finally {
+      setExcluindo(null);
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        overline="Apoio"
+        title="Documentos e regras"
+        description="Manuais, normas, procedimentos e links úteis (ex.: bibliotecas do SharePoint). Os links são cadastrados pela equipe e ficam neste navegador — este painel não acessa o SharePoint automaticamente."
+      />
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section aria-label="Lista de documentos" className="space-y-4">
+          <div className="relative">
+            <label htmlFor="busca-doc" className="sr-only">
+              Filtrar documentos
+            </label>
+            <Search size={17} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input
+              id="busca-doc"
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Filtrar por título, descrição ou categoria…"
+              className="min-h-11 w-full rounded-xl border border-line bg-surface pl-10 pr-4 text-[14px] text-ink placeholder:text-neutral-500 hover:border-navy-300"
+            />
+          </div>
+          <p aria-live="polite" role="status" className="text-[13px] font-medium text-ink-soft">
+            {filtrados.length === 1 ? "1 documento" : `${filtrados.length} documentos`}
+            {busca && ` para “${busca}”`}
+          </p>
+
+          {erro && (
+            <p className="card border-danger-600/30 bg-danger-100/40 p-4 text-[13px] font-semibold text-danger-700" role="alert">
+              {erro}
+            </p>
+          )}
+
+          {carregando ? (
+            <div className="card space-y-3 p-6" aria-busy="true" aria-label="Carregando documentos">
+              <div className="skeleton h-5 w-2/3" />
+              <div className="skeleton h-12 w-full" />
+              <div className="skeleton h-12 w-full" />
+            </div>
+          ) : agrupados.length === 0 ? (
+            <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+              <BookOpen size={30} className="text-navy-400" aria-hidden="true" />
+              <h2 className="font-display text-[17px] font-bold text-navy-950">
+                {docs.length === 0 ? "Nenhum documento cadastrado" : "Nenhum documento encontrado"}
+              </h2>
+              <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
+                {docs.length === 0
+                  ? "Cadastre ao lado os links de normas, manuais e bibliotecas do SharePoint que a equipe usa no dia a dia. Os documentos ficam neste navegador."
+                  : "Ajuste o termo de busca para encontrar outros documentos."}
+              </p>
+            </div>
+          ) : (
+            agrupados.map(([categoria, itens]) => (
+              <section key={categoria} aria-label={categoria}>
+                <h2 className="overline mb-2.5">{categoria}</h2>
+                <ul className="space-y-2.5">
+                  {itens.map((d) => (
+                    <li key={d.id} className="card flex items-start justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <a
+                          href={d.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="group inline-flex items-center gap-2 text-[14px] font-bold text-navy-800 hover:text-navy-950"
+                        >
+                          <span className="underline decoration-navy-300 underline-offset-2 group-hover:decoration-navy-500">
+                            {d.titulo}
+                          </span>
+                          <ExternalLink size={14} aria-hidden="true" className="shrink-0 text-navy-400" />
+                          <span className="sr-only">(abre em nova guia)</span>
+                        </a>
+                        {d.descricao && <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{d.descricao}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => excluir(d.id)}
+                        disabled={excluindo === d.id}
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line text-danger-700 transition-colors hover:border-danger-600/40 hover:bg-danger-100/40 disabled:opacity-50"
+                        aria-label={`Excluir o documento ${d.titulo}`}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+        </section>
+
+        <div className="space-y-5">
+          <NovoDocumento onCreated={(d) => setDocs((ds) => [...ds, d].sort((a, b) => a.categoria.localeCompare(b.categoria) || a.titulo.localeCompare(b.titulo)))} />
+          <RegrasDePreenchimento />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function RegrasDePreenchimento() {
+  return (
+    <div className="card space-y-4 p-5 lg:sticky lg:top-[84px]">
+      <h2 className="text-[16px] font-display font-bold text-navy-900">Parâmetros do Mapeamento</h2>
+      <div className="space-y-4 text-[12px] text-ink-soft">
+        <p><strong className="text-ink">Status “A Renovar”:</strong> Adotada a régua de 100 dias pré-vencimento para garantir margem de tempo na estruturação e renovação dos processos.</p>
+        <p><strong className="text-ink">Base “Em Andamento”:</strong> Apurada cruzando a Planilha de Atas em Andamento com o relatório SAP (mapeamento de todos os projetos 7000 criados neste ano sem requisição).</p>
+        <p><strong className="text-ink">Snapshot local:</strong> A leitura da semana atual/anterior é gravada no IndexedDB deste navegador. Não há sincronização com SharePoint nem compartilhamento com outros usuários ou dispositivos.</p>
+      </div>
+
+      <h2 className="text-[16px] font-display font-bold text-navy-900 mt-6 pt-4 border-t border-line">Colunas exatas do snapshot</h2>
+      <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
+        <li><strong className="text-ink">Gráficos:</strong> <code>Gráfico</code>, <code>Situação apresentada</code>, <code>ATAS</code>, <code>ITENS</code>; linhas `ATA CONCLUÍDAS (VÁLIDAS)`, `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` e `ATAS VENCIDAS E A VENCER`.</li>
+        <li><strong className="text-ink">Valores/saving:</strong> `VALOR DIRETOS`, `VALOR INDIRETOS`, `VALOR CAPEX`, `VALOR CONTRATADO R$`, `SAVING HISTÓRICO R$`, `SAVING PROPOSTA INICIAL R$`, `REDUÇÃO HISTÓRICO %` e `REDUÇÃO PROPOSTA INICIAL %`.</li>
+        <li><strong className="text-ink">Top e fornecedores:</strong> `TOP COMP INDIRETOS`, `TOP COMP DIRETOS`, `TOP COMP CAPEX`; `QTD ATAS`, `QTD ITENS`, `% CONCENTRAÇÃO DE ITENS` e `ANÁLISE`.</li>
+        <li><strong className="text-ink">Previsões complementares:</strong> outra planilha com `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO`; o produto cruza essas três colunas e não mostra foto, bolinha ou cargo.</li>
+      </ul>
+
+      <h2 className="text-[16px] font-display font-bold text-navy-900 mt-6 pt-4 border-t border-line">Regras | Atas em Andamento</h2>
+      <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
+        <li><strong className="text-ink">Moeda e Câmbio:</strong> Valores em Reais (R$). Compras internacionais realizem a conversão.</li>
+        <li><strong className="text-ink">Atualização de Tarefas:</strong> Sempre alterar a tarefa atual e estimativa de conclusão.</li>
+        <li><strong className="text-ink">Atas em Preparação:</strong> Conter a previsão de início e estimativa de conclusão após levantar o spend.</li>
+        <li><strong className="text-ink">Ajuste de Quantidades:</strong> Ao excluir itens, revisar a contabilização exata.</li>
+      </ul>
+
+      <h2 className="text-[16px] font-display font-bold text-accent-600 mt-6 pt-4 border-t border-line">Regras | Atas Renovação</h2>
+      <ul className="space-y-2 text-[12px] text-ink-soft list-disc pl-4">
+        <li><strong className="text-ink">Decisão &quot;NOVA ATA&quot;:</strong> Informar o número do novo projeto (7000). Acompanhado na aba ATAS EM ANDAMENTO.</li>
+        <li><strong className="text-ink">Bloqueio do Contrato no SAP:</strong> Os contratos anteriores foram bloqueados no SAP para não permanecerem contabilizados.</li>
+        <li><strong className="text-ink">Cobertura dos Itens:</strong> Atenção aos casos em que a nova ata não contemplou 100% dos itens da ata anterior.</li>
+        <li><strong className="text-ink">Renovação pelo Mesmo Processo:</strong> Procurar equipe de Governança para apoio no andamento.</li>
+      </ul>
+    </div>
+  );
+}
+
+function NovoDocumento({ onCreated }: { onCreated: (d: DocItem) => void }) {
+  const [titulo, setTitulo] = useState("");
+  const [url, setUrl] = useState("");
+  const [categoria, setCategoria] = useState("Link SharePoint");
+  const [descricao, setDescricao] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSalvando(true);
+    setErro(null);
+    setOk(false);
+    try {
+      if (!/^https?:\/\/\S+$/i.test(url.trim())) {
+        throw new Error("Informe uma URL válida começando com http:// ou https://.");
+      }
+      const documento = await createDocument({
+        titulo: titulo.trim().slice(0, 200),
+        url: url.trim().slice(0, 2000),
+        categoria,
+        descricao: descricao.trim().slice(0, 1000) || null,
+      });
+      onCreated(documento);
+      setTitulo("");
+      setUrl("");
+      setDescricao("");
+      setOk(true);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="card h-fit space-y-4 p-5 lg:sticky lg:top-[84px]" aria-label="Cadastrar novo documento">
+      <h2 className="flex items-center gap-2 text-[14.5px] font-bold text-navy-950">
+        <Plus size={16} aria-hidden="true" />
+        Cadastrar documento
+      </h2>
+      <div>
+        <label htmlFor="doc-titulo" className="mb-1.5 block text-[12.5px] font-semibold text-ink">
+          Título <span aria-hidden="true" className="text-danger-600">*</span>
+        </label>
+        <input
+          id="doc-titulo"
+          value={titulo}
+          onChange={(e) => setTitulo(e.target.value)}
+          required
+          maxLength={200}
+          className="min-h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-[14px] text-ink"
+          placeholder="Ex.: Manual de Registro de Preços"
+        />
+      </div>
+      <div>
+        <label htmlFor="doc-url" className="mb-1.5 block text-[12.5px] font-semibold text-ink">
+          URL <span aria-hidden="true" className="text-danger-600">*</span>
+        </label>
+        <input
+          id="doc-url"
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          required
+          maxLength={2000}
+          inputMode="url"
+          className="min-h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-[14px] text-ink"
+          placeholder="https://…"
+        />
+      </div>
+      <div>
+        <label htmlFor="doc-categoria" className="mb-1.5 block text-[12.5px] font-semibold text-ink">
+          Categoria
+        </label>
+        <select
+          id="doc-categoria"
+          value={categoria}
+          onChange={(e) => setCategoria(e.target.value)}
+          className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[14px] text-ink"
+        >
+          {CATEGORIAS.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label htmlFor="doc-desc" className="mb-1.5 block text-[12.5px] font-semibold text-ink">
+          Descrição <span className="font-normal text-ink-soft">(opcional)</span>
+        </label>
+        <textarea
+          id="doc-desc"
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+          rows={3}
+          maxLength={1000}
+          className="w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[14px] text-ink"
+          placeholder="Para que serve e quando consultar"
+        />
+      </div>
+      {erro && (
+        <p className="rounded-xl bg-danger-100/60 px-4 py-3 text-[13px] font-semibold text-danger-700" role="alert">
+          {erro}
+        </p>
+      )}
+      {ok && (
+        <p className="rounded-xl bg-ok-100 px-4 py-3 text-[13px] font-semibold text-ok-700" role="status">
+          Documento cadastrado com sucesso.
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={salvando}
+        className="min-h-11 w-full rounded-xl bg-navy-900 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:opacity-60"
+      >
+        {salvando ? "Salvando…" : "Salvar documento"}
+      </button>
+    </form>
+  );
+}
+````
+
+### `src/components/import-wizard.tsx`
+
+````tsx
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import Link from "next/link";
+import {
+  ArrowLeft, ArrowRight, CircleAlert, CircleCheckBig, Download, FileSpreadsheet,
+  FileUp, Loader2, ShieldCheck, TriangleAlert,
+} from "lucide-react";
+import clsx from "clsx";
+import { PageHeader, SectionTitle } from "@/components/ui";
+import {
+  parseMultipleFiles, ParseError, MAX_FILE_MB, type SheetTable, type SourceSheet
+} from "@/lib/client-parse";
+import { suggestMapping, type Suggestion } from "@/lib/mapping";
+import {
+  CANONICAL_FIELDS, KIND_LABEL, transformAndValidate,
+  type DatasetKind, type DatasetNatureza, type ImportMode, type Issue, type Mapping, type ValidationResult,
+} from "@/lib/domain";
+import { buildCsv } from "@/lib/csv";
+import { fmtCurrency, fmtInt, todayISO } from "@/lib/format";
+import { notifyBaseUpdated } from "@/components/datasets-panel";
+import { saveDataset } from "@/lib/static-store";
+import {
+  extractSnapshotPayload,
+  hasSnapshotPayloadMeaningfulData,
+  type DashboardSnapshotPayload,
+} from "@/lib/dashboard-snapshot";
+
+/* ------------------------------------------------------------------ */
+
+const STEPS = [
+  { n: 1, label: "Arquivo" },
+  { n: 2, label: "Tipo de base" },
+  { n: 3, label: "Colunas" },
+  { n: 4, label: "Revisão" },
+  { n: 5, label: "Concluído" },
+];
+
+interface ValidateResponse {
+  ok: boolean;
+  erro?: string;
+  resumo?: {
+    validos: number;
+    ignoradas: number;
+    duplicadas: number;
+    avisos: number;
+    valorTotal: number;
+    itensTotal: number;
+    valorCobertura: number;
+    itensCobertura: number;
+    issuesAmostra: Issue[];
+    issuesTotal: number;
+  };
+  snapshotCoverage?: { found: string[]; missing: string[] };
+  snapshotMeaningful?: boolean;
+  datasetId?: number;
+}
+
+export function ImportWizard() {
+  const [step, setStep] = useState(1);
+  
+  // Agora armazenamos a tabela combinada de TODOS os arquivos/abas selecionados
+  const [combinedInfo, setCombinedInfo] = useState<{
+    names: string[];
+    filesCount: number;
+    sheetsCount: number;
+    combinedTable: SheetTable;
+    sourceSheets: SourceSheet[];
+  } | null>(null);
+  
+  const [parseErro, setParseErro] = useState<{ msg: string; code: string } | null>(null);
+  const [lendo, setLendo] = useState(false);
+  const [dragAtivo, setDragAtivo] = useState(false);
+
+  const [kind, setKind] = useState<DatasetKind>("indiretos");
+  const [natureza, setNatureza] = useState<DatasetNatureza>("operacional");
+  const [importMode, setImportMode] = useState<ImportMode>("replace");
+  const [referenceDate, setReferenceDate] = useState(todayISO());
+
+  const [mapping, setMapping] = useState<Mapping>({});
+  const [mappingTocado, setMappingTocado] = useState(false);
+
+  const [validacao, setValidacao] = useState<ValidateResponse | null>(null);
+  const [resultadoValidacao, setResultadoValidacao] = useState<ValidationResult | null>(null);
+  const [resultadoSnapshot, setResultadoSnapshot] = useState<DashboardSnapshotPayload | null>(null);
+  const [validando, setValidando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const [erroEtapa, setErroEtapa] = useState<string | null>(null);
+  const [avisoEstrutura, setAvisoEstrutura] = useState<string | null>(null);
+
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const inputFileRef = useRef<HTMLInputElement>(null);
+  const liveRef = useRef<HTMLDivElement>(null);
+
+  // Foco no título a cada troca de etapa (orientação por teclado/leitor de tela)
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [step]);
+
+  const announce = useCallback((msg: string) => {
+    if (liveRef.current) liveRef.current.textContent = "";
+    setTimeout(() => {
+      if (liveRef.current) liveRef.current.textContent = msg;
+    }, 60);
+  }, []);
+
+  /* ---------------- Leitura do arquivo ---------------- */
+
+  const processarArquivos = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
+      if (files.length > 2) {
+        setParseErro({ msg: "Selecione no máximo duas planilhas por lote. Faça uma nova importação para outros arquivos.", code: "estrutura" });
+        announce("São permitidos no máximo dois arquivos por lote.");
+        return;
+      }
+      setLendo(true);
+      setParseErro(null);
+      setValidacao(null);
+      setErroEtapa(null);
+      try {
+        const info = await parseMultipleFiles(files);
+        setCombinedInfo(info);
+        setMappingTocado(false);
+        announce(
+          `${info.filesCount} arquivos lidos com sucesso. ${info.sheetsCount} abas processadas.`,
+        );
+      } catch (e) {
+        setCombinedInfo(null);
+        const pe = e instanceof ParseError ? e : null;
+        setParseErro({ msg: pe?.message ?? "Falha inesperada ao ler os arquivos.", code: pe?.code ?? "estrutura" });
+        announce("Não foi possível ler os arquivos.");
+      } finally {
+        setLendo(false);
+      }
+    },
+    [announce],
+  );
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    setDragAtivo(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) processarArquivos(files);
+  }
+
+  /* ---------------- Tabela combinada ---------------- */
+
+  const table: SheetTable | null = combinedInfo?.combinedTable ?? null;
+
+  const suggestion: Suggestion | null = useMemo(
+    () => (table ? suggestMapping(table.headers) : null),
+    [table],
+  );
+
+  // Os blocos do panorama são automáticos e não dependem deste formulário.
+  // Deixe o mapeamento operacional limpo por padrão; o usuário escolhe apenas
+  // os campos que deseja gravar na busca de processos.
+  useEffect(() => {
+    if (!suggestion || mappingTocado) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMapping({});
+    setAvisoEstrutura(null);
+  }, [suggestion, mappingTocado]);
+
+  const obrigatoriosOk = Boolean(mapping.numero && mapping.objeto);
+
+  /* ---------------- Validação local (GitHub Pages) ---------------- */
+
+  const defaultArea = kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
+  const snapshotPreview = useMemo(
+    () => combinedInfo
+      ? extractSnapshotPayload(combinedInfo.sourceSheets, {
+          fileNames: combinedInfo.names,
+          referenceDate: referenceDate || null,
+        })
+      : null,
+    [combinedInfo, referenceDate],
+  );
+  const snapshotMeaningful = hasSnapshotPayloadMeaningfulData(snapshotPreview);
+  const canValidate = obrigatoriosOk || snapshotMeaningful;
+
+  function resumoDaValidacao(result: ValidationResult) {
+    return {
+      validos: result.records.length,
+      ignoradas: result.skipped,
+      duplicadas: result.duplicates,
+      avisos: result.warnings,
+      valorTotal: result.records.reduce((sum, row) => sum + (row.valor ?? 0), 0),
+      itensTotal: result.records.reduce((sum, row) => sum + (row.quantidade ?? 0), 0),
+      valorCobertura: result.records.filter((row) => row.valor !== null).length,
+      itensCobertura: result.records.filter((row) => row.quantidade !== null).length,
+      issuesAmostra: result.issues.slice(0, 300),
+      issuesTotal: result.issues.length,
+    };
+  }
+
+  function validar() {
+    if (!table || !combinedInfo) return;
+    setValidando(true);
+    setErroEtapa(null);
+    try {
+      const snapshot = extractSnapshotPayload(combinedInfo.sourceSheets, {
+        fileNames: combinedInfo.names,
+        referenceDate: referenceDate || null,
+      });
+      const result: ValidationResult = obrigatoriosOk
+        ? transformAndValidate(table.rows, mapping, { defaultArea })
+        : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
+      const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
+      if (result.records.length === 0 && !meaningful) {
+        throw new Error("Nenhum registro operacional ou bloco específico do painel foi reconhecido. Revise os nomes exatos das colunas e o mapeamento.");
+      }
+      setResultadoValidacao(result);
+      setResultadoSnapshot(snapshot);
+      const resumo = resumoDaValidacao(result);
+      setValidacao({
+        ok: true,
+        resumo,
+        snapshotCoverage: snapshot.coverage,
+        snapshotMeaningful: meaningful,
+      });
+      setStep(4);
+      announce(
+        `Validação concluída: ${resumo.validos.toLocaleString("pt-BR")} linhas operacionais e ${snapshot.coverage.found.length.toLocaleString("pt-BR")} blocos específicos reconhecidos.`,
+      );
+    } catch (e) {
+      setErroEtapa(e instanceof Error ? e.message : "Falha ao validar os dados.");
+      announce("Falha na validação.");
+    } finally {
+      setValidando(false);
+    }
+  }
+
+  async function confirmar() {
+    if (!combinedInfo || !table || !resultadoValidacao) return;
+    const meaningfulSnapshot = hasSnapshotPayloadMeaningfulData(resultadoSnapshot);
+    if (resultadoValidacao.records.length === 0 && !meaningfulSnapshot) return;
+    setConfirmando(true);
+    setErroEtapa(null);
+    try {
+      const dataset = await saveDataset({
+        kind,
+        natureza,
+        fileName: combinedInfo.names.join(", ").slice(0, 290),
+        sheetName: `${combinedInfo.sheetsCount} abas processadas`,
+        referenceDate: referenceDate || null,
+        importMode,
+        rowCount: table.totalRows,
+        result: resultadoValidacao,
+        snapshot: meaningfulSnapshot ? resultadoSnapshot : null,
+      });
+      setValidacao((current) => current ? { ...current, datasetId: dataset.id } : current);
+      setStep(5);
+      notifyBaseUpdated();
+      announce(`Importação concluída. ${resultadoValidacao.records.length.toLocaleString("pt-BR")} linhas operacionais e ${meaningfulSnapshot ? "leitura do painel" : "nenhum snapshot"} salvos neste navegador.`);
+    } catch (e) {
+      setErroEtapa(e instanceof Error ? e.message : "Falha ao salvar a importação neste navegador.");
+      announce("Falha na importação.");
+    } finally {
+      setConfirmando(false);
+    }
+  }
+
+  function baixarRelatorio() {
+    if (!table) return;
+    // Mesma validação do preview — aqui para gerar o relatório integral.
+    const result = resultadoValidacao ?? (obrigatoriosOk
+      ? transformAndValidate(table.rows, mapping, { defaultArea })
+      : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 });
+    const csv = buildCsv(
+      ["Linha na planilha", "Coluna", "Tipo", "Ocorrência"],
+      result.issues.map((i) => [i.row, i.column, i.severity === "error" ? "linha ignorada" : "aviso", i.message]),
+    );
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `relatorio-importacao.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function recomeçar() {
+    setStep(1);
+    setCombinedInfo(null);
+    setParseErro(null);
+    setValidacao(null);
+    setResultadoValidacao(null);
+    setResultadoSnapshot(null);
+    setErroEtapa(null);
+    setAvisoEstrutura(null);
+    setMapping({});
+    setMappingTocado(false);
+    if (inputFileRef.current) inputFileRef.current.value = "";
+  }
+
+  /* ================================ RENDER */
+
+  return (
+    <>
+      <PageHeader
+        overline="Dados"
+        title="Importar planilha"
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura, a validação e o armazenamento acontecem no seu navegador — os dados ficam neste navegador após a sua confirmação.`}
+      />
+
+      <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
+
+      {/* Passo a passo */}
+      <nav aria-label="Etapas da importação" className="mb-6" data-no-print>
+        <ol className="flex flex-wrap items-center gap-y-2">
+          {STEPS.map((s, i) => {
+            const estado = s.n < step ? "concluido" : s.n === step ? "atual" : "futuro";
+            return (
+              <li key={s.n} className="flex items-center">
+                <span
+                  aria-current={estado === "atual" ? "step" : undefined}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-full px-3 py-1.5 text-[12.5px] font-semibold",
+                    estado === "atual" && "bg-navy-900 text-white",
+                    estado === "concluido" && "bg-ok-100 text-ok-700",
+                    estado === "futuro" && "text-neutral-500",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={clsx(
+                      "grid h-5 w-5 place-items-center rounded-full text-[11px] font-bold",
+                      estado === "atual" && "bg-accent-500 text-white",
+                      estado === "concluido" && "bg-ok-600 text-white",
+                      estado === "futuro" && "bg-neutral-100 text-neutral-500",
+                    )}
+                  >
+                    {estado === "concluido" ? <CircleCheckBig size={12} /> : s.n}
+                  </span>
+                  {s.label}
+                </span>
+                {i < STEPS.length - 1 && <span aria-hidden="true" className="mx-1.5 h-px w-5 bg-line sm:w-8" />}
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+
+      <h2 ref={headingRef} tabIndex={-1} className="sr-only">
+        Etapa {step} de 5 — {STEPS[step - 1].label}
+      </h2>
+
+      {/* =============== ETAPA 1: ARQUIVO =============== */}
+      {step === 1 && (
+        <section aria-label="Escolha do arquivo" className="space-y-4">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragAtivo(true);
+            }}
+            onDragLeave={() => setDragAtivo(false)}
+            onDrop={onDrop}
+            className={clsx(
+              "card flex flex-col items-center justify-center gap-3 border-2 border-dashed px-6 py-14 text-center transition-colors sm:py-20",
+              dragAtivo ? "border-accent-500 bg-accent-50" : "border-navy-200 bg-navy-50/40",
+            )}
+          >
+            <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-2xl bg-surface text-navy-600 shadow-[var(--shadow-card)]">
+              {lendo ? <Loader2 size={30} className="animate-spin" /> : <FileUp size={30} />}
+            </span>
+            <p className="font-display text-[18px] font-bold text-navy-950">
+              {lendo ? "Lendo arquivos…" : "Arraste as planilhas para cá (até 2)"}
+            </p>
+            <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
+              Todas as abas com dados serão lidas e combinadas automaticamente.
+              Formatos aceitos: <strong>.xlsx</strong>, <strong>.xls</strong> e <strong>.csv</strong>.
+            </p>
+            <button
+              type="button"
+              onClick={() => inputFileRef.current?.click()}
+              disabled={lendo}
+              className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent-600 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-accent-700 disabled:opacity-60"
+            >
+              <FileSpreadsheet size={17} aria-hidden="true" />
+              Selecionar arquivos
+            </button>
+            <input
+              ref={inputFileRef}
+              type="file"
+              multiple
+              accept=".xlsx,.xls,.csv"
+              className="sr-only"
+              aria-label="Selecionar arquivos Excel ou CSV"
+              onChange={(e) => {
+                const f = Array.from(e.target.files || []);
+                if (f.length > 0) processarArquivos(f);
+              }}
+            />
+          </div>
+
+          {parseErro && (
+            <div className="card flex items-start gap-3 border-danger-600/30 bg-danger-100/40 p-5" role="alert">
+              <CircleAlert size={20} className="mt-0.5 shrink-0 text-danger-700" aria-hidden="true" />
+              <div>
+                <p className="text-[14.5px] font-bold text-danger-700">Não foi possível usar os arquivos</p>
+                <p className="mt-1 text-[13.5px] leading-relaxed text-danger-700/90">{parseErro.msg}</p>
+              </div>
+            </div>
+          )}
+
+          {combinedInfo && (
+            <div className="card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <span aria-hidden="true" className="grid h-11 w-11 place-items-center rounded-xl bg-ok-100 text-ok-700">
+                    <FileSpreadsheet size={20} />
+                  </span>
+                  <div>
+                    <p className="text-[15px] font-bold text-navy-950">{combinedInfo.filesCount} {combinedInfo.filesCount === 1 ? 'arquivo selecionado' : 'arquivos selecionados'}</p>
+                    <p className="mt-0.5 text-[12.5px] text-ink-soft">
+                      {combinedInfo.names.join(", ")}
+                    </p>
+                    <p className="mt-1 text-[12.5px] font-medium text-navy-600">
+                      {fmtInt(combinedInfo.combinedTable.totalRows)} linhas identificadas em {combinedInfo.sheetsCount} abas válidas.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={recomeçar}
+                  className="min-h-9 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-navy-800 hover:bg-navy-50"
+                >
+                  Trocar arquivos
+                </button>
+              </div>
+
+              <div className="mt-5 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+                >
+                  Continuar
+                  <ArrowRight size={16} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* =============== ETAPA 2: TIPO DE BASE =============== */}
+      {step === 2 && combinedInfo && (
+        <section aria-label="Tipo de base" className="space-y-5">
+          <fieldset className="card p-5">
+            <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
+              A qual área esta base pertence?
+            </legend>
+            <p className="mt-1 text-[13px] text-ink-soft">
+              Se a planilha tiver uma coluna de área, ela poderá ser mapeada na próxima etapa e prevalece linha a linha.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {(Object.keys(KIND_LABEL) as DatasetKind[]).map((k) => (
+                <RadioCard
+                  key={k}
+                  name="kind"
+                  checked={kind === k}
+                  onChange={() => setKind(k)}
+                  title={KIND_LABEL[k]}
+                  desc={
+                    k === "indiretos" ? "Materiais e serviços indiretos (administrativo, TI, facilities…)"
+                    : k === "diretos" ? "Materiais e insumos ligados à produção e pesquisa"
+                    : k === "capex" ? "Investimentos: equipamentos, obras e infraestrutura"
+                    : "Base geral, sem distinção de área"
+                  }
+                />
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="card p-5">
+            <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
+              Qual a natureza desta base?
+            </legend>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <RadioCard
+                name="natureza"
+                checked={natureza === "operacional"}
+                onChange={() => setNatureza("operacional")}
+                title="Base operacional detalhada"
+                desc="Planilha de trabalho do dia a dia, com todos os campos de acompanhamento."
+              />
+              <RadioCard
+                name="natureza"
+                checked={natureza === "snapshot"}
+                onChange={() => setNatureza("snapshot")}
+                title="Snapshot semanal"
+                desc="Fotografia consolidada de uma data (ex.: relatório semanal). Escopo e campos podem diferir da base operacional."
+              />
+            </div>
+            {natureza === "snapshot" && (
+              <p className="mt-3 flex items-start gap-2 rounded-xl bg-warn-100/60 px-4 py-3 text-[12.5px] leading-relaxed text-warn-700">
+                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                Snapshots não são misturados silenciosamente: o painel sinaliza quando bases de naturezas
+                diferentes estiverem ativas ao mesmo tempo.
+              </p>
+            )}
+          </fieldset>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <fieldset className="card p-5">
+              <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
+                Como tratar a base atual?
+              </legend>
+              <div className="mt-3 space-y-2">
+                <RadioCard
+                  name="modo"
+                  checked={importMode === "replace"}
+                  onChange={() => setImportMode("replace")}
+                  title="Substituir a base ativa desta área"
+                  desc="A base anterior fica arquivada como “substituída” (auditoria e comparação de variação) e sai dos indicadores."
+                />
+                <RadioCard
+                  name="modo"
+                  checked={importMode === "combine"}
+                  onChange={() => setImportMode("combine")}
+                  title="Combinar com as bases ativas"
+                  desc="Soma os registros às bases existentes. Use apenas se os arquivos cobrirem recortes diferentes."
+                />
+              </div>
+            </fieldset>
+
+            <div className="card p-5">
+              <label htmlFor="ref-date" className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
+                Data de referência da base
+              </label>
+              <input
+                id="ref-date"
+                type="date"
+                value={referenceDate}
+                onChange={(e) => setReferenceDate(e.target.value)}
+                className="mt-2.5 min-h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-[14px] text-ink"
+                aria-describedby="ref-hint"
+              />
+              <p id="ref-hint" className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
+                Data em que a planilha foi gerada na origem (ex.: data do snapshot). Ela identifica a base no painel e
+                nas comparações. O cálculo de vencidos/a vencer usa sempre a data de hoje.
+              </p>
+            </div>
+          </div>
+
+          <WizardNav
+            onBack={() => setStep(1)}
+            onNext={() => setStep(3)}
+            nextLabel="Mapear colunas"
+          />
+        </section>
+      )}
+
+      {/* =============== ETAPA 3: MAPEAMENTO =============== */}
+      {step === 3 && combinedInfo && table && suggestion && (
+        <section aria-label="Mapeamento de colunas" className="space-y-4">
+          <div className="card p-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-[14.5px] font-bold text-navy-950">
+                  Mapeamento de Colunas Unificado
+                </h3>
+                <p className="mt-0.5 text-[12.5px] text-ink-soft">
+                  As colunas de todas as abas foram combinadas. Aponte cada informação para a sua respectiva coluna nas planilhas.
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 text-[12.5px] text-ink-soft">
+              {fmtInt(table.totalRows)} linhas unidas · {table.headers.length} colunas únicas.
+              Colunas não associadas ficarão salvas nos detalhes de cada registro (não serão perdidas).
+            </p>
+          </div>
+
+          <div className="card border-navy-200 bg-navy-50/70 p-5" aria-label="Mapeamento específico das tabelas do dashboard">
+            <h3 className="text-[14.5px] font-bold text-navy-950">Leitura específica do painel</h3>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">
+              Além do mapeamento operacional abaixo, o Giro de Atas procura somente os nomes exatos da planilha para montar o snapshot semanal. Nenhuma coluna parecida é usada por inferência.
+            </p>
+            <ul className="mt-3 grid gap-2 text-[12px] leading-relaxed text-ink sm:grid-cols-2">
+              <li><strong>Leitura dos gráficos:</strong> <code>Gráfico</code>, <code>Situação apresentada</code>, <code>ATAS</code>, <code>ITENS</code>.</li>
+              <li><strong>Valores:</strong> <code>VALOR DIRETOS</code>, <code>VALOR INDIRETOS</code>, <code>VALOR CAPEX</code>.</li>
+              <li><strong>Saving:</strong> <code>Rótulos de Linha</code> (CAPEX/DIRETOS/INDIRETOS/TOTAL), <code>VALOR CONTRATADO R$</code>, <code>SAVING HISTÓRICO R$</code>, <code>SAVING PROPOSTA INICIAL R$</code>, reduções.</li>
+              <li><strong>Compradores:</strong> <code>TOP COMP INDIRETOS</code>, <code>TOP COMP DIRETOS</code>, <code>TOP COMP CAPEX</code>, <code>ITENS</code>, <code>ATAS</code>.</li>
+              <li><strong>Fornecedores:</strong> <code>FORNECEDOR</code>, <code>QTD ATAS</code>, <code>QTD ITENS</code>, <code>% CONCENTRAÇÃO DE ITENS</code>, <code>ANÁLISE</code>.</li>
+              <li><strong>Evolução:</strong> <code>ATA INDIRETOS</code>, <code>ATA DIRETOS</code>, <code>ATA CAPEX</code>, <code>ITEM SALDO V ...</code>, <code>ITEM S/SALDO ...</code>, <code>VENCIDAS ...</code>, <code>A VENCER ...</code>.</li>
+              <li><strong>Previsões:</strong> em outra planilha, <code>COMPRADOR</code>, <code>AREA</code>, <code>PRAZO CONCLUSÃO</code>.</li>
+            </ul>
+            {snapshotPreview && (
+              <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-[12px] font-semibold text-navy-700" role="status">
+                Blocos reconhecidos nesta leitura: {snapshotPreview.coverage.found.length ? snapshotPreview.coverage.found.join(", ") : "nenhum ainda"}.
+              </p>
+            )}
+          </div>
+
+          {avisoEstrutura && (
+            <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/50 p-4 text-[13px] leading-relaxed text-warn-700" role="status">
+              <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              {avisoEstrutura}
+            </div>
+          )}
+
+          <div className="card overflow-hidden">
+            <ul className="divide-y divide-line/70">
+              {CANONICAL_FIELDS.map((f) => {
+                const selecionada = mapping[f.key] ?? "";
+                const confianca = suggestion.confidence[f.key];
+                const amostras = selecionada
+                  ? [...new Set(table.rows.slice(0, 60).map((r) => r[selecionada]).filter((v) => v !== null && v !== undefined && String(v).trim() !== "").map((v) => (v instanceof Date ? v.toLocaleDateString("pt-BR") : String(v))))].slice(0, 3)
+                  : [];
+                return (
+                  <li key={f.key} className="grid gap-2 px-5 py-4 md:grid-cols-[240px_1fr] md:items-center md:gap-5">
+                    <div>
+                      <p className="text-[13.5px] font-bold text-ink">{f.label}</p>
+                      <p className="mt-0.5 text-[12px] text-ink-soft">{f.hint}</p>
+                      {confianca === "partial" && selecionada && (
+                        <p className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-semibold text-warn-700">
+                          <TriangleAlert size={12} aria-hidden="true" />
+                          Sugestão aproximada — confira
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label htmlFor={`map-${f.key}`} className="sr-only">
+                        Coluna da planilha para {f.label}
+                      </label>
+                      <select
+                        id={`map-${f.key}`}
+                        value={selecionada}
+                        onChange={(e) => {
+                          setMappingTocado(true);
+                          setMapping((m) => ({ ...m, [f.key]: e.target.value || null }));
+                        }}
+                        className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[13.5px] font-medium text-ink"
+                      >
+                        <option value="">— não importar este campo —</option>
+                        {table.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                      {amostras.length > 0 && (
+                        <p className="mt-1.5 truncate text-[12px] text-ink-soft" title={amostras.join(" · ")}>
+                          <span className="font-semibold">Exemplos:</span> {amostras.join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {!canValidate && (
+            <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
+              <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              Para continuar, associe os campos essenciais de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
+            </div>
+          )}
+          {canValidate && !obrigatoriosOk && snapshotMeaningful && (
+            <div className="card flex items-start gap-2.5 border-ok-600/30 bg-ok-100/60 p-4 text-[13px] leading-relaxed text-ok-700" role="status">
+              <ShieldCheck size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+              Blocos do dashboard reconhecidos. O mapeamento operacional é opcional para uma importação somente de métricas; os registros de processos não serão criados.
+            </div>
+          )}
+
+          <WizardNav
+            onBack={() => setStep(2)}
+            onNext={validar}
+            nextLabel={validando ? "Validando…" : "Validar dados"}
+            nextDisabled={!canValidate || validando}
+            nextBusy={validando}
+          />
+          {erroEtapa && (
+            <p className="card border-danger-600/30 bg-danger-100/40 p-4 text-[13px] font-semibold text-danger-700" role="alert">
+              {erroEtapa}
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* =============== ETAPA 4: REVISÃO =============== */}
+      {step === 4 && combinedInfo && validacao?.resumo && (
+        <section aria-label="Revisão da importação" className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat label="Linhas válidas" value={fmtInt(validacao.resumo.validos)} tone="ok" />
+            <Stat label="Ignoradas (campos essenciais/duplic.)" value={fmtInt(validacao.resumo.ignoradas)} tone={validacao.resumo.ignoradas > 0 ? "warn" : "neutral"} />
+            <Stat label="Duplicadas removidas" value={fmtInt(validacao.resumo.duplicadas)} tone={validacao.resumo.duplicadas > 0 ? "warn" : "neutral"} />
+            <Stat label="Avisos de interpretação" value={fmtInt(validacao.resumo.avisos)} tone={validacao.resumo.avisos > 0 ? "navy" : "neutral"} />
+          </div>
+
+          <div className="card p-5">
+            <SectionTitle title="Resumo do que será importado" />
+            <dl className="grid gap-x-8 gap-y-3 text-[13.5px] sm:grid-cols-2">
+              <ResumoItem label="Arquivos">{combinedInfo.names.join(", ")} ({combinedInfo.sheetsCount} abas)</ResumoItem>
+              <ResumoItem label="Base">{KIND_LABEL[kind]} · {natureza === "snapshot" ? "snapshot semanal" : "base operacional"}</ResumoItem>
+              <ResumoItem label="Modo">{importMode === "replace" ? `Substituir a base ativa de ${KIND_LABEL[kind]} (a atual vai para o histórico)` : "Combinar com as bases ativas"}</ResumoItem>
+              <ResumoItem label="Data de referência">{referenceDate ? referenceDate.split("-").reverse().join("/") : "—"}</ResumoItem>
+              <ResumoItem label="Valor estimado total">
+                {fmtCurrency(validacao.resumo.valorTotal)}{" "}
+                <span className="text-ink-soft">(presente em {fmtInt(validacao.resumo.valorCobertura)} linhas)</span>
+              </ResumoItem>
+              <ResumoItem label="Itens">
+                {fmtInt(validacao.resumo.itensTotal)}{" "}
+                <span className="text-ink-soft">(presente em {fmtInt(validacao.resumo.itensCobertura)} linhas)</span>
+              </ResumoItem>
+              <ResumoItem label="Blocos específicos do dashboard">
+                {validacao.snapshotCoverage?.found.length ?? 0} reconhecidos
+                {validacao.snapshotCoverage?.found.length ? <span className="text-ink-soft"> · {validacao.snapshotCoverage.found.join(", ")}</span> : null}
+              </ResumoItem>
+            </dl>
+          </div>
+
+          {validacao.resumo.issuesTotal > 0 ? (
+            <div className="card overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+                <div>
+                  <h3 className="text-[14.5px] font-bold text-navy-950">Ocorrências encontradas na validação</h3>
+                  <p className="mt-0.5 text-[12.5px] text-ink-soft">
+                    Mostrando {fmtInt(Math.min(validacao.resumo.issuesAmostra.length, 60))} de{" "}
+                    {fmtInt(validacao.resumo.issuesTotal)}. Baixe o relatório para ver todas — nada é ocultado.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={baixarRelatorio}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                >
+                  <Download size={15} aria-hidden="true" />
+                  Relatório completo (CSV)
+                </button>
+              </div>
+              <div className="max-h-[380px] overflow-y-auto">
+                <table className="w-full text-[13px]">
+                  <caption className="sr-only">Ocorrências de validação (amostra)</caption>
+                  <thead className="sticky top-0 bg-navy-50">
+                    <tr className="border-b border-line text-left">
+                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Linha</th>
+                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Tipo</th>
+                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Coluna</th>
+                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Ocorrência</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {validacao.resumo.issuesAmostra.slice(0, 60).map((i, idx) => (
+                      <tr key={idx} className="border-b border-line/60 last:border-0">
+                        <td className="tnum px-4 py-2.5 font-semibold text-ink">{fmtInt(i.row)}</td>
+                        <td className="px-4 py-2.5">
+                          {i.severity === "error" ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-danger-100 px-2.5 py-1 text-[11.5px] font-semibold text-danger-700">
+                              <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-danger-600" />
+                              linha ignorada
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-100 px-2.5 py-1 text-[11.5px] font-semibold text-warn-700">
+                              <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-warn-600" />
+                              aviso — linha mantida
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 font-medium text-ink">{i.column}</td>
+                        <td className="px-4 py-2.5 leading-snug text-ink">{i.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="card flex items-start gap-3 border-ok-600/30 bg-ok-100/60 p-5" role="status">
+              <ShieldCheck size={20} className="mt-0.5 shrink-0 text-ok-700" aria-hidden="true" />
+              <p className="text-[13.5px] leading-relaxed text-ok-700">
+                {validacao.resumo.validos === 0 && validacao.snapshotMeaningful
+                  ? "Nenhuma linha operacional foi criada; a validação reconheceu somente os blocos específicos do snapshot."
+                  : "Nenhuma ocorrência: os campos essenciais estão preenchidos, sem duplicidades e sem avisos de interpretação."}
+              </p>
+            </div>
+          )}
+
+          {validacao.resumo.validos === 0 && !validacao.snapshotMeaningful && (
+            <div className="card border-danger-600/30 bg-danger-100/40 p-5 text-[13.5px] font-semibold text-danger-700" role="alert">
+              Nenhuma linha válida para importar. Volte e ajuste o mapeamento ou corrija a planilha na origem.
+            </div>
+          )}
+          {validacao.resumo.validos === 0 && validacao.snapshotMeaningful && (
+            <div className="card border-ok-600/30 bg-ok-100/60 p-5 text-[13.5px] font-semibold text-ok-700" role="status">
+              Esta importação contém somente métricas/tabelas do dashboard. Os blocos reconhecidos serão salvos como snapshot e não exigem identificador de processo.
+            </div>
+          )}
+
+          {erroEtapa && (
+            <p className="card border-danger-600/30 bg-danger-100/40 p-4 text-[13px] font-semibold text-danger-700" role="alert">
+              {erroEtapa}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              Voltar ao mapeamento
+            </button>
+            <button
+              type="button"
+              onClick={confirmar}
+              disabled={confirmando || (validacao.resumo.validos === 0 && !validacao.snapshotMeaningful)}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-accent-600 px-6 text-[14.5px] font-bold text-white transition-colors hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-describedby="confirm-hint"
+            >
+              {confirmando ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}
+              {confirmando ? "Importando…" : `Confirmar importação${validacao.resumo.validos > 0 ? ` de ${fmtInt(validacao.resumo.validos)} linhas` : " do snapshot"}`}
+            </button>
+          </div>
+          <p id="confirm-hint" className="text-right text-[12px] text-ink-soft">
+            {importMode === "replace"
+              ? `A base ativa de ${KIND_LABEL[kind]} será substituída (mantida no histórico).`
+              : "As linhas serão somadas às bases ativas."}{" "}
+            A gravação local é atômica: ou o dataset é salvo completo, ou nada é alterado.
+          </p>
+        </section>
+      )}
+
+      {/* =============== ETAPA 5: SUCESSO =============== */}
+      {step === 5 && validacao?.resumo && (
+        <section aria-label="Importação concluída">
+          <div className="card flex flex-col items-center gap-4 px-6 py-12 text-center sm:py-16" role="status">
+            <span aria-hidden="true" className="grid h-16 w-16 place-items-center rounded-full bg-ok-100 text-ok-700">
+              <CircleCheckBig size={32} />
+            </span>
+            <h2 className="font-display text-[22px] font-bold text-navy-950">Importação concluída</h2>
+            <p className="max-w-lg text-[14px] leading-relaxed text-ink-soft">
+              <strong className="tnum text-ink">{fmtInt(validacao.resumo.validos)}</strong> registros operacionais foram
+              processados e agora alimentam os indicadores e a busca.
+              {validacao.snapshotMeaningful && (
+                <> Os blocos específicos do dashboard também foram salvos como snapshot local.</>
+              )}
+              {validacao.resumo.ignoradas > 0 && (
+                <>
+                  {" "}
+                  <strong className="tnum text-ink">{fmtInt(validacao.resumo.ignoradas)}</strong> linhas foram ignoradas
+                  e estão listadas no relatório — corrija na origem e reimporte se necessário.
+                </>
+              )}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5">
+              <Link
+                href="/"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+              >
+                Ver panorama atualizado
+                <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+              <Link
+                href="/processos"
+                className="inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              >
+                Pesquisar processos
+              </Link>
+              <button
+                type="button"
+                onClick={recomeçar}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-5 text-[14px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              >
+                <FileUp size={16} aria-hidden="true" />
+                Importar outro arquivo
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function WizardNav({
+  onBack,
+  onNext,
+  nextLabel,
+  nextDisabled = false,
+  nextBusy = false,
+}: {
+  onBack: () => void;
+  onNext: () => void;
+  nextLabel: string;
+  nextDisabled?: boolean;
+  nextBusy?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        Voltar
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={nextDisabled}
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {nextBusy && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+        {nextLabel}
+        {!nextBusy && <ArrowRight size={16} aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
+function RadioCard({
+  name, checked, onChange, title, desc,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: () => void;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <label
+      className={clsx(
+        "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
+        checked ? "border-navy-500 bg-navy-50" : "border-line hover:border-navy-300",
+      )}
+    >
+      <input type="radio" name={name} checked={checked} onChange={onChange} className="mt-1 h-4 w-4 accent-[#c95a12]" />
+      <span>
+        <span className="block text-[14px] font-bold text-ink">{title}</span>
+        <span className="mt-0.5 block text-[12.5px] leading-relaxed text-ink-soft">{desc}</span>
+      </span>
+    </label>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone: "ok" | "warn" | "neutral" | "navy" }) {
+  return (
+    <div className="card p-4">
+      <p
+        className={clsx(
+          "tnum font-display text-[24px] font-bold tracking-tight sm:text-[28px]",
+          tone === "ok" && "text-ok-700",
+          tone === "warn" && "text-warn-700",
+          tone === "navy" && "text-navy-700",
+          tone === "neutral" && "text-navy-950",
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 text-[12px] font-semibold leading-snug text-ink-soft">{label}</p>
+    </div>
+  );
+}
+
+function ResumoItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-[11.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">{label}</dt>
+      <dd className="text-[13.5px] font-medium text-ink">{children}</dd>
+    </div>
+  );
+}
+````
+
+### `src/components/processos-browser.tsx`
+
+````tsx
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  ArrowDown, ArrowUp, ArrowUpDown, CircleAlert, Download, ExternalLink, FileStack,
+  FunnelX, Printer, Search, X,
+} from "lucide-react";
+import clsx from "clsx";
+import { AreaTag, PageHeader, StatusBadge, situacaoChave } from "@/components/ui";
+import { KIND_LABEL, SITUACAO_LABEL, normText, type SituacaoChave } from "@/lib/domain";
+import { fmtCurrency, fmtDate, fmtDateTime, fmtInt, prazoRelativo } from "@/lib/format";
+import { buildCsv } from "@/lib/csv";
+import { listActiveProcessRows, STATIC_DATA_EVENT } from "@/lib/static-store";
+
+/* ------------------------------------------------------------------ */
+
+interface Row {
+  id: string | number;
+  dataset_id: number;
+  area: string | null;
+  numero: string;
+  objeto: string;
+  unidade: string | null;
+  fornecedor: string | null;
+  responsavel: string | null;
+  etapa: string | null;
+  situacao_fonte: string | null;
+  situacao_norm: string | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  quantidade: number | null;
+  valor: number | null;
+  status_consumo: string | null;
+  saving_hist: number | null;
+  saving_prop: number | null;
+  status_renovacao: string | null;
+  data_previsao: string | null;
+  observacao: string | null;
+  link: string | null;
+  source_row: number | null;
+  extra: Record<string, string> | null;
+  dias: number | null;
+  situacao: SituacaoChave;
+  file_name: string;
+  kind: string;
+  natureza: string;
+  reference_date: string | null;
+  imported_at: string;
+}
+
+interface Facets {
+  areas: { area: string; total: number }[];
+  etapas: { etapa: string; total: number }[];
+}
+
+const SORTS = [
+  { key: "data_fim", label: "Prazo / vigência" },
+  { key: "numero", label: "Nº do processo" },
+  { key: "objeto", label: "Objeto" },
+  { key: "area", label: "Área" },
+  { key: "fornecedor", label: "Fornecedor" },
+  { key: "responsavel", label: "Responsável" },
+  { key: "etapa", label: "Etapa" },
+  { key: "situacao", label: "Situação de prazo" },
+  { key: "valor", label: "Valor estimado" },
+  { key: "quantidade", label: "Qtd. de itens" },
+];
+
+const SITUACOES: { key: string; label: string }[] = [
+  { key: "todas", label: "Todas as situações" },
+  { key: "vencido", label: "Vencido" },
+  { key: "a_vencer", label: "A vencer (30 dias)" },
+  { key: "em_dia", label: "No prazo" },
+  { key: "sem_data", label: "Sem data de prazo" },
+  { key: "concluido", label: "Concluído" },
+  { key: "cancelado", label: "Cancelado" },
+];
+
+/* ------------------------------------------------------------------ */
+
+export function ProcessosBrowser() {
+  const sp = useSearchParams();
+  const [q, setQ] = useState(sp.get("q") ?? "");
+  const [qDebounced, setQDebounced] = useState(q);
+  const [area, setArea] = useState(sp.get("area") ?? "todas");
+  const [situacao, setSituacao] = useState(sp.get("situacao") ?? "todas");
+  const [etapa, setEtapa] = useState(sp.get("etapa") ?? "todas");
+  const [sort, setSort] = useState(sp.get("sort") ?? "data_fim");
+  const [dir, setDir] = useState<"asc" | "desc">(sp.get("dir") === "desc" ? "desc" : "asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const [allRows, setAllRows] = useState<Row[] | null>(null);
+  const [facets, setFacets] = useState<Facets | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [detalhe, setDetalhe] = useState<Row | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setQDebounced(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const carregar = useCallback(async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const data = await listActiveProcessRows();
+      setAllRows(data);
+      const areaCount = new Map<string, number>();
+      const etapaCount = new Map<string, number>();
+      for (const row of data) {
+        const rowArea = row.area ?? "Não informado";
+        areaCount.set(rowArea, (areaCount.get(rowArea) ?? 0) + 1);
+        if (row.etapa) etapaCount.set(row.etapa, (etapaCount.get(row.etapa) ?? 0) + 1);
+      }
+      setFacets({
+        areas: [...areaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([area, total]) => ({ area, total })),
+        etapas: [...etapaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([etapa, total]) => ({ etapa, total })),
+      });
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Erro ao carregar processos locais.");
+      setAllRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    carregar();
+    const onUpdate = () => carregar();
+    window.addEventListener(STATIC_DATA_EVENT, onUpdate);
+    return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
+  }, [carregar]);
+
+  const filteredRows = useMemo(() => {
+    if (!allRows) return [];
+    const query = normText(qDebounced);
+    const filtered = allRows.filter((row) => {
+      if (query) {
+        const searchable = normText([
+          row.numero, row.objeto, row.area, row.unidade, row.fornecedor, row.responsavel,
+          row.etapa, row.situacao_fonte, row.status_consumo, row.status_renovacao,
+          row.observacao, ...Object.values(row.extra ?? {}),
+        ].filter(Boolean).join(" "));
+        if (!searchable.includes(query)) return false;
+      }
+      if (area !== "todas" && (row.area ?? "Não informado") !== area) return false;
+      if (situacao !== "todas" && row.situacao !== situacao) return false;
+      if (etapa !== "todas" && row.etapa !== etapa) return false;
+      return true;
+    });
+
+    const getSortValue = (row: Row): string | number => {
+      if (sort === "situacao") return row.situacao;
+      if (sort === "valor") return row.valor ?? Number.POSITIVE_INFINITY;
+      if (sort === "quantidade") return row.quantidade ?? Number.POSITIVE_INFINITY;
+      if (sort === "data_fim") return row.data_fim ?? "9999-12-31";
+      return String(row[sort as keyof Row] ?? "");
+    };
+    filtered.sort((a, b) => {
+      const av = getSortValue(a);
+      const bv = getSortValue(b);
+      const comparison = typeof av === "number" && typeof bv === "number"
+        ? av - bv
+        : String(av).localeCompare(String(bv), "pt-BR", { numeric: true, sensitivity: "base" });
+      return dir === "asc" ? comparison : -comparison;
+    });
+    return filtered;
+  }, [allRows, qDebounced, area, situacao, etapa, sort, dir]);
+
+  const total = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const activePage = Math.min(page, totalPages);
+  const rows = useMemo(() => filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize), [filteredRows, activePage, pageSize]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (qDebounced) params.set("q", qDebounced);
+    if (area !== "todas") params.set("area", area);
+    if (situacao !== "todas") params.set("situacao", situacao);
+    if (etapa !== "todas") params.set("etapa", etapa);
+    if (sort !== "data_fim") params.set("sort", sort);
+    if (dir !== "asc") params.set("dir", dir);
+    if (page > 1) params.set("page", String(page));
+    const prefix = window.location.pathname.includes("/processos") ? window.location.pathname.split("/processos")[0] : "";
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${prefix}/processos/${qs ? `?${qs}` : ""}`);
+  }, [qDebounced, area, situacao, etapa, sort, dir, page]);
+
+  const filtrosAtivos =
+    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
+  const semBase = !loading && allRows !== null && total === 0 && filtrosAtivos === 0;
+
+  function limparFiltros() {
+    setQ("");
+    setArea("todas");
+    setSituacao("todas");
+    setEtapa("todas");
+    setPage(1);
+  }
+
+  function alternarOrdenacao(col: string) {
+    if (sort === col) setDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSort(col);
+      setDir("asc");
+    }
+    setPage(1);
+  }
+
+  function exportar() {
+    const max = 5000;
+    const data = filteredRows.slice(0, max);
+    const body = data.map((r) => [
+      r.numero, r.objeto, r.area, r.unidade, r.fornecedor, r.responsavel, r.etapa,
+      r.situacao_fonte, SITUACAO_LABEL[r.situacao], r.status_consumo ?? "",
+      r.saving_hist ?? "", r.saving_prop ?? "", r.status_renovacao ?? "",
+      r.data_previsao ? fmtDate(r.data_previsao) : "", r.data_inicio ? fmtDate(r.data_inicio) : "",
+      r.data_fim ? fmtDate(r.data_fim) : "", r.quantidade ?? "", r.valor ?? "", r.observacao ?? "", r.link ?? "",
+      r.file_name, r.imported_at ? fmtDateTime(r.imported_at) : "",
+    ]);
+    if (filteredRows.length > max) body.push([`AVISO: exportação limitada a ${max.toLocaleString("pt-BR")} linhas. Aplique mais filtros para exportar o restante.`]);
+    const csv = buildCsv([
+      "Nº processo", "Objeto", "Área", "Unidade", "Fornecedor", "Responsável", "Etapa", "Situação (fonte)",
+      "Situação de prazo", "Status de Consumo", "Saving Histórico (R$)", "Saving Proposta (R$)", "Status Renovação",
+      "Previsão", "Abertura", "Prazo/Vigência", "Qtd. itens", "Valor estimado (R$)", "Observações", "Link", "Arquivo de origem", "Importado em",
+    ], body);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `giro-de-atas-processos-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <PageHeader
+        overline="Consulta"
+        title="Processos e atas"
+        description="Pesquise em número, objeto, fornecedor, responsável, etapa, unidade e observações das bases ativas."
+        actions={
+          <>
+            <a
+              href="#exportar"
+              onClick={(e) => { e.preventDefault(); exportar(); }}
+              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              title="Exporta o recorte filtrado completo (até 5.000 linhas) em CSV"
+              data-no-print
+            >
+              <Download size={15} aria-hidden="true" />
+              <span className="hidden sm:inline">Exportar CSV</span>
+              <span className="sm:hidden">CSV</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="hidden min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 sm:inline-flex"
+              data-no-print
+            >
+              <Printer size={15} aria-hidden="true" />
+              Imprimir
+            </button>
+          </>
+        }
+      />
+
+      {/* Barra de filtros */}
+      <section aria-label="Filtros" className="card mb-4 p-4" data-no-print>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_190px_190px_190px]">
+          <div className="relative">
+            <label htmlFor="f-busca" className="sr-only">
+              Pesquisar processos
+            </label>
+            <Search size={17} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
+            <input
+              id="f-busca"
+              type="search"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Buscar por nº, objeto, fornecedor, responsável…"
+              className="min-h-11 w-full rounded-xl border border-line bg-surface pl-10 pr-9 text-[14px] text-ink placeholder:text-neutral-500 hover:border-navy-300"
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ("")}
+                className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-ink"
+                aria-label="Limpar pesquisa"
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+          <SelectFiltro
+            id="f-area"
+            label="Área"
+            value={area}
+            onChange={(v) => {
+              setArea(v);
+              setPage(1);
+            }}
+            options={[
+              { key: "todas", label: "Todas as áreas" },
+              ...(facets?.areas.map((a) => ({ key: a.area, label: `${a.area} (${a.total})` })) ?? [
+                { key: "Indiretos", label: "Indiretos" },
+                { key: "Diretos", label: "Diretos" },
+                { key: "CAPEX", label: "CAPEX" },
+              ]),
+            ]}
+          />
+          <SelectFiltro
+            id="f-situacao"
+            label="Situação de prazo"
+            value={situacao}
+            onChange={(v) => {
+              setSituacao(v);
+              setPage(1);
+            }}
+            options={SITUACOES}
+          />
+          <SelectFiltro
+            id="f-etapa"
+            label="Etapa"
+            value={etapa}
+            onChange={(v) => {
+              setEtapa(v);
+              setPage(1);
+            }}
+            options={[
+              { key: "todas", label: "Todas as etapas" },
+              ...(facets?.etapas.map((e) => ({ key: e.etapa, label: `${e.etapa} (${e.total})` })) ?? []),
+            ]}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {filtrosAtivos > 0 && (
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+              >
+                <FunnelX size={14} aria-hidden="true" />
+                Limpar filtros ({filtrosAtivos})
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
+            <label htmlFor="f-ordenar" className="font-medium sm:hidden">
+              Ordenar por
+            </label>
+            <select
+              id="f-ordenar"
+              value={`${sort}:${dir}`}
+              onChange={(e) => {
+                const [s, d] = e.target.value.split(":");
+                setSort(s);
+                setDir(d as "asc" | "desc");
+                setPage(1);
+              }}
+              className="min-h-9 rounded-lg border border-line bg-surface px-2 text-[12.5px] font-medium text-ink sm:hidden"
+            >
+              {SORTS.map((s) => (
+                <option key={`${s.key}:asc`} value={`${s.key}:asc`}>
+                  {s.label} (crescente)
+                </option>
+              ))}
+              {SORTS.map((s) => (
+                <option key={`${s.key}:desc`} value={`${s.key}:desc`}>
+                  {s.label} (decrescente)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {/* Contagem acessível */}
+      <p aria-live="polite" role="status" className="mb-3 text-[13px] font-medium text-ink-soft">
+        {loading
+          ? "Carregando processos…"
+          : erro
+            ? "Erro ao carregar processos."
+            : total === 0
+              ? "Nenhum processo encontrado."
+              : `${fmtInt(total)} ${total === 1 ? "processo encontrado" : "processos encontrados"}${filtrosAtivos > 0 ? " com os filtros ativos" : " nas bases ativas"}.`}
+      </p>
+
+      {/* Conteúdo */}
+      {erro ? (
+        <div className="card flex flex-col items-center gap-3 border-danger-600/30 p-10 text-center" role="alert">
+          <CircleAlert size={28} className="text-danger-600" aria-hidden="true" />
+          <p className="text-[14.5px] font-semibold text-danger-700">{erro}</p>
+          <button
+            type="button"
+            onClick={carregar}
+            className="min-h-10 rounded-xl bg-navy-800 px-4 text-[13.5px] font-semibold text-white hover:bg-navy-700"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : loading && rows === null ? (
+        <div className="card space-y-2.5 p-4" aria-busy="true" aria-label="Carregando">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton h-14 w-full" />
+          ))}
+        </div>
+      ) : semBase ? (
+        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <FileStack size={30} className="text-navy-400" aria-hidden="true" />
+          <h2 className="font-display text-[17px] font-bold text-navy-950">Nenhuma base ativa no momento</h2>
+          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
+            Importe uma planilha na página <a href="/importar" className="font-semibold text-navy-700 underline underline-offset-2">Importar</a> para
+            pesquisar processos.
+          </p>
+        </div>
+      ) : rows !== null && rows.length === 0 ? (
+        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <Search size={30} className="text-navy-400" aria-hidden="true" />
+          <h2 className="font-display text-[17px] font-bold text-navy-950">Nenhum resultado para os filtros aplicados</h2>
+          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
+            Revise a grafia, remova filtros ou amplie a situação de prazo. A busca cobre número, objeto, fornecedor,
+            responsável, etapa, unidade e observações.
+          </p>
+          <button
+            type="button"
+            onClick={limparFiltros}
+            className="mt-1 inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13.5px] font-semibold text-navy-800 hover:bg-navy-50"
+          >
+            <FunnelX size={15} aria-hidden="true" />
+            Limpar filtros
+          </button>
+        </div>
+      ) : (
+        rows && (
+          <>
+            {/* Tabela (desktop e tablet) */}
+            <div className={clsx("card hidden overflow-hidden md:block", loading && "opacity-60")}>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[880px] text-[13.5px]">
+                  <caption className="sr-only">
+                    Lista de processos das bases ativas{total > 0 ? ` — ${fmtInt(total)} resultados` : ""}
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-line bg-navy-50/60 text-left">
+                      <Th col="numero" label="Nº processo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                      <Th col="objeto" label="Objeto" sort={sort} dir={dir} onSort={alternarOrdenacao} className="min-w-[220px]" />
+                      <Th col="area" label="Área" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                      <Th col="responsavel" label="Responsável" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                      <Th col="data_fim" label="Prazo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                      <Th col="situacao" label="Situação" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                      <Th col="valor" label="Valor est." sort={sort} dir={dir} onSort={alternarOrdenacao} className="text-right" numeric />
+                      <th scope="col" className="px-3 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">
+                        <span className="sr-only">Ações</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.id} className="border-b border-line/60 transition-colors last:border-0 hover:bg-navy-50/40">
+                        <td className="px-3 py-3 align-top">
+                          <span className="font-semibold text-navy-800">{r.numero}</span>
+                          {r.etapa && <span className="mt-0.5 block text-[11.5px] text-ink-soft">{r.etapa}</span>}
+                        </td>
+                        <td className="max-w-[300px] px-3 py-3 align-top">
+                          <span className="line-clamp-2 text-[13px] leading-snug text-ink" title={r.objeto}>
+                            {r.objeto}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <AreaTag area={r.area} />
+                        </td>
+                        <td className="max-w-[140px] truncate px-3 py-3 align-top text-ink" title={r.responsavel ?? ""}>
+                          {r.responsavel ?? <span className="text-neutral-500">—</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-3 align-top">
+                          {r.data_fim ? (
+                            <>
+                              <span className="tnum font-medium text-ink">{fmtDate(r.data_fim)}</span>
+                              {r.dias !== null && r.situacao !== "concluido" && r.situacao !== "cancelado" && (
+                                <span
+                                  className={clsx(
+                                    "tnum mt-0.5 block text-[11.5px] font-semibold",
+                                    r.dias < 0 ? "text-danger-700" : r.dias <= 30 ? "text-warn-700" : "text-ink-soft",
+                                  )}
+                                >
+                                  {prazoRelativo(r.dias)}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-neutral-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <StatusBadge situacao={situacaoChave(r.situacao)} />
+                        </td>
+                        <td className="tnum whitespace-nowrap px-3 py-3 text-right align-top font-semibold text-ink">
+                          {r.valor !== null ? fmtCurrency(r.valor) : <span className="font-normal text-neutral-500">—</span>}
+                        </td>
+                        <td className="px-3 py-3 align-top">
+                          <button
+                            type="button"
+                            onClick={() => setDetalhe(r)}
+                            className="min-h-9 rounded-lg border border-line px-3 text-[12px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                            aria-label={`Ver detalhes do processo ${r.numero}`}
+                          >
+                            Detalhes
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Cartões (celular) */}
+            <ul className={clsx("space-y-3 md:hidden", loading && "opacity-60")} aria-label="Lista de processos">
+              {rows.map((r) => (
+                <li key={r.id} className="card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-navy-800">{r.numero}</p>
+                      <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-ink">{r.objeto}</p>
+                    </div>
+                    <StatusBadge situacao={situacaoChave(r.situacao)} />
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px]">
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Área</dt>
+                      <dd className="mt-0.5"><AreaTag area={r.area} /></dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Prazo</dt>
+                      <dd className="tnum mt-0.5 font-medium text-ink">
+                        {r.data_fim ? fmtDate(r.data_fim) : "—"}
+                        {r.dias !== null && r.situacao !== "concluido" && r.situacao !== "cancelado" && (
+                          <span className={clsx("ml-1 text-[11px]", r.dias < 0 ? "text-danger-700" : "text-ink-soft")}>
+                            ({prazoRelativo(r.dias)})
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Responsável</dt>
+                      <dd className="mt-0.5 text-ink">{r.responsavel ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Valor est.</dt>
+                      <dd className="tnum mt-0.5 font-medium text-ink">{r.valor !== null ? fmtCurrency(r.valor) : "—"}</dd>
+                    </div>
+                  </dl>
+                  <button
+                    type="button"
+                    onClick={() => setDetalhe(r)}
+                    className="mt-3 min-h-10 w-full rounded-xl border border-line text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                    aria-label={`Ver detalhes do processo ${r.numero}`}
+                  >
+                    Ver detalhes
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* Paginação */}
+            <nav
+              className="mt-4 flex flex-wrap items-center justify-between gap-3"
+              aria-label="Paginação dos resultados"
+              data-no-print
+            >
+              <div className="flex items-center gap-2 text-[13px] text-ink-soft">
+                <label htmlFor="f-tamanho" className="font-medium">
+                  Por página:
+                </label>
+                <select
+                  id="f-tamanho"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  className="min-h-9 rounded-lg border border-line bg-surface px-2 font-semibold text-ink"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={activePage <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(1, Math.min(p, totalPages) - 1))}
+                  className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Anterior
+                </button>
+                <span className="tnum px-1 text-[13px] font-medium text-ink-soft">
+                  Página {fmtInt(activePage)} de {fmtInt(totalPages)}
+                </span>
+                <button
+                  type="button"
+                  disabled={activePage >= totalPages || loading}
+                  onClick={() => setPage((p) => Math.min(totalPages, Math.min(p, totalPages) + 1))}
+                  className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Próxima
+                </button>
+              </div>
+            </nav>
+            <p className="mt-2 text-[12px] text-ink-soft" data-no-print>
+              A exportação em CSV ignora a paginação e inclui todo o recorte filtrado (até 5.000 linhas, com aviso no
+              arquivo se houver corte). A impressão reproduz esta tela.
+            </p>
+          </>
+        )
+      )}
+
+      <DetalheDialog row={detalhe} onClose={() => setDetalhe(null)} />
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function Th({
+  col,
+  label,
+  sort,
+  dir,
+  onSort,
+  className,
+  numeric = false,
+}: {
+  col: string;
+  label: string;
+  sort: string;
+  dir: "asc" | "desc";
+  onSort: (col: string) => void;
+  className?: string;
+  numeric?: boolean;
+}) {
+  const active = sort === col;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : undefined}
+      className={clsx("px-3 py-3", className)}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={clsx(
+          "inline-flex min-h-8 items-center gap-1 rounded-md text-[11px] font-bold uppercase tracking-[0.08em] transition-colors",
+          active ? "text-navy-800" : "text-ink-soft hover:text-navy-800",
+        )}
+      >
+        {label}
+        {active ? (
+          dir === "asc" ? (
+            <ArrowUp size={12} aria-hidden="true" />
+          ) : (
+            <ArrowDown size={12} aria-hidden="true" />
+          )
+        ) : (
+          <ArrowUpDown size={12} aria-hidden="true" className="opacity-50" />
+        )}
+        <span className="sr-only">
+          {active ? (dir === "asc" ? " (ordem crescente — clique para inverter)" : " (ordem decrescente — clique para inverter)") : " (clique para ordenar)"}
+        </span>
+      </button>
+      {numeric && <span className="sr-only">valores monetários em reais</span>}
+    </th>
+  );
+}
+
+function SelectFiltro({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { key: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[13.5px] font-medium text-ink hover:border-navy-300"
+      >
+        {options.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Diálogo de detalhes                                                  */
+/* ------------------------------------------------------------------ */
+
+function DetalheDialog({ row, onClose }: { row: Row | null; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (row && !el.open) {
+      el.showModal();
+      const closeBtn = el.querySelector<HTMLElement>("[data-close]");
+      closeBtn?.focus();
+    } else if (!row && el.open) {
+      el.close();
+    }
+  }, [row]);
+
+  if (!row) return <dialog ref={ref} className="hidden" aria-hidden="true" />;
+
+  const extras = Object.entries(row.extra ?? {});
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      className="max-h-[88dvh] w-[min(720px,94vw)] overflow-hidden rounded-2xl border border-line bg-surface p-0 shadow-[var(--shadow-pop)]"
+      aria-labelledby="detalhe-titulo"
+    >
+      <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
+        <div className="min-w-0">
+          <p className="overline mb-1">Processo {row.numero}</p>
+          <h2 id="detalhe-titulo" className="font-display text-[17px] font-bold leading-snug text-navy-950">
+            {row.objeto}
+          </h2>
+        </div>
+        <button
+          type="button"
+          data-close
+          onClick={() => ref.current?.close()}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line text-ink transition-colors hover:bg-neutral-100/60"
+          aria-label="Fechar detalhes"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="max-h-[calc(88dvh-140px)] overflow-y-auto px-6 py-5">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <StatusBadge situacao={situacaoChave(row.situacao)} />
+          <AreaTag area={row.area} />
+          {row.etapa && <span className="rounded-full bg-navy-100 px-2.5 py-1 text-[12px] font-semibold text-navy-700">Etapa: {row.etapa}</span>}
+        </div>
+
+        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+          <Field label="Prazo / vigência">
+            {row.data_fim ? (
+              <>
+                <span className="tnum font-semibold">{fmtDate(row.data_fim)}</span>
+                {row.dias !== null && row.situacao !== "concluido" && row.situacao !== "cancelado" && (
+                  <span className={clsx("tnum ml-2 text-[12.5px]", row.dias < 0 ? "font-semibold text-danger-700" : "text-ink-soft")}>
+                    ({prazoRelativo(row.dias)})
+                  </span>
+                )}
+              </>
+            ) : (
+              "Não informado"
+            )}
+          </Field>
+          <Field label="Abertura / publicação">{row.data_inicio ? fmtDate(row.data_inicio) : "Não informado"}</Field>
+          <Field label="Situação declarada na fonte">{row.situacao_fonte ?? "Não informada"}</Field>
+          <Field label="Situação de prazo (calculada hoje)">{SITUACAO_LABEL[situacaoChave(row.situacao)]}</Field>
+          <Field label="Responsável">{row.responsavel ?? "Não informado"}</Field>
+          <Field label="Fornecedor">{row.fornecedor ?? "Não informado"}</Field>
+          <Field label="Unidade / solicitante">{row.unidade ?? "Não informada"}</Field>
+          <Field label="Quantidade de itens">{row.quantidade !== null ? fmtInt(row.quantidade) : "Não informada"}</Field>
+          <Field label="Valor estimado">
+            <span className="tnum font-bold">{row.valor !== null ? fmtCurrency(row.valor) : "Não informado"}</span>
+          </Field>
+          <Field label="Status de Consumo">{row.status_consumo ?? "Não informado"}</Field>
+          <Field label="Status Renovação">{row.status_renovacao ?? "Não informado"}</Field>
+          <Field label="Previsão de Conclusão">{row.data_previsao ? fmtDate(row.data_previsao) : "Não informada"}</Field>
+          <Field label="Saving Histórico">
+            {row.saving_hist !== null ? fmtCurrency(row.saving_hist) : "Não informado"}
+          </Field>
+          <Field label="Saving Sob Proposta">
+            {row.saving_prop !== null ? fmtCurrency(row.saving_prop) : "Não informado"}
+          </Field>
+          {row.link && (
+            <Field label="Link">
+              <a
+                href={row.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 break-all font-semibold text-navy-700 underline underline-offset-2 hover:text-navy-900"
+              >
+                Abrir documento
+                <ExternalLink size={13} aria-hidden="true" />
+                <span className="sr-only">(abre em nova guia)</span>
+              </a>
+            </Field>
+          )}
+        </dl>
+
+        <div className="mt-5">
+          <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-soft">Observações</h3>
+          <p className="mt-1.5 rounded-xl bg-canvas px-4 py-3 text-[13.5px] leading-relaxed text-ink">
+            {row.observacao?.trim() ? row.observacao : "Nenhuma observação registrada na base."}
+          </p>
+        </div>
+
+        {extras.length > 0 && (
+          <details className="mt-5">
+            <summary className="cursor-pointer rounded-md text-[13px] font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 hover:text-navy-900">
+              Campos originais da planilha não mapeados ({extras.length})
+            </summary>
+            <dl className="mt-3 space-y-2 rounded-xl border border-line p-4 text-[13px]">
+              {extras.map(([k, v]) => (
+                <div key={k} className="grid gap-1 sm:grid-cols-[180px_1fr]">
+                  <dt className="font-semibold text-ink-soft">{k}</dt>
+                  <dd className="break-words text-ink">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        )}
+
+        <div className="mt-5 rounded-xl border border-line bg-navy-50/60 px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
+          <p className="font-semibold text-ink">Origem deste registro</p>
+          <p className="mt-0.5">
+            Arquivo <strong className="text-ink">{row.file_name}</strong>
+            {row.source_row ? ` · linha ${fmtInt(row.source_row)} da planilha` : ""} · base do tipo{" "}
+            {KIND_LABEL[row.kind as keyof typeof KIND_LABEL] ?? row.kind} (
+            {row.natureza === "snapshot" ? "snapshot semanal" : "base operacional"})
+            {row.reference_date ? ` · referência ${fmtDate(row.reference_date)}` : ""} · importada em{" "}
+            {fmtDateTime(row.imported_at)}.
+          </p>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[11.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">{label}</dt>
+      <dd className="mt-1 text-[14px] leading-snug text-ink">{children}</dd>
+    </div>
+  );
+}
+````
+
+### `src/components/ui.tsx`
+
+````tsx
+import type { ReactNode } from "react";
+import clsx from "clsx";
+import { SITUACAO_LABEL, type SituacaoChave } from "@/lib/domain";
+
+/* ------------------------------------------------------------------ */
+/* Cabeçalho de página                                                  */
+/* ------------------------------------------------------------------ */
+
+export function PageHeader({
+  overline,
+  title,
+  description,
+  actions,
+}: {
+  overline: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="max-w-2xl">
+        <p className="overline mb-1.5">{overline}</p>
+        <h1 className="font-display text-pretty text-[24px] font-bold leading-tight tracking-tight text-navy-950 sm:text-[28px]">
+          {title}
+        </h1>
+        {description && <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{description}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2.5">{actions}</div>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Situação — nunca só cor: ponto + rótulo textual                      */
+/* ------------------------------------------------------------------ */
+
+const SITUACAO_STYLE: Record<SituacaoChave, { chip: string; dot: string }> = {
+  vencido: { chip: "bg-danger-100 text-danger-700", dot: "bg-danger-600" },
+  a_vencer: { chip: "bg-warn-100 text-warn-700", dot: "bg-warn-600" },
+  em_dia: { chip: "bg-ok-100 text-ok-700", dot: "bg-ok-600" },
+  sem_data: { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500" },
+  concluido: { chip: "bg-navy-100 text-navy-700", dot: "bg-navy-500" },
+  cancelado: { chip: "bg-neutral-100 text-neutral-500", dot: "bg-neutral-400" },
 };
 
-export const pool =
-  globalForDb.__arenaNextJsPostgresqlPool ??
-  new Pool({
-    connectionString: databaseUrl,
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__arenaNextJsPostgresqlPool = pool;
+export function StatusBadge({ situacao, detalhe }: { situacao: SituacaoChave; detalhe?: string }) {
+  const s = SITUACAO_STYLE[situacao] ?? SITUACAO_STYLE.sem_data;
+  return (
+    <span
+      className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[12px] font-semibold", s.chip)}
+    >
+      <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-full", s.dot)} />
+      {SITUACAO_LABEL[situacao]}
+      {detalhe && <span className="font-normal opacity-90">· {detalhe}</span>}
+    </span>
+  );
 }
 
-export const db = drizzle(pool);
-```
+export function situacaoChave(situacao: string | null | undefined): SituacaoChave {
+  const keys: SituacaoChave[] = ["vencido", "a_vencer", "em_dia", "sem_data", "concluido", "cancelado"];
+  return keys.includes(situacao as SituacaoChave) ? (situacao as SituacaoChave) : "sem_data";
+}
 
-### schema.ts
+/* ------------------------------------------------------------------ */
+/* Área                                                                 */
+/* ------------------------------------------------------------------ */
 
-```typescript
-import { pgTable, serial, text, integer, numeric, date, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+export const AREA_STYLE: Record<string, { chip: string; dot: string; bar: string; hex: string }> = {
+  Indiretos: { chip: "bg-indiretos-100 text-indiretos-700", dot: "bg-indiretos-500", bar: "bg-indiretos-500", hex: "#2f6ba0" },
+  Diretos: { chip: "bg-diretos-100 text-diretos-700", dot: "bg-diretos-500", bar: "bg-diretos-500", hex: "#118578" },
+  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-600", bar: "bg-capex-600", hex: "#b45309" },
+  "Não informado": { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500", bar: "bg-neutral-400", hex: "#98a2b3" },
+};
 
-/**
- * Cada importação gera um "dataset". Substituir uma base não apaga a
- * anterior: ela fica como `superseded`, o que permite auditar e comparar
- * variações entre bases. Excluir um dataset remove seus registros.
- */
-export const datasets = pgTable("datasets", {
-  id: serial("id").primaryKey(),
-  kind: text("kind").notNull(), // indiretos | diretos | capex | outro
-  natureza: text("natureza").notNull().default("operacional"), // operacional | snapshot
-  fileName: text("file_name").notNull(),
-  sheetName: text("sheet_name"),
-  referenceDate: date("reference_date", { mode: "string" }),
-  importedAt: timestamp("imported_at", { withTimezone: false }).notNull().defaultNow(),
-  status: text("status").notNull().default("active"), // active | superseded
-  mode: text("mode").notNull().default("replace"), // replace | combine
-  rowCount: integer("row_count").notNull().default(0),
-  validCount: integer("valid_count").notNull().default(0),
-  skippedCount: integer("skipped_count").notNull().default(0),
-  dupCount: integer("dup_count").notNull().default(0),
-  warningCount: integer("warning_count").notNull().default(0),
-  report: jsonb("report"), // resumo + amostra de problemas para auditoria
-});
+export function AreaTag({ area }: { area: string | null | undefined }) {
+  const key = area && AREA_STYLE[area] ? area : "Não informado";
+  const s = AREA_STYLE[key];
+  return (
+    <span className={clsx("inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-[3px] text-[12px] font-semibold", s.chip)}>
+      <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-[2px]", s.dot)} />
+      {key}
+    </span>
+  );
+}
 
-export const records = pgTable(
-  "records",
-  {
-    id: serial("id").primaryKey(),
-    datasetId: integer("dataset_id")
-      .notNull()
-      .references(() => datasets.id, { onDelete: "cascade" }),
-    area: text("area"),
-    numero: text("numero").notNull(),
-    objeto: text("objeto").notNull(),
-    unidade: text("unidade"),
-    fornecedor: text("fornecedor"),
-    responsavel: text("responsavel"),
-    etapa: text("etapa"),
-    situacaoFonte: text("situacao_fonte"),
-    situacaoNorm: text("situacao_norm"), // concluido | cancelado | null
-    dataInicio: date("data_inicio", { mode: "string" }),
-    dataFim: date("data_fim", { mode: "string" }),
-    quantidade: numeric("quantidade"),
-    valor: numeric("valor"),
-    statusConsumo: text("status_consumo"),
-    savingHist: numeric("saving_hist"),
-    savingProp: numeric("saving_prop"),
-    statusRenovacao: text("status_renovacao"),
-    dataPrevisao: date("data_previsao", { mode: "string" }),
-    observacao: text("observacao"),
-    link: text("link"),
-    searchNorm: text("search_norm"),
-    rowHash: text("row_hash"),
-    sourceRow: integer("source_row"),
-    extra: jsonb("extra"), // colunas não mapeadas, preservadas da planilha
-  },
-  (t) => [
-    index("records_dataset_idx").on(t.datasetId),
-    index("records_datafim_idx").on(t.dataFim),
-    index("records_area_idx").on(t.area),
-  ],
-);
+export function Chip({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" | "navy" | "warn" | "ok" | "danger" }) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold",
+        tone === "neutral" && "bg-neutral-100 text-neutral-700",
+        tone === "accent" && "bg-accent-100 text-accent-700",
+        tone === "navy" && "bg-navy-100 text-navy-700",
+        tone === "warn" && "bg-warn-100 text-warn-700",
+        tone === "ok" && "bg-ok-100 text-ok-700",
+        tone === "danger" && "bg-danger-100 text-danger-700",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
 
-export const documents = pgTable("documents", {
-  id: serial("id").primaryKey(),
-  titulo: text("titulo").notNull(),
-  url: text("url").notNull(),
-  categoria: text("categoria").notNull().default("Outro"),
-  descricao: text("descricao"),
-  createdAt: timestamp("created_at", { withTimezone: false }).notNull().defaultNow(),
-});
+/* ------------------------------------------------------------------ */
+/* Estado vazio                                                         */
+/* ------------------------------------------------------------------ */
 
-export type DatasetRow = typeof datasets.$inferSelect;
-export type RecordRow = typeof records.$inferSelect;
-export type DocumentRow = typeof documents.$inferSelect;
-```
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  compact = false,
+}: {
+  icon: ReactNode;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={clsx(
+        "card flex flex-col items-center justify-center text-center",
+        compact ? "gap-2 px-6 py-10" : "gap-3 px-6 py-14 sm:px-12 sm:py-20",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className="grid h-14 w-14 place-items-center rounded-2xl bg-navy-100 text-navy-600 [&>svg]:h-7 [&>svg]:w-7"
+      >
+        {icon}
+      </span>
+      <h2 className="font-display text-[18px] font-bold text-navy-950">{title}</h2>
+      {description && <p className="max-w-md text-[14px] leading-relaxed text-ink-soft">{description}</p>}
+      {action && <div className="mt-2">{action}</div>}
+    </div>
+  );
+}
 
----
+/* ------------------------------------------------------------------ */
+/* Título de seção                                                      */
+/* ------------------------------------------------------------------ */
 
-## Bibliotecas (src/lib/)
+export function SectionTitle({ title, hint, aside }: { title: string; hint?: string; aside?: ReactNode }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <h2 className="font-display text-[16.5px] font-bold tracking-tight text-navy-950">{title}</h2>
+      <div className="flex items-baseline gap-3">
+        {hint && <p className="text-[12.5px] text-ink-soft">{hint}</p>}
+        {aside}
+      </div>
+    </div>
+  );
+}
+````
 
-### client-parse.ts
+## Bibliotecas
 
-```typescript
+### `src/lib/client-parse.ts`
+
+````typescript
 /**
  * Leitura de arquivos .xlsx/.csv **no navegador** (nada é enviado a
- * serviços de terceiros; o arquivo só sai da máquina do usuário quando a
- * importação é confirmada, e vai para o nosso próprio backend).
+ * serviços de terceiros; o o arquivo é processado localmente e, após a confirmação, os dados ficam no
+ * IndexedDB deste navegador; não há envio automático para terceiros).
  */
 import * as XLSX from "xlsx";
 
@@ -1934,7 +11294,10 @@ export async function parseFile(file: File): Promise<ParsedFile> {
       header: 1,
       raw: true,
       defval: null,
-      blankrows: false,
+      // Preserve separators between independent pivot tables. The operational
+      // extractor ignores empty records, while the dashboard extractor uses
+      // them to avoid crossing from fornecedores into evolução/previsões.
+      blankrows: true,
     }) as unknown[][];
     return { name, headerRowIndex: guessHeaderRow(matrix), matrix };
   });
@@ -1960,12 +11323,19 @@ export async function parseFile(file: File): Promise<ParsedFile> {
 }
 
 /** Lê múltiplos arquivos e converte todas as abas (com dados) em um único array consolidado de linhas. */
-export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: number; sheetsCount: number; combinedTable: SheetTable; names: string[] }> {
+export async function parseMultipleFiles(files: File[]): Promise<{
+  filesCount: number;
+  sheetsCount: number;
+  combinedTable: SheetTable;
+  names: string[];
+  sourceSheets: SourceSheet[];
+}> {
   let combinedRows: Record<string, unknown>[] = [];
   const allHeaders = new Set<string>();
   let filesCount = 0;
   let sheetsCount = 0;
   const names: string[] = [];
+  const sourceSheets: SourceSheet[] = [];
 
   for (const f of files) {
     const parsed = await parseFile(f);
@@ -1973,10 +11343,17 @@ export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: n
     names.push(parsed.fileName);
     for (const sheet of parsed.sheets) {
       if (sheet.matrix.length === 0) continue;
+      sourceSheets.push({
+        fileName: parsed.fileName,
+        sheetName: sheet.name,
+        headerRowIndex: sheet.headerRowIndex,
+        matrix: sheet.matrix,
+      });
       const t = extractTable(sheet, sheet.headerRowIndex);
       if (t.rows.length > 0) {
         sheetsCount++;
         for (const h of t.headers) allHeaders.add(h);
+        // Marcamos o arquivo e a aba de origem caso a mesma chave de identificador venha de lugares distintos
         combinedRows = combinedRows.concat(t.rows.map(r => ({ ...r, _file: parsed.fileName, _sheet: sheet.name })));
       }
     }
@@ -1986,7 +11363,13 @@ export async function parseMultipleFiles(files: File[]): Promise<{ filesCount: n
     throw new ParseError("estrutura", `A combinação das planilhas gerou ${combinedRows.length.toLocaleString("pt-BR")} linhas — acima do limite.`);
   }
 
-  return { filesCount, sheetsCount, names, combinedTable: { headers: Array.from(allHeaders), rows: combinedRows, totalRows: combinedRows.length } };
+  return {
+    filesCount,
+    sheetsCount,
+    names,
+    sourceSheets,
+    combinedTable: { headers: Array.from(allHeaders), rows: combinedRows, totalRows: combinedRows.length },
+  };
 }
 
 /** Heurística: a linha de cabeçalho tende a ser a linha com mais células de texto nas primeiras 12 linhas. */
@@ -2011,6 +11394,14 @@ export interface SheetTable {
   headers: string[];
   rows: Record<string, unknown>[];
   totalRows: number;
+}
+
+/** Matriz preservada para os blocos específicos do painel (múltiplas tabelas por aba). */
+export interface SourceSheet {
+  fileName: string;
+  sheetName: string;
+  headerRowIndex: number;
+  matrix: unknown[][];
 }
 
 /** Extrai cabeçalho + linhas como objetos. Cabeçalhos duplicados recebem sufixo. */
@@ -2047,11 +11438,11 @@ export function extractTable(sheet: ParsedSheet, headerRowIndex: number): SheetT
   }
   return { headers, rows, totalRows: rows.length };
 }
-```
+````
 
-### csv.ts
+### `src/lib/csv.ts`
 
-```typescript
+````typescript
 /**
  * Constrói CSV compatível com Excel pt-BR (ponto e vírgula, BOM UTF-8) e
  * protege contra injeção de fórmula ao abrir o arquivo exportado.
@@ -2078,227 +11469,1504 @@ export function buildCsv(headers: string[], rows: unknown[][]): string {
   for (const r of rows) lines.push(r.map(csvEscape).join(";"));
   return "\uFEFF" + lines.join("\r\n");
 }
-```
+````
 
-### dashboard-data.ts
+### `src/lib/dashboard-snapshot.ts`
 
-```typescript
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
-import { SITUACAO_SQL, SITUACAO_LABEL, type SituacaoChave } from "@/lib/domain";
+````typescript
+import { normText, parseDateBR, parseNumberBR } from "@/lib/domain";
 
-export interface CheckItem {
-  nivel: "info" | "atencao";
-  mensagem: string;
+/**
+ * Estruturas dos blocos consolidados da planilha de gestão de atas.
+ *
+ * O extrator abaixo é deliberadamente explícito: cada bloco só é aceito quando
+ * encontra os nomes de linhas/colunas definidos no layout da planilha. Isso
+ * evita que uma tabela parecida seja interpretada silenciosamente como outra.
+ */
+
+export const SNAPSHOT_AREAS = ["INDIRETOS", "DIRETOS", "CAPEX"] as const;
+export type SnapshotArea = (typeof SNAPSHOT_AREAS)[number];
+
+export const FORECAST_BANDS = ["ate_15", "ate_30", "ate_60", "vencidas", "acima_60", "canceladas", "finalizadas"] as const;
+export type ForecastBand = (typeof FORECAST_BANDS)[number];
+
+export interface SnapshotKpis {
+  concluidasAtas: number | null;
+  concluidasItens: number | null;
+  saldoItens: number | null;
+  consumidoItens: number | null;
+  aVencerAtas: number | null;
+  aVencerItens: number | null;
+  vencidasAtas: number | null;
+  vencidasItens: number | null;
 }
 
-export async function getDashboardData() {
-  const S = sql.raw(SITUACAO_SQL);
+export interface SnapshotValueArea {
+  valor: number | null;
+  valorSaving: number | null;
+  savingHist: number | null;
+  savingProp: number | null;
+  reducaoHistPct: number | null;
+  reducaoPropPct: number | null;
+}
 
-  const [
-    datasetsRes,
-    situacaoRes,
-    kpisRes,
-    areaRes,
-    topCompradoresRes,
-    fornecedoresRes,
-    evolucaoRes,
-    renovacoesRes,
-    previsoesRes,
-    variacoesRes,
-  ] = await Promise.all([
-    db.execute(sql`
-      SELECT id, kind, natureza, file_name, sheet_name, reference_date, imported_at::text,
-             status, mode, row_count, valid_count, skipped_count, dup_count, warning_count
-      FROM datasets
-      ORDER BY imported_at DESC
-      LIMIT 40
-    `),
-    db.execute(sql`
-      SELECT ${S} AS situacao, COUNT(*)::int AS total
-      FROM records r
-      JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      GROUP BY 1
-    `),
-    db.execute(sql`
-      SELECT
-        COUNT(*)::int AS processos,
-        COALESCE(SUM(valor), 0)::float8 AS valor_total,
-        COALESCE(SUM(quantidade), 0)::float8 AS itens,
-        COUNT(*) FILTER (WHERE r.situacao_norm = 'concluido')::int AS concluidos_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.situacao_norm = 'concluido'), 0)::float8 AS concluidos_itens,
-        COUNT(*) FILTER (WHERE r.status_consumo = 'Com Saldo')::int AS saldo_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.status_consumo = 'Com Saldo'), 0)::float8 AS saldo_itens,
-        COUNT(*) FILTER (WHERE r.status_consumo = 'Consumido')::int AS consumido_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.status_consumo = 'Consumido'), 0)::float8 AS consumido_itens,
-        COUNT(*) FILTER (WHERE ${S} IN ('vencido', 'a_vencer'))::int AS vencidas_a_vencer_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE ${S} IN ('vencido', 'a_vencer')), 0)::float8 AS vencidas_a_vencer_itens
-      FROM records r
-      JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-    `),
-    db.execute(sql`
-      SELECT
-        COALESCE(r.area, 'Não informado') AS area,
-        COUNT(*)::int AS processos,
-        COALESCE(SUM(r.valor), 0)::float8 AS valor,
-        COALESCE(SUM(r.saving_hist), 0)::float8 AS saving_hist,
-        COALESCE(SUM(r.saving_prop), 0)::float8 AS saving_prop
-      FROM records r
-      JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      GROUP BY 1
-      ORDER BY processos DESC
-    `),
-    db.execute(sql`
-      WITH Ranks AS (
-        SELECT COALESCE(area, 'Não informado') AS area, responsavel, COUNT(*)::int AS atas, COALESCE(SUM(quantidade), 0)::float8 AS itens,
-        ROW_NUMBER() OVER(PARTITION BY COALESCE(area, 'Não informado') ORDER BY COALESCE(SUM(quantidade), 0) DESC) as rn
-        FROM records r JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-        WHERE responsavel IS NOT NULL AND responsavel <> ''
-        GROUP BY 1, 2
-      )
-      SELECT area, responsavel, atas, itens FROM Ranks WHERE rn <= 5 ORDER BY area, rn
-    `),
-    db.execute(sql`
-      SELECT fornecedor, COUNT(*)::int AS atas, COALESCE(SUM(quantidade), 0)::float8 AS itens,
-             (COALESCE(SUM(quantidade), 0) / NULLIF(SUM(SUM(quantidade)) OVER(), 0)) * 100::float8 as concentracao
-      FROM records r JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      WHERE fornecedor IS NOT NULL AND fornecedor <> ''
-      GROUP BY 1
-      ORDER BY itens DESC
-      LIMIT 20
-    `),
-    db.execute(sql`
-      SELECT 
-        COALESCE(r.area, 'Não informado') AS area,
-        COUNT(*) FILTER (WHERE r.situacao_norm = 'concluido')::int AS concluidas_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.situacao_norm = 'concluido'), 0)::float8 AS concluidas_itens,
-        COUNT(*) FILTER (WHERE r.situacao_norm IS NULL AND ${S} NOT IN ('concluido', 'cancelado'))::int AS andamento_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.situacao_norm IS NULL AND ${S} NOT IN ('concluido', 'cancelado')), 0)::float8 AS andamento_itens,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.status_consumo = 'Com Saldo'), 0)::float8 AS saldo_itens,
-        COALESCE(SUM(quantidade) FILTER (WHERE r.status_consumo = 'Sem Saldo'), 0)::float8 AS semsaldo_itens,
-        COUNT(*) FILTER (WHERE ${S} = 'vencido')::int AS vencidas_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE ${S} = 'vencido'), 0)::float8 AS vencidas_itens,
-        COUNT(*) FILTER (WHERE ${S} = 'a_vencer')::int AS a_vencer_atas,
-        COALESCE(SUM(quantidade) FILTER (WHERE ${S} = 'a_vencer'), 0)::float8 AS a_vencer_itens
-      FROM records r JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      GROUP BY 1
-    `),
-    db.execute(sql`
-      SELECT COALESCE(r.area, 'Não informado') AS area, COALESCE(r.status_renovacao, 'Outros') AS status,
-             COUNT(*)::int AS atas, COALESCE(SUM(quantidade), 0)::float8 AS itens
-      FROM records r JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      GROUP BY 1, 2
-    `),
-    db.execute(sql`
-      SELECT COALESCE(r.area, 'Não informado') AS area, responsavel, r.data_previsao,
-             (r.data_previsao - CURRENT_DATE)::int AS dias,
-             COUNT(*)::int AS atas, COALESCE(SUM(quantidade), 0)::float8 AS itens
-      FROM records r JOIN datasets d ON d.id = r.dataset_id AND d.status = 'active'
-      WHERE r.situacao_norm IS NULL AND r.data_previsao IS NOT NULL
-      GROUP BY 1, 2, 3, 4
-    `),
-    db.execute(sql`
-      WITH active AS (
-        SELECT d.kind, d.natureza, d.id, d.reference_date, d.imported_at::text AS imported_at,
-               COUNT(r.id)::int AS processos
-        FROM datasets d LEFT JOIN records r ON r.dataset_id = d.id
-        WHERE d.status = 'active'
-        GROUP BY d.id
-      ),
-      prev AS (
-        SELECT DISTINCT ON (d.kind) d.kind, d.reference_date, d.imported_at::text AS imported_at,
-               (SELECT COUNT(*) FROM records r WHERE r.dataset_id = d.id)::int AS processos
-        FROM datasets d
-        WHERE d.status = 'superseded'
-        ORDER BY d.kind, d.imported_at DESC
-      )
-      SELECT a.kind, a.natureza, a.processos AS atual, a.reference_date AS ref_atual,
-             p.processos AS anterior, p.reference_date AS ref_anterior, p.imported_at AS importado_anterior
-      FROM active a JOIN prev p ON p.kind = a.kind
-    `),
-  ]);
+export interface SnapshotBuyer {
+  name: string;
+  itens: number;
+  atas: number;
+  totalAtasArea: number | null;
+}
 
-  const situacoes: Record<SituacaoChave, number> = {
-    vencido: 0, a_vencer: 0, em_dia: 0, sem_data: 0, concluido: 0, cancelado: 0,
+export interface SnapshotTopBuyers {
+  area: SnapshotArea;
+  totalAtasArea: number | null;
+  topAtas: number;
+  buyers: SnapshotBuyer[];
+}
+
+export interface SnapshotSupplier {
+  area: SnapshotArea;
+  fornecedor: string;
+  qtdAtas: number | null;
+  qtdItens: number | null;
+  concentracaoPct: number | null;
+  analise: string | null;
+}
+
+/** Linhas da tabela única “FORNECEDORES GERAL”, sem misturar os quadros de área. */
+export type SnapshotSupplierGeneral = Omit<SnapshotSupplier, "area"> & { area: "GERAL" };
+
+export interface SnapshotEvolution {
+  concluidasAtas: number | null;
+  concluidasItens: number | null;
+  andamentoAtas: number | null;
+  andamentoItens: number | null;
+  saldoItens: number | null;
+  semSaldoItens: number | null;
+  vencidasAtas: number | null;
+  vencidasItens: number | null;
+  aVencerAtas: number | null;
+  aVencerItens: number | null;
+}
+
+export interface SnapshotForecastBuyer {
+  name: string;
+  atas: number;
+  itens: number;
+  prazoConclusao: string | null;
+}
+
+export interface SnapshotForecastArea {
+  atas: number | null;
+  itens: number | null;
+  buyers: SnapshotForecastBuyer[];
+}
+
+/** Uma linha do pivô “PREVISÃO DE CONCLUSÃO POR MÊS”. */
+export interface SnapshotMonthlyForecastRow {
+  label: string;
+  month: number | null;
+  year: number | null;
+  atas: number | null;
+  itens: number | null;
+}
+
+export interface SnapshotMonthlyForecastArea {
+  rows: SnapshotMonthlyForecastRow[];
+}
+
+export interface SnapshotCoverage {
+  found: string[];
+  missing: string[];
+}
+
+export interface DashboardSnapshotPayload {
+  schemaVersion: 2;
+  referenceDate: string | null;
+  sourceFiles: string[];
+  capturedAt: string;
+  kpis: SnapshotKpis;
+  valueAreas: Record<SnapshotArea, SnapshotValueArea>;
+  savingTotal: SnapshotValueArea;
+  topCompradores: Record<SnapshotArea, SnapshotTopBuyers>;
+  fornecedores: Record<SnapshotArea, SnapshotSupplier[]>;
+  fornecedoresGeral: SnapshotSupplierGeneral[];
+  evolucao: Record<SnapshotArea, SnapshotEvolution>;
+  previsoes: Record<ForecastBand, Record<SnapshotArea, SnapshotForecastArea>>;
+  previsaoMeses: Record<SnapshotArea, SnapshotMonthlyForecastArea>;
+  coverage: SnapshotCoverage;
+  notes: string[];
+}
+
+export interface SnapshotSourceSheet {
+  fileName: string;
+  sheetName: string;
+  matrix: unknown[][];
+  headerRowIndex?: number;
+}
+
+const AREA_SET = new Set<string>(SNAPSHOT_AREAS);
+
+function emptyKpis(): SnapshotKpis {
+  return {
+    concluidasAtas: null,
+    concluidasItens: null,
+    saldoItens: null,
+    consumidoItens: null,
+    aVencerAtas: null,
+    aVencerItens: null,
+    vencidasAtas: null,
+    vencidasItens: null,
   };
-  for (const row of situacaoRes.rows as { situacao: SituacaoChave; total: number }[]) {
-    if (row.situacao in situacoes) situacoes[row.situacao] = row.total;
-  }
+}
 
-  const kpiRow = (kpisRes.rows[0] ?? {}) as Record<string, number>;
-  const activeDatasets = (datasetsRes.rows as Record<string, unknown>[]).filter((d) => d.status === "active");
+function emptyValueArea(): SnapshotValueArea {
+  return {
+    valor: null,
+    valorSaving: null,
+    savingHist: null,
+    savingProp: null,
+    reducaoHistPct: null,
+    reducaoPropPct: null,
+  };
+}
 
-  // Verificações de consistência — sinalizam, jamais corrigem sozinho.
-  const checks: CheckItem[] = [];
-  const skippedTotal = activeDatasets.reduce((a, d) => a + Number(d.skipped_count ?? 0), 0);
-  const warnTotal = activeDatasets.reduce((a, d) => a + Number(d.warning_count ?? 0), 0);
-  const dupTotal = activeDatasets.reduce((a, d) => a + Number(d.dup_count ?? 0), 0);
-  if (skippedTotal > 0) {
-    checks.push({
-      nivel: "atencao",
-      mensagem: `${skippedTotal.toLocaleString("pt-BR")} linha(s) das bases ativas foram ignoradas na importação${dupTotal > 0 ? ` (${dupTotal.toLocaleString("pt-BR")} duplicada(s))` : ""}. Consulte os relatórios na página Importar.`,
-    });
+function emptyEvolution(): SnapshotEvolution {
+  return {
+    concluidasAtas: null,
+    concluidasItens: null,
+    andamentoAtas: null,
+    andamentoItens: null,
+    saldoItens: null,
+    semSaldoItens: null,
+    vencidasAtas: null,
+    vencidasItens: null,
+    aVencerAtas: null,
+    aVencerItens: null,
+  };
+}
+
+function emptyForecast(): SnapshotForecastArea {
+  return { atas: null, itens: null, buyers: [] };
+}
+
+function makeAreaRecord<T>(factory: () => T): Record<SnapshotArea, T> {
+  return {
+    INDIRETOS: factory(),
+    DIRETOS: factory(),
+    CAPEX: factory(),
+  };
+}
+
+function makeForecastRecord(): Record<ForecastBand, Record<SnapshotArea, SnapshotForecastArea>> {
+  return {
+    ate_15: makeAreaRecord(emptyForecast),
+    ate_30: makeAreaRecord(emptyForecast),
+    ate_60: makeAreaRecord(emptyForecast),
+    vencidas: makeAreaRecord(emptyForecast),
+    acima_60: makeAreaRecord(emptyForecast),
+    canceladas: makeAreaRecord(emptyForecast),
+    finalizadas: makeAreaRecord(emptyForecast),
+  };
+}
+
+function makeMonthlyForecastRecord(): Record<SnapshotArea, SnapshotMonthlyForecastArea> {
+  return makeAreaRecord(() => ({ rows: [] }));
+}
+
+export function emptyDashboardSnapshot(referenceDate: string | null = null, sourceFiles: string[] = []): DashboardSnapshotPayload {
+  return {
+    schemaVersion: 2,
+    referenceDate,
+    sourceFiles,
+    capturedAt: new Date().toISOString(),
+    kpis: emptyKpis(),
+    valueAreas: makeAreaRecord(emptyValueArea),
+    savingTotal: emptyValueArea(),
+    topCompradores: {
+      INDIRETOS: { area: "INDIRETOS", totalAtasArea: null, topAtas: 0, buyers: [] },
+      DIRETOS: { area: "DIRETOS", totalAtasArea: null, topAtas: 0, buyers: [] },
+      CAPEX: { area: "CAPEX", totalAtasArea: null, topAtas: 0, buyers: [] },
+    },
+    fornecedores: { INDIRETOS: [], DIRETOS: [], CAPEX: [] },
+    fornecedoresGeral: [],
+    evolucao: makeAreaRecord(emptyEvolution),
+    previsoes: makeForecastRecord(),
+    previsaoMeses: makeMonthlyForecastRecord(),
+    coverage: { found: [], missing: [] },
+    notes: [],
+  };
+}
+
+/* ------------------------ células e cabeçalhos -------------------- */
+
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
-  if (warnTotal > 0) {
-    checks.push({
-      nivel: "info",
-      mensagem: `${warnTotal.toLocaleString("pt-BR")} aviso(s) de interpretação (datas, números, áreas) aguardam validação humana nos relatórios de importação.`,
-    });
+  return String(value).replace(/\u00a0/g, " ").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Comparação exata, sem distinguir acentos, caixa, quebras e espaços. */
+function exact(value: unknown): string {
+  return normText(cellText(value)).toUpperCase();
+}
+
+function rowHas(row: unknown[], labels: string[]): boolean {
+  const values = row.map(exact);
+  return labels.every((label) => values.includes(exact(label)));
+}
+
+function columnIndex(row: unknown[], predicate: (value: string) => boolean): number {
+  return row.findIndex((value) => predicate(exact(value)));
+}
+
+function isBlank(row: unknown[] | undefined): boolean {
+  return !row || row.every((value) => cellText(value) === "");
+}
+
+function isArea(value: unknown): SnapshotArea | null {
+  const n = exact(value).replace(/[()]/g, "");
+  if (AREA_SET.has(n)) return n as SnapshotArea;
+  if (n === "AREA INDIRETOS") return "INDIRETOS";
+  if (n === "AREA DIRETOS") return "DIRETOS";
+  if (n === "AREA CAPEX") return "CAPEX";
+  return null;
+}
+
+function numberValue(value: unknown, integer = false): number | null {
+  const text = cellText(value);
+  if (!text || /^[-–—]+$/.test(text)) return null;
+  const parsed = parseNumberBR(value, { integer, label: "métrica da tabela" });
+  return parsed.value === null || !Number.isFinite(parsed.value) ? null : parsed.value;
+}
+
+function integerValue(value: unknown): number | null {
+  const result = numberValue(value, true);
+  return result === null ? null : Math.round(result);
+}
+
+function percentValue(value: unknown): number | null {
+  const text = cellText(value);
+  if (!text || /^[-–—]+$/.test(text)) return null;
+  const withoutPercent = text.replace(/%/g, "").trim();
+  const parsed = parseNumberBR(withoutPercent, { label: "percentual da tabela" });
+  if (parsed.value === null || !Number.isFinite(parsed.value)) return null;
+  // XLSX retorna 0,0947 para uma célula formatada como 9,47%.
+  return Math.abs(parsed.value) <= 1 && !text.includes("%") ? parsed.value * 100 : parsed.value;
+}
+
+function firstNumberAfter(row: unknown[], start: number): number | null {
+  for (let i = start + 1; i < row.length; i += 1) {
+    const value = numberValue(row[i]);
+    if (value !== null) return value;
   }
-  const kindsAtivos = new Map<string, number>();
-  for (const d of activeDatasets) kindsAtivos.set(String(d.kind), (kindsAtivos.get(String(d.kind)) ?? 0) + 1);
-  for (const [kind, n] of kindsAtivos) {
-    if (n > 1) {
-      checks.push({
-        nivel: "atencao",
-        mensagem: `Há ${n} bases ativas do tipo "${kind}" combinadas. Confirme que não há sobreposição de registros entre os arquivos.`,
-      });
+  return null;
+}
+
+function nextNumberInColumn(matrix: unknown[][], rowIndex: number, column: number, maxRows = 3): number | null {
+  for (let r = rowIndex + 1; r < Math.min(matrix.length, rowIndex + 1 + maxRows); r += 1) {
+    const value = numberValue(matrix[r]?.[column]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function firstNumberForLabel(matrix: unknown[][], rowIndex: number, column: number): number | null {
+  return firstNumberAfter(matrix[rowIndex] ?? [], column) ?? nextNumberInColumn(matrix, rowIndex, column);
+}
+
+function metricAt<T>(row: unknown[], column: number, parser: (value: unknown) => T): T {
+  const direct = parser(row[column]);
+  if (direct !== null && direct !== undefined) return direct;
+  // Algumas exportações omitem a coluna “Rótulos de Linha” do cabeçalho,
+  // embora mantenham a área na primeira célula das linhas. Nesse caso, os
+  // valores começam uma coluna depois dos cabeçalhos numéricos.
+  if (isArea(row[column])) return parser(row[column + 1]);
+  return direct;
+}
+
+function addFound(payload: DashboardSnapshotPayload, key: string) {
+  if (!payload.coverage.found.includes(key)) payload.coverage.found.push(key);
+}
+
+function findHeaderRows(matrix: unknown[][], predicate: (row: unknown[]) => boolean): number[] {
+  const result: number[] = [];
+  matrix.forEach((row, index) => {
+    if (predicate(row)) result.push(index);
+  });
+  return result;
+}
+
+function previousContext(matrix: unknown[][], rowIndex: number, maxRows = 5): string[] {
+  const context: string[] = [];
+  for (let r = Math.max(0, rowIndex - maxRows); r < rowIndex; r += 1) {
+    for (const cell of matrix[r] ?? []) {
+      const value = exact(cell);
+      if (value) context.push(value);
     }
   }
-  const naturezas = new Set(activeDatasets.map((d) => String(d.natureza)));
-  if (naturezas.has("snapshot") && naturezas.has("operacional")) {
-    checks.push({
-      nivel: "atencao",
-      mensagem: "O panorama está somando bases de naturezas diferentes (snapshot semanal e base operacional), que podem ter escopos e datas distintos. Considere manter ativa apenas a natureza desejada.",
+  return context;
+}
+
+function areaFromContext(matrix: unknown[][], rowIndex: number): SnapshotArea | null {
+  for (const value of previousContext(matrix, rowIndex, 8).reverse()) {
+    const area = isArea(value);
+    if (area) return area;
+    if (value.includes("FORNECEDORES") || value.includes("TOP COMP")) {
+      if (value.includes("INDIRETOS")) return "INDIRETOS";
+      if (value.includes("DIRETOS")) return "DIRETOS";
+      if (value.includes("CAPEX")) return "CAPEX";
+    }
+  }
+  return null;
+}
+
+function areaFromHorizontalContext(matrix: unknown[][], rowIndex: number, column: number): SnapshotArea | null {
+  for (let r = Math.max(0, rowIndex - 8); r < rowIndex; r += 1) {
+    const row = matrix[r] ?? [];
+    // Títulos mesclados ficam normalmente na primeira coluna do grupo; uma
+    // janela curta também cobre exportações que deslocam o texto uma coluna.
+    for (let c = Math.max(0, column - 1); c <= Math.min(row.length - 1, column + 2); c += 1) {
+      const value = exact(row[c]);
+      if (!value.includes("FORNECEDORES")) continue;
+      if (value.includes("INDIRETOS")) return "INDIRETOS";
+      if (value.includes("DIRETOS")) return "DIRETOS";
+      if (value.includes("CAPEX")) return "CAPEX";
+    }
+  }
+  return null;
+}
+
+/* ------------------------ leitura dos gráficos -------------------- */
+
+function extractReadingTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) => rowHas(row, ["Gráfico", "Situação apresentada", "ATAS", "ITENS"]));
+    for (const headerRow of headerRows) {
+      const row = matrix[headerRow] ?? [];
+      const graphCol = columnIndex(row, (v) => v === "GRAFICO");
+      const situationCol = columnIndex(row, (v) => v === "SITUACAO APRESENTADA");
+      const atasCol = columnIndex(row, (v) => v === "ATAS");
+      const itensCol = columnIndex(row, (v) => v === "ITENS");
+      if (graphCol < 0 || situationCol < 0 || atasCol < 0 || itensCol < 0) continue;
+
+      for (let r = headerRow + 1; r < Math.min(matrix.length, headerRow + 30); r += 1) {
+        const data = matrix[r] ?? [];
+        if (isBlank(data)) break;
+        const graph = exact(data[graphCol]);
+        const situation = exact(data[situationCol]);
+        const atas = integerValue(data[atasCol]);
+        const itens = integerValue(data[itensCol]);
+        if (!graph) continue;
+
+        if (graph === "ATA CONCLUIDAS (VALIDAS)" && situation === "VALIDAS") {
+          payload.kpis.concluidasAtas = atas;
+          payload.kpis.concluidasItens = itens;
+          found = true;
+        }
+        if (graph === "ITENS COM SALDOS E CONSUMIDOS (VALIDOS)" && situation === "COM SALDO") {
+          payload.kpis.saldoItens = itens;
+          found = true;
+        }
+        if (graph === "ITENS COM SALDOS E CONSUMIDOS (VALIDOS)" && situation === "CONSUMIDOS") {
+          payload.kpis.consumidoItens = itens;
+          found = true;
+        }
+        if (graph === "ATAS VENCIDAS E A VENCER" && (situation === "A VENCER (RENOVAR)" || situation === "A VENCER" || situation === "RENOVAR")) {
+          payload.kpis.aVencerAtas = atas;
+          payload.kpis.aVencerItens = itens;
+          found = true;
+        }
+        if (graph === "ATAS VENCIDAS E A VENCER" && situation === "VENCIDAS") {
+          payload.kpis.vencidasAtas = atas;
+          payload.kpis.vencidasItens = itens;
+          found = true;
+        }
+      }
+    }
+  }
+  if (found) addFound(payload, "kpis-leitura");
+}
+
+/* -------------------------- valores e saving ---------------------- */
+
+function extractAreaValues(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  const labels: Array<[string, SnapshotArea]> = [
+    ["VALOR INDIRETOS", "INDIRETOS"],
+    ["VALOR DIRETOS", "DIRETOS"],
+    ["VALOR CAPEX", "CAPEX"],
+  ];
+  for (const sheet of sheets) {
+    for (let r = 0; r < sheet.matrix.length; r += 1) {
+      const row = sheet.matrix[r] ?? [];
+      for (let c = 0; c < row.length; c += 1) {
+        const label = exact(row[c]);
+        const target = labels.find(([name]) => label === name || label === `${name} R$`);
+        if (!target) continue;
+        const value = firstNumberForLabel(sheet.matrix, r, c);
+        if (value !== null) {
+          payload.valueAreas[target[1]].valor = value;
+          found = true;
+        }
+      }
+    }
+  }
+  if (found) addFound(payload, "valores-por-area");
+}
+
+function headerValueIndex(row: unknown[], aliases: string[]): number {
+  const normalized = aliases.map(exact);
+  const exactIndex = row.findIndex((value) => normalized.includes(exact(value)));
+  if (exactIndex >= 0) return exactIndex;
+  // Tabelas dinâmicas do Excel às vezes acrescentam “/ %”, quebras de linha,
+  // unidades ou uma coluna duplicada ao título. O nome base continua sendo
+  // suficiente para identificar a métrica.
+  return row.findIndex((value) => normalized.some((alias) => {
+    const current = exact(value);
+    return current.includes(alias) || alias.includes(current);
+  }));
+}
+
+function savingNumber(value: unknown): number | null {
+  const direct = numberValue(value);
+  if (direct !== null) return direct;
+  const text = cellText(value);
+  const match = text.match(/-?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?|-?\d+(?:[.,]\d+)?/);
+  return match ? numberValue(match[0]) : null;
+}
+
+function savingPercent(value: unknown): number | null {
+  const direct = percentValue(value);
+  if (direct !== null) return direct;
+  const text = cellText(value);
+  const match = text.match(/(-?\d+(?:[.,]\d+)?)\s*%/);
+  if (!match) return null;
+  return percentValue(`${match[1]}%`);
+}
+
+function extractSaving(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const headerRows = findHeaderRows(sheet.matrix, (row) => {
+      const values = row.map(exact);
+      const hasContracted = values.some((value) => value.includes("VALOR CONTRATADO"));
+      const savingCount = values.filter((value) => value.includes("SAVING")).length;
+      const hasReduction = values.some((value) => value.includes("REDUCAO"));
+      // Aceita tanto cinco colunas separadas quanto títulos combinados como
+      // “SAVING HISTÓRICO R$ / %”.
+      return hasContracted && savingCount >= 1 && (hasReduction || savingCount >= 2);
     });
+    for (const headerRow of headerRows) {
+      const headers = sheet.matrix[headerRow] ?? [];
+      const contractedCol = headerValueIndex(headers, ["VALOR CONTRATADO R$"]);
+      const historicCol = headerValueIndex(headers, ["SAVING HISTÓRICO R$", "SAVING HISTORICO"]);
+      const proposalCol = headerValueIndex(headers, ["SAVING PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA INICIAL R$", "SAVING SOB PROPOSTA R$", "SAVING PROPOSTA"]);
+      const reductionHistoricCol = headerValueIndex(headers, ["REDUÇÃO HISTÓRICO %", "REDUCAO HISTORICO", "REDUÇÃO HISTÓRICO"]);
+      const reductionProposalCol = headerValueIndex(headers, ["REDUÇÃO PROPOSTA INICIAL %", "REDUCAO PROPOSTA INICIAL", "REDUÇÃO SOB PROPOSTA INICIAL", "REDUCAO PROPOSTA"]);
+      if (contractedCol < 0) continue;
+      for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 16); r += 1) {
+        const row = sheet.matrix[r] ?? [];
+        const area = row.map(isArea).find(Boolean) ?? null;
+        const totalRow = row.some((value) => exact(value) === "TOTAL" || exact(value).startsWith("TOTAL GERAL"));
+        if (!area && !totalRow) {
+          if (isBlank(row)) break;
+          continue;
+        }
+        const target = area ? payload.valueAreas[area] : payload.savingTotal;
+        const contracted = savingNumber(row[contractedCol]);
+        target.valorSaving = contracted;
+        if (target.valor === null && contracted !== null) target.valor = contracted;
+        target.savingHist = historicCol >= 0 ? savingNumber(row[historicCol]) : null;
+        target.savingProp = proposalCol >= 0 ? savingNumber(row[proposalCol]) : null;
+        target.reducaoHistPct = (reductionHistoricCol >= 0 ? savingPercent(row[reductionHistoricCol]) : null)
+          ?? (historicCol >= 0 ? savingPercent(row[historicCol]) : null);
+        target.reducaoPropPct = (reductionProposalCol >= 0 ? savingPercent(row[reductionProposalCol]) : null)
+          ?? (proposalCol >= 0 ? savingPercent(row[proposalCol]) : null);
+        found = true;
+      }
+    }
+  }
+  if (found) addFound(payload, "saving");
+}
+
+/* -------------------------- compradores --------------------------- */
+
+function extractTopBuyers(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const headerRows = findHeaderRows(sheet.matrix, (row) => row.some((value) => exact(value).startsWith("TOP COMP ")) && row.some((value) => exact(value) === "ITENS") && row.some((value) => exact(value) === "ATAS"));
+    for (const headerRow of headerRows) {
+      const header = sheet.matrix[headerRow] ?? [];
+      const topColumns = header
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value.startsWith("TOP COMP "));
+
+      // O layout real é “wide”: os três blocos ficam na mesma linha e os
+      // cabeçalhos ITENS/ATAS aparecem repetidos. Cada TOP COMP abre um grupo
+      // próprio; por isso as colunas são procuradas somente até o próximo grupo.
+      for (let groupIndex = 0; groupIndex < topColumns.length; groupIndex += 1) {
+        const group = topColumns[groupIndex];
+        const nextGroupColumn = topColumns[groupIndex + 1]?.column ?? header.length;
+        const area = isArea(group.value.replace("TOP COMP ", ""));
+        if (!area) continue;
+        const itensCol = header.findIndex((value, column) => column > group.column && column < nextGroupColumn && exact(value) === "ITENS");
+        const atasCol = header.findIndex((value, column) => column > group.column && column < nextGroupColumn && exact(value) === "ATAS");
+        const totalCol = header.findIndex((value, column) => column > group.column && column < nextGroupColumn && exact(value) === "TOTAL ATAS AREA");
+        const buyers: SnapshotBuyer[] = [];
+        let totalAtasArea: number | null = null;
+        for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 12); r += 1) {
+          const row = sheet.matrix[r] ?? [];
+          const name = cellText(row[group.column]);
+          if (!name || exact(name).startsWith("TOP COMP") || exact(name) === "TOTAL" || isBlank(row)) break;
+          if (exact(name).includes("FORNECEDOR") || exact(name).includes("ROTULOS")) break;
+          const itens = itensCol >= 0 ? integerValue(row[itensCol]) : null;
+          const atas = atasCol >= 0 ? integerValue(row[atasCol]) : null;
+          const total = totalCol >= 0 ? integerValue(row[totalCol]) : null;
+          if (total !== null && totalAtasArea === null) totalAtasArea = total;
+          if (itens === null && atas === null) continue;
+          buyers.push({ name, itens: itens ?? 0, atas: atas ?? 0, totalAtasArea: total });
+        }
+        if (buyers.length > 0) {
+          const top = buyers.sort((a, b) => b.itens - a.itens || b.atas - a.atas).slice(0, 5);
+          payload.topCompradores[area] = {
+            area,
+            totalAtasArea,
+            topAtas: top.reduce((sum, buyer) => sum + buyer.atas, 0),
+            buyers: top,
+          };
+          found = true;
+        }
+      }
+    }
+  }
+  if (found) addFound(payload, "top-compradores");
+}
+
+/* -------------------------- fornecedores -------------------------- */
+
+function extractSuppliers(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type GeneralBlock = {
+    items: SnapshotSupplierGeneral[];
+    totalAtas: number | null;
+    totalItens: number | null;
+  };
+  const generalBlocks: GeneralBlock[] = [];
+
+  const isSupplierHeader = (row: unknown[]) => {
+    const values = row.map(exact);
+    return values.includes("FORNECEDOR")
+      && values.includes("QTD ATAS")
+      && values.includes("QTD ITENS")
+      && values.includes("% CONCENTRACAO DE ITENS")
+      && values.includes("ANALISE");
+  };
+
+  const isStopLabel = (value: string) => {
+    // A exportação da planilha pode juntar os quadros seguintes à tabela de
+    // fornecedores quando as linhas vazias são removidas pelo SheetJS.
+    return /^(ATA |ATAS |ITEM |VENCIDAS|A VENCER|EVOLU|PREVISAO|ROTULOS|RÓTULOS|CRITERIO|CRITÉRIO|ATUALIZACAO|ATUALIZAÇÃO|FORNECEDORES)/.test(value);
+  };
+
+  for (const sheet of sheets) {
+    const headerRows = findHeaderRows(sheet.matrix, isSupplierHeader);
+    for (const headerRow of headerRows) {
+      const header = sheet.matrix[headerRow] ?? [];
+      const supplierColumns = header
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value === "FORNECEDOR");
+
+      for (let groupIndex = 0; groupIndex < supplierColumns.length; groupIndex += 1) {
+        const group = supplierColumns[groupIndex];
+        const nextGroupColumn = supplierColumns[groupIndex + 1]?.column ?? header.length;
+        const titleContext = previousContext(sheet.matrix, headerRow, 24);
+        const isGeneral = titleContext.some((value) => value.includes("FORNECEDORES GERAL"))
+          || header.some((value) => exact(value).includes("FORNECEDORES GERAL"));
+        const area = areaFromHorizontalContext(sheet.matrix, headerRow, group.column)
+          ?? areaFromContext(sheet.matrix, headerRow);
+        const findInGroup = (wanted: string) => header.findIndex(
+          (value, column) => column >= group.column && column < nextGroupColumn && exact(value) === wanted,
+        );
+        const atasCol = findInGroup("QTD ATAS");
+        const itensCol = findInGroup("QTD ITENS");
+        const concentrationCol = findInGroup("% CONCENTRACAO DE ITENS");
+        const analysisCol = findInGroup("ANALISE");
+        if (atasCol < 0 || itensCol < 0 || concentrationCol < 0 || analysisCol < 0) continue;
+
+        const items: Array<SnapshotSupplier | SnapshotSupplierGeneral> = [];
+        for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 40); r += 1) {
+          const row = sheet.matrix[r] ?? [];
+          if (isBlank(row)) break;
+          const supplier = cellText(row[group.column]);
+          const supplierNormalized = exact(supplier);
+          if (!supplier || supplierNormalized === "FORNECEDOR") break;
+          if (isStopLabel(supplierNormalized)) break;
+          const qtdAtas = integerValue(row[atasCol]);
+          const qtdItens = integerValue(row[itensCol]);
+          const concentration = percentValue(row[concentrationCol]);
+          const analise = cellText(row[analysisCol]) || null;
+          const analiseNormalized = exact(analise);
+          const validAnalysis = !analiseNormalized
+            || ["ALTA CONCENTRACAO", "VOLUME MEDIO", "PULVERIZADO"].includes(analiseNormalized);
+          // Linhas de outros pivôs que vazam para o cabeçalho de fornecedores
+          // têm ANÁLISE = QTD ATA ou um número. Elas não pertencem ao bloco.
+          if (!validAnalysis || /^\d+(?:[.,]\d+)?$/.test(analiseNormalized) || analiseNormalized === "QTD ATA" || analiseNormalized === "QTD ITENS") continue;
+          if (supplier.length > 120) continue;
+          if (qtdAtas === null && qtdItens === null && !analise) continue;
+          if (isGeneral) {
+            items.push({ area: "GERAL", fornecedor: supplier, qtdAtas, qtdItens, concentracaoPct: concentration, analise });
+          } else if (area) {
+            items.push({ area, fornecedor: supplier, qtdAtas, qtdItens, concentracaoPct: concentration, analise });
+          }
+          // O primeiro TOTAL encerra a seção. Nunca atravessar para outro
+          // bloco da mesma aba, mesmo que ele tenha o mesmo cabeçalho.
+          if (supplierNormalized === "TOTAL" || supplierNormalized === "TOTAL GERAL") break;
+        }
+
+        if (items.length === 0) continue;
+        if (isGeneral) {
+          const generalItems = items as SnapshotSupplierGeneral[];
+          const total = generalItems.find((item) => {
+            const label = exact(item.fornecedor);
+            return label === "TOTAL" || label === "TOTAL GERAL";
+          });
+          generalBlocks.push({
+            items: generalItems,
+            totalAtas: total?.qtdAtas ?? null,
+            totalItens: total?.qtdItens ?? null,
+          });
+        } else if (area) {
+          payload.fornecedores[area] = [...payload.fornecedores[area], ...(items as SnapshotSupplier[])];
+        }
+      }
+    }
   }
 
+  // Pode existir mais de uma tabela com o mesmo cabeçalho em arquivos/abas
+  // diferentes. A tabela geral correta é a que fecha com a leitura principal
+  // do painel; na ausência desse KPI, preferimos o bloco mais completo (maior
+  // TOTAL de itens). Assim um quadro parcial/antigo não substitui a tabela
+  // “FORNECEDORES GERAL” da base ativa.
+  if (generalBlocks.length > 0) {
+    const expectedAtas = payload.kpis.concluidasAtas;
+    const expectedItens = payload.kpis.concluidasItens;
+    const score = (block: GeneralBlock) => {
+      const hasTotal = block.totalAtas !== null || block.totalItens !== null;
+      const hasOthers = block.items.some((item) => exact(item.fornecedor) === "OUTROS FORNECEDORES");
+      return (hasTotal ? 100 : 0)
+        + (hasOthers ? 50 : 0)
+        + (expectedAtas !== null && block.totalAtas === expectedAtas ? 100000 : 0)
+        + (expectedItens !== null && block.totalItens === expectedItens ? 100000 : 0)
+        + (block.totalItens ?? 0)
+        + (block.totalAtas ?? 0)
+        + block.items.length;
+    };
+    const selected = [...generalBlocks].sort((a, b) => score(b) - score(a))[0];
+    const deduped: SnapshotSupplierGeneral[] = [];
+    const seen = new Set<string>();
+    for (const item of selected.items) {
+      const key = `${exact(item.fornecedor)}|${item.qtdAtas ?? ""}|${item.qtdItens ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+    const others = deduped.find((item) => exact(item.fornecedor) === "OUTROS FORNECEDORES");
+    const total = deduped.find((item) => exact(item.fornecedor) === "TOTAL" || exact(item.fornecedor) === "TOTAL GERAL");
+    const top = deduped.filter((item) => {
+      const label = exact(item.fornecedor);
+      return label !== "OUTROS FORNECEDORES" && label !== "TOTAL" && label !== "TOTAL GERAL";
+    }).slice(0, 4);
+    payload.fornecedoresGeral = [...top, ...(others ? [others] : []), ...(total ? [total] : [])];
+    if (payload.fornecedoresGeral.length > 0) addFound(payload, "fornecedores");
+  }
+  // Sem uma tabela nomeada FORNECEDORES GERAL, não sinalizar o bloco como
+  // reconhecido: os quadros por área não atendem ao contrato visual do painel.
+}
+/* ----------------------------- evolução --------------------------- */
+
+function setEvolutionPair(target: SnapshotEvolution, kind: "concluidas" | "andamento" | "vencidas" | "aVencer", atas: number | null, itens: number | null) {
+  if (kind === "concluidas") {
+    if (atas !== null) target.concluidasAtas = atas;
+    if (itens !== null) target.concluidasItens = itens;
+  } else if (kind === "andamento") {
+    if (atas !== null) target.andamentoAtas = atas;
+    if (itens !== null) target.andamentoItens = itens;
+  } else if (kind === "vencidas") {
+    if (atas !== null) target.vencidasAtas = atas;
+    if (itens !== null) target.vencidasItens = itens;
+  } else {
+    if (atas !== null) target.aVencerAtas = atas;
+    if (itens !== null) target.aVencerItens = itens;
+  }
+}
+
+function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type EvolutionKind = "concluidas" | "andamento" | "vencidas" | "aVencer";
+  let found = false;
+  let explicitAndamentoTableFound = false;
+  let bestConcludedScore = -1;
+  let bestConcluded: Record<SnapshotArea, { atas: number | null; itens: number | null }> | null = null;
+
+  function headerInfo(value: unknown): { area: SnapshotArea; kind: EvolutionKind } | null {
+    const label = exact(value);
+    let kind: EvolutionKind | null = null;
+    let areaText = "";
+    if (label.startsWith("VENCIDAS ")) {
+      kind = "vencidas";
+      areaText = label.slice("VENCIDAS ".length);
+    } else if (label.startsWith("A VENCER ")) {
+      kind = "aVencer";
+      areaText = label.slice("A VENCER ".length);
+    } else if (label.startsWith("EM ANDAMENTO ")) {
+      kind = "andamento";
+      areaText = label.slice("EM ANDAMENTO ".length);
+    } else if (label.startsWith("ANDAMENTO ")) {
+      kind = "andamento";
+      areaText = label.slice("ANDAMENTO ".length);
+    } else if (label.startsWith("ATAS CONCLUIDAS ")) {
+      kind = "concluidas";
+      areaText = label.slice("ATAS CONCLUIDAS ".length);
+    } else if (label.startsWith("ATA CONCLUIDA ")) {
+      kind = "concluidas";
+      areaText = label.slice("ATA CONCLUIDA ".length);
+    } else if (label.startsWith("ATA ")) {
+      // Estrutura nova: ATA INDIRETOS | ATA DIRETOS | ATA CAPEX.
+      kind = "concluidas";
+      areaText = label.slice("ATA ".length);
+    }
+    const area = kind ? isArea(areaText) : null;
+    return area && kind ? { area, kind } : null;
+  }
+
+  function numericAt(matrix: unknown[][], row: number, column: number): number | null {
+    // A posição de cada área é significativa na estrutura vertical. Não
+    // procurar números em colunas vizinhas: isso desloca CAPEX/DIRETOS e pode
+    // transformar o TOTAL de uma área em valor de todas as áreas.
+    return integerValue(matrix[row]?.[column]);
+  }
+
+  function verticalPair(matrix: unknown[][], headerRow: number, column: number): { atas: number | null; itens: number | null } {
+    let atas: number | null = null;
+    let itens: number | null = null;
+    const end = Math.min(matrix.length, headerRow + 8);
+    for (let r = headerRow + 1; r < end; r += 1) {
+      const label = exact(matrix[r]?.[column]);
+      if (label === "QTD ATA" || label === "QTD ATAS") {
+        atas = numericAt(matrix, r + 1, column) ?? atas;
+      }
+      if (label === "QTD ITEM" || label === "QTD ITENS") {
+        itens = numericAt(matrix, r + 1, column) ?? itens;
+      }
+      // O próximo quadro começa antes de outra métrica ser encontrada.
+      if (r > headerRow + 1 && headerInfo(matrix[r]?.[column])) break;
+    }
+    return { atas, itens };
+  }
+
+  function widePair(matrix: unknown[][], headerRow: number, column: number, nextAreaColumn: number): { atas: number | null; itens: number | null } {
+    const limit = Math.min(nextAreaColumn < 0 ? matrix[headerRow]?.length ?? column + 3 : nextAreaColumn, column + 4);
+    let atasCol = -1;
+    let itensCol = -1;
+    for (let c = column + 1; c < limit; c += 1) {
+      const label = exact(matrix[headerRow]?.[c]);
+      if (label === "QTD ATA" || label === "QTD ATAS") atasCol = c;
+      if (label === "QTD ITEM" || label === "QTD ITENS") itensCol = c;
+    }
+    // Só usar o caminho wide quando o próprio cabeçalho declara as métricas.
+    // Sem isso, linhas de uma tabela seguinte não podem preencher o bloco.
+    if (atasCol < 0 && itensCol < 0) return { atas: null, itens: null };
+    for (let r = headerRow + 1; r < Math.min(matrix.length, headerRow + 4); r += 1) {
+      const row = matrix[r] ?? [];
+      const atas = atasCol >= 0 ? integerValue(row[atasCol]) : null;
+      const itens = itensCol >= 0 ? integerValue(row[itensCol]) : null;
+      if (atas !== null || itens !== null) return { atas, itens };
+    }
+    return { atas: null, itens: null };
+  }
+
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+
+    // Quadros de evolução concluída, vencidas e a vencer. A estrutura nova é
+    // vertical (QTD ATA, valor, QTD ITENS, valor); a leitura wide antiga também
+    // é aceita para não quebrar snapshots históricos.
+    for (let headerRow = 0; headerRow < matrix.length; headerRow += 1) {
+      const header = matrix[headerRow] ?? [];
+      const areaColumns: Array<{ area: SnapshotArea; column: number; kind: EvolutionKind }> = [];
+      header.forEach((value, column) => {
+        const info = headerInfo(value);
+        if (info) areaColumns.push({ ...info, column });
+      });
+      if (areaColumns.length === 0) continue;
+
+      const areaColumnsByKind = new Map<EvolutionKind, Array<{ area: SnapshotArea; column: number }>>();
+      for (const item of areaColumns) {
+        const list = areaColumnsByKind.get(item.kind) ?? [];
+        list.push({ area: item.area, column: item.column });
+        areaColumnsByKind.set(item.kind, list);
+      }
+      const concludedCandidate: Record<SnapshotArea, { atas: number | null; itens: number | null }> = {
+        INDIRETOS: { atas: null, itens: null },
+        DIRETOS: { atas: null, itens: null },
+        CAPEX: { atas: null, itens: null },
+      };
+      let concludedCount = 0;
+      for (const [kind, columns] of areaColumnsByKind) {
+        for (let index = 0; index < columns.length; index += 1) {
+          const item = columns[index];
+          const nextColumn = columns[index + 1]?.column ?? -1;
+          const vertical = verticalPair(matrix, headerRow, item.column);
+          const wide = widePair(matrix, headerRow, item.column, nextColumn);
+          const atas = vertical.atas ?? wide.atas;
+          const itens = vertical.itens ?? wide.itens;
+          if (kind === "concluidas") {
+            concludedCandidate[item.area] = { atas, itens };
+            if (atas !== null || itens !== null) concludedCount += 1;
+          } else if (atas !== null || itens !== null) {
+            // Vencidas e a vencer têm cabeçalhos próprios; não podem sobrescrever
+            // a coluna de concluídas nem ser confundidas com andamento.
+            setEvolutionPair(payload.evolucao[item.area], kind, atas, itens);
+            found = true;
+          }
+        }
+      }
+      if (concludedCount > 0) {
+        const context = previousContext(matrix, headerRow, 12);
+        const contextScore = context.some((value) => value.includes("STATUS ATUAL") || value.includes("EVOLUCAO POR AREA"))
+          ? 3
+          : context.some((value) => value.includes("ANDAMENTO")) ? -3 : 0;
+        const score = concludedCount * 10 + contextScore;
+        if (score > bestConcludedScore) {
+          bestConcludedScore = score;
+          bestConcluded = concludedCandidate;
+        }
+      }
+    }
+
+    // Quadros de uma única métrica: ITEM SALDO V e ITEM S/SALDO. Eles podem
+    // estar em uma linha horizontal ou como título seguido de uma linha de valores.
+    for (let r = 0; r < matrix.length; r += 1) {
+      const row = matrix[r] ?? [];
+      for (let c = 0; c < row.length; c += 1) {
+        const label = exact(row[c]);
+        const saldo = label.match(/^ITEM SALDO V (INDIRETOS|DIRETOS|CAPEX)$/);
+        const semSaldo = label.match(/^ITEM (?:S\/SALDO|SEM SALDO) (INDIRETOS|DIRETOS|CAPEX)$/);
+        const area = saldo ? (saldo[1] as SnapshotArea) : semSaldo ? (semSaldo[1] as SnapshotArea) : null;
+        if (!area) continue;
+        const value = firstNumberForLabel(matrix, r, c);
+        if (value === null) continue;
+        if (saldo) payload.evolucao[area].saldoItens = Math.round(value);
+        if (semSaldo) payload.evolucao[area].semSaldoItens = Math.round(value);
+        found = true;
+      }
+    }
+
+    // “EVOLUÇÃO POR ÁREA (EM ANDAMENTO)” é uma tabela separada com
+    // Rótulos de Linha | QTD ATAS | QTD ITENS. Não confundir com os pivôs de
+    // previsão, que têm Rótulos de Linha, mas não possuem linhas de áreas.
+    const simpleHeaders = findHeaderRows(matrix, (row) => rowHas(row, ["Rótulos de Linha", "QTD ATAS", "QTD ITENS"]));
+    for (const headerRow of simpleHeaders) {
+      const context = previousContext(matrix, headerRow, 10);
+      if (context.some((value) => value.includes("PREVISAO DE CONCLUSAO"))) continue;
+      const explicit = context.some((value) => value.includes("EM ANDAMENTO"));
+      if (explicitAndamentoTableFound && !explicit) continue;
+      const header = matrix[headerRow] ?? [];
+      const labelCol = columnIndex(header, (value) => value === "ROTULOS DE LINHA");
+      const atasCol = columnIndex(header, (value) => value === "QTD ATAS");
+      const itensCol = columnIndex(header, (value) => value === "QTD ITENS");
+      if (labelCol < 0 || atasCol < 0 || itensCol < 0) continue;
+      let tableFound = false;
+      for (let r = headerRow + 1; r < Math.min(matrix.length, headerRow + 12); r += 1) {
+        const row = matrix[r] ?? [];
+        if (isBlank(row)) break;
+        const area = isArea(row[labelCol]);
+        if (!area) continue;
+        const atas = integerValue(row[atasCol]);
+        const itens = integerValue(row[itensCol]);
+        if (atas === null && itens === null) continue;
+        setEvolutionPair(payload.evolucao[area], "andamento", atas, itens);
+        tableFound = true;
+        found = true;
+      }
+      if (tableFound && explicit) explicitAndamentoTableFound = true;
+    }
+  }
+  if (bestConcluded) {
+    for (const area of SNAPSHOT_AREAS) {
+      setEvolutionPair(payload.evolucao[area], "concluidas", bestConcluded[area].atas, bestConcluded[area].itens);
+    }
+    found = true;
+  }
+  if (found) addFound(payload, "evolucao");
+}
+
+function evolutionPairFromCell(value: unknown): { atas: number | null; itens: number | null } {
+  const text = cellText(value);
+  if (!text) return { atas: null, itens: null };
+  const atasMatch = text.match(/(-?\d[\d.\s]*(?:,\d+)?)\s*ATAS?/i);
+  const itensMatch = text.match(/(-?\d[\d.\s]*(?:,\d+)?)\s*ITENS?/i);
+  let atas = atasMatch ? integerValue(atasMatch[1]) : null;
+  let itens = itensMatch ? integerValue(itensMatch[1]) : null;
+  if (atas === null || itens === null) {
+    const numbers = text.match(/-?\d[\d.\s]*(?:,\d+)?/g) ?? [];
+    if (atas === null && numbers[0]) atas = integerValue(numbers[0]);
+    if (itens === null && numbers[1]) itens = integerValue(numbers[1]);
+  }
+  return { atas, itens };
+}
+
+/**
+ * Estrutura da tabela mostrada no Excel: uma linha por área e métricas em
+ * células compostas, por exemplo “4 ATAS / 216 ITENS”. Ela não usa os títulos
+ * horizontais “ATA CAPEX” da estrutura antiga, por isso é tratada
+ * explicitamente antes de finalizar o snapshot.
+ */
+function extractEvolutionStatusTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type Candidate = Record<SnapshotArea, { atas: number | null; itens: number | null }>;
+  let best: Candidate | null = null;
+  let bestScore = -1;
+
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const titleRows = findHeaderRows(matrix, (row) => row.some((value) => {
+      const label = exact(value);
+      return label.includes("EVOLUCAO POR AREA") && label.includes("STATUS ATUAL");
+    }));
+    for (const titleRow of titleRows) {
+      let headerRow = -1;
+      for (let rowIndex = titleRow + 1; rowIndex < Math.min(matrix.length, titleRow + 8); rowIndex += 1) {
+        const values = matrix[rowIndex] ?? [];
+        const labels = values.map(exact);
+        const hasArea = labels.some((label) => label === "AREAS" || label === "AREA");
+        const hasConcluded = labels.some((label) => label.includes("CONCLUID") && label.includes("ATAS"));
+        const hasVencidas = labels.some((label) => label.includes("VENCIDAS"));
+        const hasAVencer = labels.some((label) => label.includes("A VENCER"));
+        if (hasArea && hasConcluded && hasVencidas && hasAVencer) {
+          headerRow = rowIndex;
+          break;
+        }
+      }
+      if (headerRow < 0) continue;
+
+      const header = matrix[headerRow] ?? [];
+      const columnWith = (...parts: string[]) => header.findIndex((value) => {
+        const label = exact(value);
+        return parts.every((part) => label.includes(part));
+      });
+      const areaCol = header.findIndex((value) => {
+        const label = exact(value);
+        return label === "AREAS" || label === "AREA";
+      });
+      const concludedCol = columnWith("CONCLUID", "ATAS");
+      const andamentoCol = columnWith("ANDAMENTO");
+      const saldoCol = columnWith("ITENS COM", "SALDO");
+      const semSaldoCol = columnWith("ITENS SEM", "SALDO");
+      const vencidasCol = columnWith("VENCIDAS");
+      const aVencerCol = columnWith("A VENCER");
+      if (areaCol < 0 || concludedCol < 0) continue;
+
+      const candidate: Candidate = makeAreaRecord(() => ({ atas: null, itens: null }));
+      let score = 0;
+      for (let rowIndex = headerRow + 1; rowIndex < Math.min(matrix.length, headerRow + 12); rowIndex += 1) {
+        const row = matrix[rowIndex] ?? [];
+        if (isBlank(row)) break;
+        const area = isArea(row[areaCol]) ?? row.slice(0, 3).map(isArea).find(Boolean) ?? null;
+        if (!area) continue;
+        const pair = evolutionPairFromCell(row[concludedCol]);
+        if (pair.atas !== null || pair.itens !== null) {
+          candidate[area] = pair;
+          score += 10;
+        }
+        // Só preenche outras métricas quando a tabela realmente traz números;
+        // a célula “ND SEM CAMPO” não deve substituir o quadro separado de
+        // EM ANDAMENTO já extraído da planilha.
+        const andamento = andamentoCol >= 0 ? evolutionPairFromCell(row[andamentoCol]) : { atas: null, itens: null };
+        if (andamento.atas !== null || andamento.itens !== null) setEvolutionPair(payload.evolucao[area], "andamento", andamento.atas, andamento.itens);
+        const saldo = saldoCol >= 0 ? integerValue(row[saldoCol]) : null;
+        if (saldo !== null) payload.evolucao[area].saldoItens = saldo;
+        const semSaldo = semSaldoCol >= 0 ? integerValue(row[semSaldoCol]) : null;
+        if (semSaldo !== null) payload.evolucao[area].semSaldoItens = semSaldo;
+        const vencidas = vencidasCol >= 0 ? evolutionPairFromCell(row[vencidasCol]) : { atas: null, itens: null };
+        if (vencidas.atas !== null || vencidas.itens !== null) setEvolutionPair(payload.evolucao[area], "vencidas", vencidas.atas, vencidas.itens);
+        const aVencer = aVencerCol >= 0 ? evolutionPairFromCell(row[aVencerCol]) : { atas: null, itens: null };
+        if (aVencer.atas !== null || aVencer.itens !== null) setEvolutionPair(payload.evolucao[area], "aVencer", aVencer.atas, aVencer.itens);
+      }
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+  }
+
+  if (best && bestScore > 0) {
+    for (const area of SNAPSHOT_AREAS) {
+      const pair = best[area];
+      if (pair.atas !== null || pair.itens !== null) setEvolutionPair(payload.evolucao[area], "concluidas", pair.atas, pair.itens);
+    }
+    addFound(payload, "evolucao");
+  }
+}
+
+/* ------------------------- faixas de previsão -------------------- */
+
+function bandFromLabel(value: unknown): ForecastBand | null {
+  const label = exact(value);
+  // exact() já remove os acentos; aceitar também variantes com “até”/“ate”
+  // e pequenas diferenças de singular/plural da tabela dinâmica.
+  if (/\bATE\s*15\s*DIAS?\b/.test(label)) return "ate_15";
+  if (/\bATE\s*30\s*DIAS?\b/.test(label)) return "ate_30";
+  if (/\bATE\s*60\s*DIAS?\b/.test(label)) return "ate_60";
+  if (label.includes("PREVISAO VENCIDA") || label === "VENCIDA" || label === "VENCIDAS") return "vencidas";
+  if (label.includes("ACIMA DE 60 DIAS") || label.includes("MAIS DE 60 DIAS")) return "acima_60";
+  if (label === "CANCELADO" || label === "CANCELADOS" || label === "CANCELADA" || label === "CANCELADAS") return "canceladas";
+  if (label === "FINALIZADO" || label === "FINALIZADOS" || label === "FINALIZADA" || label === "FINALIZADAS") return "finalizadas";
+  return null;
+}
+
+function bandFromDays(days: number): ForecastBand {
+  if (days < 0) return "vencidas";
+  if (days <= 15) return "ate_15";
+  if (days <= 30) return "ate_30";
+  if (days <= 60) return "ate_60";
+  return "acima_60";
+}
+
+function daysUntilISO(iso: string): number {
+  const [year, month, day] = iso.split("-").map(Number);
+  const target = new Date(year, month - 1, day);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+const MONTH_NUMBERS: Record<string, number> = {
+  JANEIRO: 1,
+  FEVEREIRO: 2,
+  MARCO: 3,
+  ABRIL: 4,
+  MAIO: 5,
+  JUNHO: 6,
+  JULHO: 7,
+  AGOSTO: 8,
+  SETEMBRO: 9,
+  OUTUBRO: 10,
+  NOVEMBRO: 11,
+  DEZEMBRO: 12,
+};
+
+function monthlyLabel(value: unknown, referenceDate: string | null): { label: string; month: number | null; year: number | null } | null {
+  const label = exact(value);
+  if (!label) return null;
+  if (label.includes("VENCIDA") || label.includes("SEM PREVISAO") || label.includes("SEM PREVISÃO")) {
+    return { label: cellText(value), month: null, year: null };
+  }
+  const monthName = Object.keys(MONTH_NUMBERS).find((name) => new RegExp(`\\b${name}\\b`).test(label));
+  if (!monthName) return null;
+  const yearMatch = label.match(/\b(20\d{2})\b/);
+  const referenceYear = referenceDate ? Number(referenceDate.slice(0, 4)) : new Date().getFullYear();
   return {
-    geradoEm: new Date().toISOString(),
-    hasData: Number(kpiRow.processos ?? 0) > 0,
-    kpis: {
-      processos: Number(kpiRow.processos ?? 0),
-      valorTotal: Number(kpiRow.valor_total ?? 0),
-      itens: Number(kpiRow.itens ?? 0),
-      concluidosAtas: Number(kpiRow.concluidos_atas ?? 0),
-      concluidosItens: Number(kpiRow.concluidos_itens ?? 0),
-      saldoAtas: Number(kpiRow.saldo_atas ?? 0),
-      saldoItens: Number(kpiRow.saldo_itens ?? 0),
-      consumidoAtas: Number(kpiRow.consumido_atas ?? 0),
-      consumidoItens: Number(kpiRow.consumido_itens ?? 0),
-      vencidasVencerAtas: Number(kpiRow.vencidas_a_vencer_atas ?? 0),
-      vencidasVencerItens: Number(kpiRow.vencidas_a_vencer_itens ?? 0),
-      ...situacoes,
-    },
-    situacaoLabels: SITUACAO_LABEL,
-    porArea: areaRes.rows,
-    topCompradores: topCompradoresRes.rows,
-    fornecedores: fornecedoresRes.rows,
-    evolucao: evolucaoRes.rows,
-    renovacoes: renovacoesRes.rows,
-    previsoes: previsoesRes.rows,
-    variacoes: variacoesRes.rows,
-    datasets: datasetsRes.rows,
-    checks,
+    label: cellText(value),
+    month: MONTH_NUMBERS[monthName],
+    year: yearMatch ? Number(yearMatch[1]) : referenceYear,
   };
 }
 
-export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
-```
+/**
+ * Extrai o pivô vertical “PREVISÃO DE CONCLUSÃO POR MÊS”. A tabela de origem
+ * possui uma linha de grupos (CAPEX/DIRETOS/INDIRETOS), outra linha com pares
+ * QTD ATAS/QTD ITENS e uma linha por mês. O pareamento é feito pela ordem dos
+ * grupos, como no Excel, para não deslocar os números entre áreas.
+ */
+function extractMonthlyForecastTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type Candidate = Record<SnapshotArea, SnapshotMonthlyForecastArea>;
+  let best: Candidate | null = null;
+  let bestScore = -1;
 
-### domain.ts
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const titleRows = findHeaderRows(matrix, (row) => row.some((value) => exact(value).includes("PREVISAO DE CONCLUSAO POR MES")));
+    for (const titleRow of titleRows) {
+      let quantityHeaderIndex = -1;
+      for (let candidate = titleRow + 1; candidate < Math.min(matrix.length, titleRow + 16); candidate += 1) {
+        const values = matrix[candidate] ?? [];
+        const atasCount = values.filter((value) => exact(value) === "QTD ATAS").length;
+        const itensCount = values.filter((value) => exact(value) === "QTD ITENS").length;
+        if (atasCount >= 2 && itensCount >= 2) {
+          quantityHeaderIndex = candidate;
+          break;
+        }
+      }
+      if (quantityHeaderIndex < 0) continue;
 
-```typescript
+      let groupRowIndex = -1;
+      for (let candidate = quantityHeaderIndex - 1; candidate > titleRow; candidate -= 1) {
+        const areas = (matrix[candidate] ?? []).filter((value) => Boolean(isArea(value)));
+        if (areas.length >= 2) {
+          groupRowIndex = candidate;
+          break;
+        }
+      }
+      if (groupRowIndex < 0) continue;
+
+      const groupRow = matrix[groupRowIndex] ?? [];
+      const groups = groupRow
+        .map((value, column) => ({ area: isArea(value), column }))
+        .filter((item): item is { area: SnapshotArea; column: number } => Boolean(item.area))
+        .sort((a, b) => a.column - b.column);
+      const quantityHeader = matrix[quantityHeaderIndex] ?? [];
+      const qtdAtasColumns = quantityHeader
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value === "QTD ATAS")
+        .map((item) => item.column);
+      const qtdItensColumns = quantityHeader
+        .map((value, column) => ({ value: exact(value), column }))
+        .filter((item) => item.value === "QTD ITENS")
+        .map((item) => item.column);
+      if (groups.length === 0 || qtdAtasColumns.length === 0 || qtdItensColumns.length === 0) continue;
+
+      const labelCol = quantityHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA") >= 0
+        ? quantityHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA")
+        : 0;
+      const candidate: Candidate = makeMonthlyForecastRecord();
+      let score = 0;
+      for (let rowIndex = quantityHeaderIndex + 1; rowIndex < Math.min(matrix.length, quantityHeaderIndex + 80); rowIndex += 1) {
+        const row = matrix[rowIndex] ?? [];
+        if (isBlank(row)) break;
+        const parsedLabel = monthlyLabel(row[labelCol], payload.referenceDate);
+        if (!parsedLabel) continue;
+        for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+          const atasCol = qtdAtasColumns[groupIndex];
+          const itensCol = qtdItensColumns[groupIndex] ?? (atasCol !== undefined ? atasCol + 1 : -1);
+          const atas = atasCol === undefined ? null : integerValue(row[atasCol]);
+          const itens = itensCol < 0 ? null : integerValue(row[itensCol]);
+          if (atas === null && itens === null) continue;
+          const area = groups[groupIndex].area;
+          const existing = candidate[area].rows.find((item) => (
+            item.month === parsedLabel.month && item.year === parsedLabel.year && item.label === parsedLabel.label
+          ));
+          if (existing) {
+            existing.atas = (existing.atas ?? 0) + (atas ?? 0);
+            existing.itens = (existing.itens ?? 0) + (itens ?? 0);
+          } else {
+            candidate[area].rows.push({ ...parsedLabel, atas, itens });
+          }
+          score += 1;
+        }
+      }
+      if (score > bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+  }
+
+  if (best && bestScore > 0) {
+    payload.previsaoMeses = best;
+    addFound(payload, "previsao-meses");
+  }
+}
+
+function extractForecastBandTable(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const titleRows = findHeaderRows(matrix, (row) => row.some((value) => exact(value).includes("PREVISAO DE CONCLUSAO POR FAIXA")));
+    for (const titleRow of titleRows) {
+      for (let areaRowIndex = titleRow + 1; areaRowIndex < Math.min(matrix.length, titleRow + 12); areaRowIndex += 1) {
+        const areaRow = matrix[areaRowIndex] ?? [];
+        const areaColumns = areaRow
+          .map((value, column) => ({ area: isArea(value), column }))
+          .filter((item): item is { area: SnapshotArea; column: number } => Boolean(item.area));
+        if (areaColumns.length === 0) continue;
+
+        let quantityHeaderIndex = -1;
+        for (let candidate = areaRowIndex; candidate <= Math.min(matrix.length - 1, areaRowIndex + 3); candidate += 1) {
+          if ((matrix[candidate] ?? []).some((value) => exact(value) === "QTD ATAS")) {
+            quantityHeaderIndex = candidate;
+            break;
+          }
+        }
+        if (quantityHeaderIndex < 0) continue;
+
+        const labelHeader = matrix[quantityHeaderIndex] ?? [];
+        const labelCol = labelHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA") >= 0
+          ? labelHeader.findIndex((value) => exact(value) === "ROTULOS DE LINHA")
+          : 0;
+        for (let r = quantityHeaderIndex + 1; r < Math.min(matrix.length, quantityHeaderIndex + 30); r += 1) {
+          const row = matrix[r] ?? [];
+          if (isBlank(row)) break;
+          // A tabela pode deslocar “Rótulos de Linha” uma coluna; procure a
+          // faixa na primeira coluna útil, não apenas em row[0].
+          let band: ForecastBand | null = bandFromLabel(row[labelCol]);
+          let actualLabelCol = labelCol;
+          if (!band) {
+            for (let c = 0; c < Math.min(row.length, 3); c += 1) {
+              const candidate = bandFromLabel(row[c]);
+              if (candidate) {
+                band = candidate;
+                actualLabelCol = c;
+                break;
+              }
+            }
+          }
+          if (!band) continue;
+          const areaColumnsOrdered = [...areaColumns].sort((a, b) => a.column - b.column);
+          const qtdAtasColumns = labelHeader
+            .map((value, column) => ({ value: exact(value), column }))
+            .filter((item) => item.value === "QTD ATAS")
+            .map((item) => item.column);
+          for (const item of areaColumnsOrdered) {
+            // Em células mescladas o rótulo CAPEX pode estar uma coluna antes
+            // da primeira QTD ATAS (ou até na coluna do rótulo da linha). O
+            // pareamento por ordem dos grupos é estável e evita deslocar os
+            // itens de uma área para a próxima.
+            const areaIndex = areaColumnsOrdered.findIndex((candidate) => candidate.column === item.column);
+            let atasCol = qtdAtasColumns[areaIndex] ?? item.column;
+            let itensCol = atasCol + 1;
+            const atas = integerValue(row[atasCol]);
+            const itens = integerValue(row[itensCol]);
+            if (atas !== null || itens !== null) {
+              const target = payload.previsoes[band][item.area];
+              target.atas = atas;
+              target.itens = itens;
+              found = true;
+            }
+          }
+          void actualLabelCol;
+        }
+        // Um título de faixa corresponde a um único pivot; não interpretar a
+        // tabela “por mês” que vem mais abaixo como se fosse outra faixa.
+        break;
+      }
+    }
+  }
+  if (found) addFound(payload, "previsao-faixas");
+}
+
+/** Fallback para exports em que o SheetJS transforma os cabeçalhos mesclados
+ * em “CAPEX QTD ATAS”, “DIRETOS QTD ATAS” etc. sem manter a linha de grupos. */
+function extractForecastBandFallback(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    for (let rowIndex = 0; rowIndex < matrix.length; rowIndex += 1) {
+      const row = matrix[rowIndex] ?? [];
+      let band: ForecastBand | null = null;
+      for (let c = 0; c < Math.min(row.length, 4); c += 1) {
+        band = bandFromLabel(row[c]);
+        if (band) break;
+      }
+      if (!band) continue;
+
+      let quantityHeaderIndex = -1;
+      for (let h = rowIndex - 1; h >= Math.max(0, rowIndex - 8); h -= 1) {
+        const values = matrix[h] ?? [];
+        if (values.filter((value) => exact(value) === "QTD ATAS").length > 0
+          && values.filter((value) => exact(value) === "QTD ITENS").length > 0) {
+          quantityHeaderIndex = h;
+          break;
+        }
+      }
+      if (quantityHeaderIndex < 0) continue;
+      const quantityHeader = matrix[quantityHeaderIndex] ?? [];
+
+      const combinedColumns = new Map<SnapshotArea, { atas: number; itens: number }>();
+      for (let c = 0; c < quantityHeader.length; c += 1) {
+        const label = exact(quantityHeader[c]);
+        for (const area of SNAPSHOT_AREAS) {
+          if (!label.includes(area)) continue;
+          const current = combinedColumns.get(area) ?? { atas: -1, itens: -1 };
+          if (label.includes("QTD ATA")) current.atas = c;
+          if (label.includes("QTD ITEM")) current.itens = c;
+          combinedColumns.set(area, current);
+        }
+      }
+
+      // Caso clássico do pivot: uma linha de grupos CAPEX/DIRETOS/INDIRETOS
+      // acima de uma linha que repete QTD ATAS/QTD ITENS.
+      const groupRowIndex = (() => {
+        for (let h = quantityHeaderIndex - 1; h >= Math.max(0, quantityHeaderIndex - 4); h -= 1) {
+          const count = (matrix[h] ?? []).filter((value) => Boolean(isArea(value))).length;
+          if (count >= 2) return h;
+        }
+        return -1;
+      })();
+      if (groupRowIndex >= 0) {
+        const groupRow = matrix[groupRowIndex] ?? [];
+        const groups = groupRow
+          .map((value, column) => ({ area: isArea(value), column }))
+          .filter((item): item is { area: SnapshotArea; column: number } => Boolean(item.area))
+          .sort((a, b) => a.column - b.column);
+        const qtdAtasColumns = quantityHeader
+          .map((value, column) => ({ value: exact(value), column }))
+          .filter((item) => item.value === "QTD ATAS")
+          .map((item) => item.column);
+        for (let i = 0; i < groups.length; i += 1) {
+          const current = combinedColumns.get(groups[i].area) ?? { atas: -1, itens: -1 };
+          if (qtdAtasColumns[i] !== undefined) {
+            current.atas = qtdAtasColumns[i];
+            current.itens = qtdAtasColumns[i] + 1;
+          }
+          combinedColumns.set(groups[i].area, current);
+        }
+      }
+
+      for (const area of SNAPSHOT_AREAS) {
+        const columns = combinedColumns.get(area);
+        if (!columns) continue;
+        const target = payload.previsoes[band][area];
+        const atas = columns.atas >= 0 ? integerValue(row[columns.atas]) : null;
+        const itens = columns.itens >= 0 ? integerValue(row[columns.itens]) : null;
+        if (target.atas === null && atas !== null) target.atas = atas;
+        if (target.itens === null && itens !== null) target.itens = itens;
+        if (atas !== null || itens !== null) found = true;
+      }
+    }
+  }
+  if (found) addFound(payload, "previsao-faixas");
+}
+
+function findCountColumn(header: unknown[], aliases: string[]): number {
+  const normalized = aliases.map(exact);
+  return header.findIndex((value) => normalized.includes(exact(value)));
+}
+
+function extractForecastRows(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  const entryTotals = new Map<string, { atas: number; itens: number }>();
+  for (const sheet of sheets) {
+    const rows = findHeaderRows(sheet.matrix, (row) => rowHas(row, ["COMPRADOR", "AREA", "PRAZO CONCLUSAO"]));
+    for (const headerRow of rows) {
+      const header = sheet.matrix[headerRow] ?? [];
+      const buyerCol = columnIndex(header, (value) => value === "COMPRADOR");
+      const areaCol = columnIndex(header, (value) => value === "AREA");
+      const deadlineCol = columnIndex(header, (value) => value === "PRAZO CONCLUSAO");
+      const atasCol = findCountColumn(header, ["QTD ATAS", "ATAS", "QTD ATA"]);
+      const itensCol = findCountColumn(header, ["QTD ITENS", "ITENS", "QTD ITEM"]);
+      if (buyerCol < 0 || areaCol < 0 || deadlineCol < 0) continue;
+      for (let r = headerRow + 1; r < Math.min(sheet.matrix.length, headerRow + 10000); r += 1) {
+        const row = sheet.matrix[r] ?? [];
+        if (isBlank(row)) break;
+        const buyer = cellText(row[buyerCol]);
+        const area = isArea(row[areaCol]);
+        const deadlineText = cellText(row[deadlineCol]);
+        if (!buyer || !area || !deadlineText) continue;
+
+        let iso: string | null = null;
+        const date = parseDateBR(row[deadlineCol], "PRAZO CONCLUSAO");
+        if (date.iso) iso = date.iso;
+        const bandByText = bandFromLabel(deadlineText);
+        const band = bandByText ?? (iso ? bandFromDays(daysUntilISO(iso)) : null);
+        if (!band) continue;
+        const atas = atasCol >= 0 ? integerValue(row[atasCol]) ?? 1 : 1;
+        const itens = itensCol >= 0 ? integerValue(row[itensCol]) ?? 0 : 0;
+        const target = payload.previsoes[band][area];
+        const key = `${area}\u0000${band}`;
+        const totals = entryTotals.get(key) ?? { atas: 0, itens: 0 };
+        totals.atas += atas;
+        totals.itens += itens;
+        entryTotals.set(key, totals);
+        const buyerKey = `${buyer}\u0000${iso ?? deadlineText}`;
+        const existing = target.buyers.find((item) => `${item.name}\u0000${item.prazoConclusao ?? ""}` === buyerKey);
+        if (existing) {
+          existing.atas += atas;
+          existing.itens += itens;
+        } else {
+          target.buyers.push({ name: buyer, atas, itens, prazoConclusao: iso ?? deadlineText });
+        }
+        found = true;
+      }
+    }
+  }
+  for (const [key, totals] of entryTotals) {
+    const [area, band] = key.split("\u0000") as [SnapshotArea, ForecastBand];
+    const target = payload.previsoes[band][area];
+    if (target.atas === null) target.atas = totals.atas;
+    if (target.itens === null) target.itens = totals.itens;
+  }
+  for (const band of FORECAST_BANDS) {
+    for (const area of SNAPSHOT_AREAS) {
+      payload.previsoes[band][area].buyers.sort((a, b) => b.itens - a.itens || b.atas - a.atas);
+    }
+  }
+  if (found) addFound(payload, "previsoes-cruzadas");
+}
+
+/* ---------------------------- API pública ------------------------- */
+
+export function extractSnapshotPayload(
+  sheets: SnapshotSourceSheet[],
+  options: { fileNames?: string[]; referenceDate?: string | null } = {},
+): DashboardSnapshotPayload {
+  const payload = emptyDashboardSnapshot(options.referenceDate ?? null, options.fileNames ?? [...new Set(sheets.map((sheet) => sheet.fileName))]);
+  extractReadingTable(payload, sheets);
+  extractAreaValues(payload, sheets);
+  extractSaving(payload, sheets);
+  extractTopBuyers(payload, sheets);
+  extractSuppliers(payload, sheets);
+  extractEvolution(payload, sheets);
+  extractEvolutionStatusTable(payload, sheets);
+  extractForecastBandTable(payload, sheets);
+  extractForecastBandFallback(payload, sheets);
+  extractMonthlyForecastTable(payload, sheets);
+  extractForecastRows(payload, sheets);
+
+  const allKnown = [
+    "kpis-leitura",
+    "valores-por-area",
+    "saving",
+    "top-compradores",
+    "fornecedores",
+    "evolucao",
+    "previsao-faixas",
+    "previsao-meses",
+    "previsoes-cruzadas",
+  ];
+  payload.coverage.missing = allKnown.filter((key) => !payload.coverage.found.includes(key));
+  if (payload.coverage.missing.length > 0) {
+    payload.notes.push(`Blocos não encontrados: ${payload.coverage.missing.join(", ")}. Confira os nomes exatos dos cabeçalhos/linhas.`);
+  }
+  return payload;
+}
+
+export function hasSnapshotPayloadMeaningfulData(payload: DashboardSnapshotPayload | null | undefined): boolean {
+  return Boolean(payload && payload.coverage.found.length > 0);
+}
+
+/**
+ * Referência inicial de 28/09 solicitada para que a comparação semanal não
+ * fique vazia antes de existir uma segunda importação. São somente os números
+ * da tabela “LEITURA DOS GRÁFICOS” fornecida como referência.
+ */
+export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
+  const payload = emptyDashboardSnapshot("2026-09-28", ["Referência fornecida nas capturas — 28/09"]);
+  payload.kpis = {
+    concluidasAtas: 58,
+    concluidasItens: 956,
+    saldoItens: 877,
+    consumidoItens: 80,
+    aVencerAtas: 58,
+    aVencerItens: 1215,
+    vencidasAtas: 48,
+    vencidasItens: 334,
+  };
+  payload.coverage.found = ["kpis-leitura"];
+  payload.coverage.missing = ["valores-por-area", "saving", "top-compradores", "fornecedores", "evolucao", "previsao-faixas", "previsao-meses", "previsoes-cruzadas"];
+  payload.notes.push("Referência inicial fixa apenas para a comparação dos três gráficos; será substituída pelo snapshot imediatamente anterior após novas importações.");
+  return payload;
+}
+````
+
+### `src/lib/domain.ts`
+
+````typescript
 /**
  * Domínio do Giro de Atas — campos canônicos, normalização e validação.
  * Este módulo é isomórfico: roda no navegador (pré-visualização) e no
@@ -2790,11 +13458,11 @@ export const SITUACAO_SQL = `
     WHEN r.data_fim <= CURRENT_DATE + 30 THEN 'a_vencer'
     ELSE 'em_dia'
   END`;
-```
+````
 
-### format.ts
+### `src/lib/format.ts`
 
-```typescript
+````typescript
 /** Formatação pt-BR centralizada (datas, números, moeda, prazos relativos). */
 
 const fBRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -2855,11 +13523,11 @@ export function prazoRelativo(dias: number | null): string {
   if (dias === 0) return "vence hoje";
   return dias === 1 ? "em 1 dia" : `em ${dias} dias`;
 }
-```
+````
 
-### mapping.ts
+### `src/lib/mapping.ts`
 
-```typescript
+````typescript
 /**
  * Sugestão automática de mapeamento coluna → campo canônico.
  * Nunca decide sozinho em caso de ambiguidade: devolve `confidence` e a
@@ -2940,310 +13608,815 @@ export function suggestMapping(headers: string[]): Suggestion {
   const unmappedHeaders = headers.filter((h) => !byHeader[h]);
   return { mapping, byHeader, confidence, unmappedHeaders };
 }
-```
+````
 
----
+### `src/lib/static-dashboard.ts`
 
-## Scripts
+````typescript
+import {
+  listActiveDatasets,
+  listActiveProcessRows,
+  listDatasets,
+  listSnapshotDatasets,
+  formatStoredDataset,
+  type ProcessRow,
+} from "@/lib/static-store";
+import {
+  defaultPreviousSnapshot,
+  type DashboardSnapshotPayload,
+  type ForecastBand,
+  type SnapshotArea,
+  SNAPSHOT_AREAS,
+} from "@/lib/dashboard-snapshot";
 
-### e2e-test.mjs
-
-```javascript
-/**
- * Teste E2E do Giro de Atas (executar com a app rodando em :3000):
- *   node scripts/e2e-test.mjs
- * Gera arquivos sintéticos de teste COM RÓTULO explícito e os remove do banco ao final.
- */
-import * as XLSX from "xlsx";
-import assert from "node:assert/strict";
-
-const BASE = process.env.APP_URL ?? "http://localhost:3000";
-const MARCADOR = "TESTE-E2E";
-
-let passou = 0;
-function ok(nome) {
-  passou++;
-  console.log(`  ✓ ${nome}`);
+export interface StaticDashboardData {
+  geradoEm: string;
+  hasData: boolean;
+  currentSnapshot: DashboardSnapshotPayload | null;
+  previousSnapshot: DashboardSnapshotPayload | null;
+  savingTotal: {
+    valorSaving: number;
+    saving_hist: number;
+    saving_prop: number;
+    reducao_hist_pct: number | null;
+    reducao_prop_pct: number | null;
+  } | null;
+  snapshotHistory: Array<{
+    id: number;
+    referenceDate: string | null;
+    importedAt: string;
+    status: string;
+    coverage: string[];
+  }>;
+  kpis: {
+    processos: number;
+    valorTotal: number;
+    itens: number;
+    concluidosAtas: number;
+    concluidosItens: number;
+    saldoAtas: number;
+    saldoItens: number;
+    consumidoAtas: number;
+    consumidoItens: number;
+    aVencerAtas: number;
+    aVencerItens: number;
+    vencidasAtas: number;
+    vencidasItens: number;
+    vencidasVencerAtas: number;
+    vencidasVencerItens: number;
+  };
+  porArea: Array<{
+    area: string;
+    processos: number;
+    valor: number;
+    valorSaving: number;
+    saving_hist: number;
+    saving_prop: number;
+    reducao_hist_pct: number | null;
+    reducao_prop_pct: number | null;
+  }>;
+  topCompradores: Array<{
+    area: string;
+    responsavel: string;
+    atas: number;
+    itens: number;
+    totalAtasArea: number | null;
+  }>;
+  fornecedores: Array<{
+    area: string;
+    fornecedor: string;
+    atas: number;
+    itens: number;
+    concentracao: number;
+    analise: string | null;
+  }>;
+  evolucao: Array<{
+    area: string;
+    concluidas_atas: number;
+    concluidas_itens: number;
+    andamento_atas: number;
+    andamento_itens: number;
+    saldo_itens: number;
+    semsaldo_itens: number;
+    vencidas_atas: number;
+    vencidas_itens: number;
+    a_vencer_atas: number;
+    a_vencer_itens: number;
+  }>;
+  renovacoes: Array<{ area: string; status: string; atas: number; itens: number }>;
+  previsoes: Array<{
+    area: string;
+    responsavel: string;
+    data_previsao: string;
+    dias: number;
+    atas: number;
+    itens: number;
+    band?: ForecastBand;
+  }>;
+  datasets: ReturnType<typeof formatStoredDataset>[];
 }
 
-/* ------------------------------ preparação ------------------------------ */
+const AREAS = ["Indiretos", "Diretos", "CAPEX"] as const;
+const AREA_KEYS: Record<string, SnapshotArea> = {
+  INDIRETOS: "INDIRETOS",
+  INDIRETO: "INDIRETOS",
+  DIRETOS: "DIRETOS",
+  DIRETO: "DIRETOS",
+  CAPEX: "CAPEX",
+};
 
-// Planilha 1 (aba "Dados"): cabeçalhos em pt-BR não padronizados, datas BR, valores BR
-const linhasIndiretos = [
-  ["RELATÓRIO DE COMPRAS — " + MARCADOR], // linha de título antes do cabeçalho
-  ["Processo", "Descrição do Objeto", "Setor Requisitante", "Empresa Vencedora", "Comprador Resp.", "Fase Atual", "Situação Atual", "Data Abertura", "Vigência Final", "Qtd Itens", "Valor Estimado R$", "Notas Gerais", "Endereço SP", "Coluna Livre"],
-  ["PA-2025/001", "Aquisição de insumos de laboratório", "Pesquisa", "Labex Ltda", "Ana Souza", "Cotação", "Em andamento", "05/01/2026", "10/02/2030", "120", "1.234.567,89", "Urgente, conforme SEI 123", "https://sharepoint.interno/doc1", "texto livre A"],
-  ["PA-2025/002", "Serviço de manutenção predial", "Facilities", "Construmais SA", "Bruno Lima", "Emissão de ata", "Em andamento", "12/01/2026", "15/02/2020", "3", "85.000,00", "", "https://sharepoint.interno/doc2", "texto livre B"],
-  ["PA-2025/003", "Licenças de software", "TI", "", "Carla Roos", "Aguardando fornecedor", "Concluído", "20/12/2025", "01/01/2031", "1", "R$ 12.900,50", "renovação anual", "", "x"],
-  ["PA-2025/004", "Uniformes e EPIs", "RH", "Protege EPI", "Ana Souza", "Cotação", "Cancelado", "02/01/2026", "30/06/2030", "500", "45.000", "", "", ""],
-  ["", "Linha sem identificador deve ser ignorada", "RH", "", "", "", "", "", "", "5", "1.000", "", "", ""], // erro: sem número
-  ["PA-2025/001", "Aquisição de insumos de laboratório", "Pesquisa", "Labex Ltda", "Ana Souza", "Cotação", "Em andamento", "05/01/2026", "10/02/2030", "120", "1.234.567,89", "duplicada", "https://sharepoint.interno/doc1", "dup"], // duplicada
-  ["PA-2025/006", "Número ambíguo de itens", "TI", "", "", "", "", "05/01/2026", "10/02/2030", "3.054", "2.500,00", "3.054 deve virar 3054 com aviso", "", ""],
-];
+function n(value: number | null | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
 
-const wb = XLSX.utils.book_new();
-const ws1 = XLSX.utils.aoa_to_sheet(linhasIndiretos);
-XLSX.utils.book_append_sheet(wb, ws1, "Dados");
-XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Aba vazia"]]), "Resumo");
-const xlsxB64 = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+function groupKey(...values: string[]) {
+  return values.join("\u0000");
+}
 
-// Converte as linhas em Record<header, value> simulando o que o cliente enviaria
-function linhasParaObjetos(linhas, headerRowIdx) {
-  const headers = linhas[headerRowIdx];
-  return linhas.slice(headerRowIdx + 1).filter((r) => r.some((c) => c !== "" && c != null)).map((r) => {
-    const o = {};
-    headers.forEach((h, i) => (o[h] = r[i] ?? null));
-    return o;
+function areaKey(value: string | null | undefined): SnapshotArea | null {
+  if (!value) return null;
+  return AREA_KEYS[value.trim().toUpperCase()] ?? null;
+}
+
+function areaDisplay(value: SnapshotArea): string {
+  return value[0] + value.slice(1).toLowerCase();
+}
+
+function daysUntil(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+function emptyEvolution(area: string) {
+  return {
+    area,
+    concluidas_atas: 0,
+    concluidas_itens: 0,
+    andamento_atas: 0,
+    andamento_itens: 0,
+    saldo_itens: 0,
+    semsaldo_itens: 0,
+    vencidas_atas: 0,
+    vencidas_itens: 0,
+    a_vencer_atas: 0,
+    a_vencer_itens: 0,
+  };
+}
+
+function forecastBandDays(band: ForecastBand): number {
+  if (band === "vencidas") return -1;
+  if (band === "ate_15") return 7;
+  if (band === "ate_30") return 23;
+  if (band === "ate_60") return 45;
+  return 61;
+}
+
+function snapshotHas(snapshot: DashboardSnapshotPayload | null, key: string): boolean {
+  return Boolean(snapshot?.coverage.found.includes(key));
+}
+
+export async function getStaticDashboardData(): Promise<StaticDashboardData> {
+  const [rows, allDatasets, snapshotDatasets] = await Promise.all([
+    listActiveProcessRows(),
+    listDatasets(),
+    listSnapshotDatasets(),
+  ]);
+
+  const currentSnapshot = snapshotDatasets[0]?.snapshot ?? null;
+  // Antes de uma segunda importação, a referência fornecida para 28/09 mantém
+  // os três gráficos comparáveis. A partir da segunda leitura, o histórico real
+  // ocupa este lugar automaticamente.
+  const previousSnapshot = snapshotDatasets[1]?.snapshot ?? (currentSnapshot ? defaultPreviousSnapshot() : null);
+
+  const byArea = new Map<string, ProcessRow[]>();
+  for (const row of rows) {
+    const area = row.area ?? "Não informado";
+    const current = byArea.get(area) ?? [];
+    current.push(row);
+    byArea.set(area, current);
+  }
+
+  const valueOf = (list: ProcessRow[], key: keyof ProcessRow) =>
+    list.reduce((sum, row) => sum + n(row[key] as number | null), 0);
+
+  const baseKpis = {
+    processos: rows.length,
+    valorTotal: valueOf(rows, "valor"),
+    itens: valueOf(rows, "quantidade"),
+    concluidosAtas: rows.filter((r) => r.situacao_norm === "concluido").length,
+    concluidosItens: rows.filter((r) => r.situacao_norm === "concluido").reduce((s, r) => s + n(r.quantidade), 0),
+    saldoAtas: rows.filter((r) => r.status_consumo === "Com Saldo").length,
+    saldoItens: rows.filter((r) => r.status_consumo === "Com Saldo").reduce((s, r) => s + n(r.quantidade), 0),
+    consumidoAtas: rows.filter((r) => r.status_consumo === "Consumido").length,
+    consumidoItens: rows.filter((r) => r.status_consumo === "Consumido").reduce((s, r) => s + n(r.quantidade), 0),
+    aVencerAtas: rows.filter((r) => r.situacao === "a_vencer").length,
+    aVencerItens: rows.filter((r) => r.situacao === "a_vencer").reduce((s, r) => s + n(r.quantidade), 0),
+    vencidasAtas: rows.filter((r) => r.situacao === "vencido").length,
+    vencidasItens: rows.filter((r) => r.situacao === "vencido").reduce((s, r) => s + n(r.quantidade), 0),
+    vencidasVencerAtas: rows.filter((r) => r.situacao === "vencido" || r.situacao === "a_vencer").length,
+    vencidasVencerItens: rows
+      .filter((r) => r.situacao === "vencido" || r.situacao === "a_vencer")
+      .reduce((s, r) => s + n(r.quantidade), 0),
+  };
+
+  const baseAreaRows = new Map<SnapshotArea, ProcessRow[]>();
+  for (const area of SNAPSHOT_AREAS) baseAreaRows.set(area, []);
+  for (const [name, areaRows] of byArea) {
+    const key = areaKey(name);
+    if (key) baseAreaRows.set(key, [...(baseAreaRows.get(key) ?? []), ...areaRows]);
+  }
+
+  const baseEvolution = new Map<SnapshotArea, ReturnType<typeof emptyEvolution>>();
+  for (const area of SNAPSHOT_AREAS) {
+    const areaRows = baseAreaRows.get(area) ?? [];
+    const concluidas = areaRows.filter((r) => r.situacao_norm === "concluido");
+    const andamento = areaRows.filter((r) => r.situacao_norm === null);
+    const vencidas = areaRows.filter((r) => r.situacao === "vencido");
+    const aVencer = areaRows.filter((r) => r.situacao === "a_vencer");
+    baseEvolution.set(area, {
+      area: areaDisplay(area),
+      concluidas_atas: concluidas.length,
+      concluidas_itens: concluidas.reduce((s, r) => s + n(r.quantidade), 0),
+      andamento_atas: andamento.length,
+      andamento_itens: andamento.reduce((s, r) => s + n(r.quantidade), 0),
+      saldo_itens: areaRows.filter((r) => r.status_consumo === "Com Saldo").reduce((s, r) => s + n(r.quantidade), 0),
+      semsaldo_itens: areaRows.filter((r) => r.status_consumo === "Sem Saldo").reduce((s, r) => s + n(r.quantidade), 0),
+      vencidas_atas: vencidas.length,
+      vencidas_itens: vencidas.reduce((s, r) => s + n(r.quantidade), 0),
+      a_vencer_atas: aVencer.length,
+      a_vencer_itens: aVencer.reduce((s, r) => s + n(r.quantidade), 0),
+    });
+  }
+
+  const currentEvolution = baseEvolution;
+  if (currentSnapshot && snapshotHas(currentSnapshot, "evolucao")) {
+    for (const area of SNAPSHOT_AREAS) {
+      const source = currentSnapshot.evolucao[area];
+      const target = currentEvolution.get(area)!;
+      target.concluidas_atas = source.concluidasAtas ?? target.concluidas_atas;
+      target.concluidas_itens = source.concluidasItens ?? target.concluidas_itens;
+      target.andamento_atas = source.andamentoAtas ?? target.andamento_atas;
+      target.andamento_itens = source.andamentoItens ?? target.andamento_itens;
+      target.saldo_itens = source.saldoItens ?? target.saldo_itens;
+      target.semsaldo_itens = source.semSaldoItens ?? target.semsaldo_itens;
+      target.vencidas_atas = source.vencidasAtas ?? target.vencidas_atas;
+      target.vencidas_itens = source.vencidasItens ?? target.vencidas_itens;
+      target.a_vencer_atas = source.aVencerAtas ?? target.a_vencer_atas;
+      target.a_vencer_itens = source.aVencerItens ?? target.a_vencer_itens;
+    }
+  }
+
+  const kpis = { ...baseKpis };
+  if (currentSnapshot && snapshotHas(currentSnapshot, "kpis-leitura")) {
+    kpis.concluidosAtas = currentSnapshot.kpis.concluidasAtas ?? kpis.concluidosAtas;
+    kpis.concluidosItens = currentSnapshot.kpis.concluidasItens ?? kpis.concluidosItens;
+    kpis.saldoItens = currentSnapshot.kpis.saldoItens ?? kpis.saldoItens;
+    kpis.consumidoItens = currentSnapshot.kpis.consumidoItens ?? kpis.consumidoItens;
+    kpis.aVencerAtas = currentSnapshot.kpis.aVencerAtas ?? kpis.aVencerAtas;
+    kpis.aVencerItens = currentSnapshot.kpis.aVencerItens ?? kpis.aVencerItens;
+    kpis.vencidasAtas = currentSnapshot.kpis.vencidasAtas ?? kpis.vencidasAtas;
+    kpis.vencidasItens = currentSnapshot.kpis.vencidasItens ?? kpis.vencidasItens;
+    kpis.vencidasVencerAtas = kpis.aVencerAtas + kpis.vencidasAtas;
+    kpis.vencidasVencerItens = kpis.aVencerItens + kpis.vencidasItens;
+  }
+
+  const porArea = SNAPSHOT_AREAS.map((key) => {
+    const areaRows = baseAreaRows.get(key) ?? [];
+    const source = currentSnapshot?.valueAreas[key];
+    const evolution = currentEvolution.get(key)!;
+    const totalFromTop = currentSnapshot?.topCompradores[key]?.totalAtasArea ?? null;
+    const processos = totalFromTop ?? ((evolution.concluidas_atas + evolution.andamento_atas) || areaRows.length);
+    return {
+      area: areaDisplay(key),
+      processos,
+      valor: source?.valor ?? valueOf(areaRows, "valor"),
+      valorSaving: source?.valorSaving ?? source?.valor ?? valueOf(areaRows, "valor"),
+      saving_hist: source?.savingHist ?? valueOf(areaRows, "saving_hist"),
+      saving_prop: source?.savingProp ?? valueOf(areaRows, "saving_prop"),
+      reducao_hist_pct: source?.reducaoHistPct ?? null,
+      reducao_prop_pct: source?.reducaoPropPct ?? null,
+    };
+  });
+
+  // Quando a planilha consolidada é a única fonte, os totais do painel vêm
+  // dos blocos explícitos, não da contagem de linhas operacionais (que pode ser
+  // zero em uma importação somente de métricas).
+  if (currentSnapshot) {
+    kpis.processos = porArea.reduce((sum, area) => sum + area.processos, 0);
+    kpis.valorTotal = porArea.reduce((sum, area) => sum + area.valor, 0);
+    kpis.itens = [...currentEvolution.values()].reduce((sum, area) => sum + area.concluidas_itens + area.andamento_itens, 0);
+  }
+
+  const genericBuyerGroups = new Map<string, { area: string; responsavel: string; atas: number; itens: number; totalAtasArea: number | null }>();
+  for (const row of rows) {
+    const responsavel = row.responsavel?.trim();
+    if (!responsavel) continue;
+    const area = row.area ?? "Não informado";
+    const key = groupKey(area, responsavel);
+    const current = genericBuyerGroups.get(key) ?? { area, responsavel, atas: 0, itens: 0, totalAtasArea: null };
+    current.atas += 1;
+    current.itens += n(row.quantidade);
+    genericBuyerGroups.set(key, current);
+  }
+  let topCompradores = [...genericBuyerGroups.values()]
+    .sort((a, b) => b.itens - a.itens || b.atas - a.atas)
+    .reduce((acc, item) => {
+      const count = acc.filter((x) => x.area === item.area).length;
+      if (count < 5) acc.push(item);
+      return acc;
+    }, [] as Array<{ area: string; responsavel: string; atas: number; itens: number; totalAtasArea: number | null }>);
+  if (currentSnapshot && snapshotHas(currentSnapshot, "top-compradores")) {
+    topCompradores = SNAPSHOT_AREAS.flatMap((area) => currentSnapshot.topCompradores[area].buyers.map((buyer) => ({
+      area: areaDisplay(area),
+      responsavel: buyer.name,
+      atas: buyer.atas,
+      itens: buyer.itens,
+      totalAtasArea: currentSnapshot.topCompradores[area].totalAtasArea,
+    })));
+  }
+
+  // O panorama usa exclusivamente a tabela FORNECEDORES GERAL. Não há
+  // fallback para agrupar fornecedores dos registros operacionais, pois isso
+  // troca a base consolidada da planilha por uma contagem parcial/por área.
+  const fornecedores: StaticDashboardData["fornecedores"] = currentSnapshot && snapshotHas(currentSnapshot, "fornecedores")
+    ? (currentSnapshot.fornecedoresGeral ?? []).map((item) => ({
+        area: "Geral",
+        fornecedor: item.fornecedor,
+        atas: item.qtdAtas ?? 0,
+        itens: item.qtdItens ?? 0,
+        concentracao: item.concentracaoPct ?? 0,
+        analise: item.analise,
+      }))
+    : [];
+
+  const renewalGroups = new Map<string, { area: string; status: string; atas: number; itens: number }>();
+  for (const row of rows) {
+    const key = groupKey(row.area ?? "Não informado", row.status_renovacao ?? "Outros");
+    const current = renewalGroups.get(key) ?? { area: row.area ?? "Não informado", status: row.status_renovacao ?? "Outros", atas: 0, itens: 0 };
+    current.atas += 1;
+    current.itens += n(row.quantidade);
+    renewalGroups.set(key, current);
+  }
+
+  const forecastGroups = new Map<string, { area: string; responsavel: string; data_previsao: string; dias: number; atas: number; itens: number; band?: ForecastBand }>();
+  for (const row of rows) {
+    if (row.situacao_norm !== null || !row.data_previsao) continue;
+    const area = row.area ?? "Não informado";
+    const responsavel = row.responsavel ?? "Não informado";
+    const key = groupKey(area, responsavel, row.data_previsao);
+    const current = forecastGroups.get(key) ?? { area, responsavel, data_previsao: row.data_previsao, dias: daysUntil(row.data_previsao), atas: 0, itens: 0 };
+    current.atas += 1;
+    current.itens += n(row.quantidade);
+    forecastGroups.set(key, current);
+  }
+  let previsoes = [...forecastGroups.values()].sort((a, b) => a.dias - b.dias);
+  if (currentSnapshot && (snapshotHas(currentSnapshot, "previsao-faixas") || snapshotHas(currentSnapshot, "previsoes-cruzadas"))) {
+    const snapshotForecast: typeof previsoes = [];
+    // O panorama não exibe previsões canceladas ou finalizadas, mesmo quando
+    // essas faixas existirem no snapshot importado.
+    for (const band of ["acima_60", "ate_15", "ate_30", "ate_60", "vencidas"] as ForecastBand[]) {
+      for (const area of SNAPSHOT_AREAS) {
+        const source = currentSnapshot.previsoes[band][area];
+        const totalAtas = source.atas ?? 0;
+        const totalItens = source.itens ?? 0;
+        const listedAtas = source.buyers.reduce((sum, buyer) => sum + buyer.atas, 0);
+        const listedItens = source.buyers.reduce((sum, buyer) => sum + buyer.itens, 0);
+        for (const buyer of source.buyers) {
+          snapshotForecast.push({
+            area: areaDisplay(area),
+            responsavel: buyer.name,
+            data_previsao: buyer.prazoConclusao ?? "",
+            dias: buyer.prazoConclusao && /^\d{4}-\d{2}-\d{2}$/.test(buyer.prazoConclusao)
+              ? daysUntil(buyer.prazoConclusao)
+              : forecastBandDays(band),
+            atas: buyer.atas,
+            itens: buyer.itens,
+            band,
+          });
+        }
+        // Mantém os totais exatos da tabela de faixas mesmo quando a planilha
+        // de compradores possui somente parte das linhas detalhadas.
+        if (totalAtas !== listedAtas || totalItens !== listedItens) {
+          snapshotForecast.push({
+            area: areaDisplay(area),
+            responsavel: "",
+            data_previsao: "",
+            dias: forecastBandDays(band),
+            atas: Math.max(0, totalAtas - listedAtas),
+            itens: Math.max(0, totalItens - listedItens),
+            band,
+          });
+        }
+      }
+    }
+    previsoes = snapshotForecast;
+  }
+
+  const hasData = rows.length > 0 || Boolean(currentSnapshot);
+  const savingTotal = currentSnapshot && snapshotHas(currentSnapshot, "saving")
+    ? {
+        valorSaving: currentSnapshot.savingTotal.valorSaving ?? porArea.reduce((sum, area) => sum + area.valorSaving, 0),
+        saving_hist: currentSnapshot.savingTotal.savingHist ?? porArea.reduce((sum, area) => sum + area.saving_hist, 0),
+        saving_prop: currentSnapshot.savingTotal.savingProp ?? porArea.reduce((sum, area) => sum + area.saving_prop, 0),
+        reducao_hist_pct: currentSnapshot.savingTotal.reducaoHistPct,
+        reducao_prop_pct: currentSnapshot.savingTotal.reducaoPropPct,
+      }
+    : null;
+  const snapshotHistory = snapshotDatasets.map((dataset) => ({
+    id: dataset.id,
+    referenceDate: dataset.referenceDate,
+    importedAt: dataset.importedAt,
+    status: dataset.status,
+    coverage: dataset.snapshot?.coverage.found ?? [],
+  }));
+
+  return {
+    geradoEm: new Date().toISOString(),
+    hasData,
+    currentSnapshot,
+    previousSnapshot,
+    savingTotal,
+    snapshotHistory,
+    kpis,
+    porArea,
+    topCompradores,
+    fornecedores,
+    evolucao: [...currentEvolution.values()],
+    renovacoes: [...renewalGroups.values()].sort((a, b) => a.area.localeCompare(b.area) || a.status.localeCompare(b.status)),
+    previsoes,
+    datasets: allDatasets.map(formatStoredDataset),
+  };
+}
+
+export async function getStaticBaseSummary() {
+  const data = await getStaticDashboardData();
+  const active = await listActiveDatasets();
+  const references = active.map((d) => d.referenceDate).filter(Boolean) as string[];
+  return {
+    hasData: data.hasData,
+    referenceDate: references.sort().reverse()[0] ?? data.currentSnapshot?.referenceDate ?? null,
+    activeCount: active.length,
+    processCount: data.kpis.processos,
+  };
+}
+````
+
+### `src/lib/static-store.ts`
+
+````typescript
+import {
+  situacaoPrazo,
+  type CleanRecord,
+  type DatasetKind,
+  type DatasetNatureza,
+  type ImportMode,
+  type Issue,
+  type SituacaoChave,
+} from "@/lib/domain";
+import type { DashboardSnapshotPayload } from "@/lib/dashboard-snapshot";
+
+/**
+ * Persistência local para a versão publicada no GitHub Pages.
+ *
+ * GitHub Pages não oferece API nem PostgreSQL. Para manter a importação
+ * funcional, os datasets ficam no IndexedDB do navegador do usuário. Isso
+ * preserva os registros entre visitas no mesmo navegador, mas não sincroniza
+ * dados entre pessoas, dispositivos ou o SharePoint.
+ */
+
+export const STATIC_DATA_EVENT = "giro:base-updated";
+const DB_NAME = "giro-de-atas-static";
+const DB_VERSION = 2;
+const DATASETS_STORE = "datasets";
+const DOCUMENTS_STORE = "documents";
+
+export interface StoredDataset {
+  id: number;
+  kind: DatasetKind;
+  natureza: DatasetNatureza;
+  fileName: string;
+  sheetName: string | null;
+  referenceDate: string | null;
+  importedAt: string;
+  status: "active" | "superseded";
+  mode: ImportMode;
+  rowCount: number;
+  validCount: number;
+  skippedCount: number;
+  dupCount: number;
+  warningCount: number;
+  report: {
+    issues: Issue[];
+    issuesTotal: number;
+  };
+  records: CleanRecord[];
+  /** Leitura explícita dos blocos do painel; permanece no histórico local. */
+  snapshot: DashboardSnapshotPayload | null;
+}
+
+export interface StoredDocument {
+  id: number;
+  titulo: string;
+  url: string;
+  categoria: string;
+  descricao: string | null;
+  createdAt: string;
+}
+
+export interface SaveDatasetInput {
+  kind: DatasetKind;
+  natureza: DatasetNatureza;
+  fileName: string;
+  sheetName: string | null;
+  referenceDate: string | null;
+  importMode: ImportMode;
+  rowCount: number;
+  result: {
+    records: CleanRecord[];
+    issues: Issue[];
+    skipped: number;
+    duplicates: number;
+    warnings: number;
+  };
+  snapshot?: DashboardSnapshotPayload | null;
+}
+
+export interface ProcessRow {
+  id: string;
+  dataset_id: number;
+  area: string | null;
+  numero: string;
+  objeto: string;
+  unidade: string | null;
+  fornecedor: string | null;
+  responsavel: string | null;
+  etapa: string | null;
+  situacao_fonte: string | null;
+  situacao_norm: "concluido" | "cancelado" | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  quantidade: number | null;
+  valor: number | null;
+  status_consumo: string | null;
+  saving_hist: number | null;
+  saving_prop: number | null;
+  status_renovacao: string | null;
+  data_previsao: string | null;
+  observacao: string | null;
+  link: string | null;
+  source_row: number | null;
+  extra: Record<string, string> | null;
+  dias: number | null;
+  situacao: SituacaoChave;
+  file_name: string;
+  kind: string;
+  natureza: string;
+  reference_date: string | null;
+  imported_at: string;
+}
+
+function assertBrowser() {
+  if (typeof window === "undefined" || typeof indexedDB === "undefined") {
+    throw new Error("O armazenamento local só está disponível no navegador.");
+  }
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+  assertBrowser();
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(request.error ?? new Error("Não foi possível abrir o armazenamento local."));
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DATASETS_STORE)) {
+        db.createObjectStore(DATASETS_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(DOCUMENTS_STORE)) {
+        db.createObjectStore(DOCUMENTS_STORE, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
   });
 }
 
-const rowsIndiretos = linhasParaObjetos(linhasIndiretos, 1);
-const mappingIndiretos = {
-  numero: "Processo", objeto: "Descrição do Objeto", unidade: "Setor Requisitante",
-  fornecedor: "Empresa Vencedora", responsavel: "Comprador Resp.", etapa: "Fase Atual",
-  situacao: "Situação Atual", data_inicio: "Data Abertura", data_fim: "Vigência Final",
-  quantidade: "Qtd Itens", valor: "Valor Estimado R$", observacao: "Notas Gerais", link: "Endereço SP",
-};
-
-// CSV ; com acentos e decimais por vírgula (texto simulando SheetJS)
-const csvRows = [
-  { "Nº da Ata": "ATA-77/2026", "Objeto": "Cromatógrafo gasoso — manutenção", "Responsável": "José Álvares", "Validade": "31/12/2030", "Valor (R$)": "10.500,75", "Qtd": "1", "Situação": "Em andamento" },
-  { "Nº da Ata": "ATA-78/2026", "Objeto": "Autoclave vertical 75 L", "Responsável": "José Álvares", "Validade": "15/08/2025", "Valor (R$)": "92.300,00", "Qtd": "2", "Situação": "Em andamento" },
-  { "Nº da Ata": "ATA-79/2026", "Objeto": "Água ultrapura tipo I — 5.000 L", "Responsável": "Maria Pinhão", "Validade": "20/09/2026", "Valor (R$)": "7.800,00", "Qtd": "10", "Situação": "" },
-];
-const mappingCsv = { numero: "Nº da Ata", objeto: "Objeto", responsavel: "Responsável", data_fim: "Validade", valor: "Valor (R$)", quantidade: "Qtd", situacao: "Situação" };
-
-/* ------------------------------ testes ------------------------------ */
-
-console.log("\n— Saúde e estado inicial —");
-{
-  const h = await (await fetch(`${BASE}/api/health`)).json();
-  assert.equal(h.ok, true);
-  ok("GET /api/health → ok");
-
-  const d = await (await fetch(`${BASE}/api/dashboard`)).json();
-  assert.equal(d.hasData, false);
-  ok("Panorama vazio reporta hasData=false (sem números fictícios)");
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Falha no armazenamento local."));
+  });
 }
 
-console.log("\n— Importação XLSX (multi-abas, título antes do cabeçalho, BR) —");
-let datasetId1;
-{
-  const payload = {
-    fileName: `indiretos-${MARCADOR}.xlsx`, sheetName: "Dados", kind: "indiretos",
-    natureza: "operacional", importMode: "replace", referenceDate: "2026-01-20",
-    mapping: mappingIndiretos, rows: rowsIndiretos,
-  };
-  const v = await (await fetch(`${BASE}/api/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: "validate", ...payload }) })).json();
-  assert.equal(v.resumo.validos, 5, `esperava 5 válidas, veio ${v.resumo.validos}`);
-  assert.equal(v.resumo.ignoradas, 2, `esperava 2 ignoradas (1 obrigatória + 1 duplicada)`);
-  assert.ok(v.resumo.avisos >= 1, "esperava aviso (3.054/ano/etc.)");
-  ok(`validate: ${v.resumo.validos} válidas, ${v.resumo.ignoradas} ignoradas, ${v.resumo.avisos} avisos`);
-
-  const c = await (await fetch(`${BASE}/api/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: "commit", ...payload }) })).json();
-  assert.equal(c.ok, true);
-  datasetId1 = c.datasetId;
-  ok("commit: base indiretos gravada");
-
-  const rec = (await (await fetch(`${BASE}/api/processos?q=PA-2025/001`)).json());
-  assert.equal(rec.total, 1);
-  const r = rec.rows[0];
-  assert.equal(r.area, "Indiretos");
-  assert.equal(r.valor, 1234567.89);
-  assert.equal(r.quantidade, 120);
-  assert.ok(r.extra && r.extra["Coluna Livre"] === "texto livre A", "coluna não mapeada preservada em extra");
-  ok("registro gravado com área padrão, valor BR e coluna extra preservada");
-
-  const amb = (await (await fetch(`${BASE}/api/processos?q=PA-2025/006`)).json());
-  assert.equal(amb.rows[0].quantidade, 3054);
-  ok("'3.054' interpretado como 3054 (milhar pt-BR) — aviso registrado no relatório");
-}
-
-console.log("\n— Importação CSV (; acentos, vírgula decimal) —");
-let datasetId2;
-{
-  const payload = {
-    fileName: `atas-capex-${MARCADOR}.csv`, sheetName: null, kind: "capex",
-    natureza: "operacional", importMode: "replace", referenceDate: "2026-01-22",
-    mapping: mappingCsv, rows: csvRows,
-  };
-  const c = await (await fetch(`${BASE}/api/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: "commit", ...payload }) })).json();
-  assert.equal(c.ok, true);
-  datasetId2 = c.datasetId;
-  ok("commit: base capex gravada (3 linhas)");
-}
-
-console.log("\n— Panorama e consistência —");
-{
-  const d = await (await fetch(`${BASE}/api/dashboard`)).json();
-  assert.equal(d.hasData, true);
-  assert.equal(d.kpis.processos, 8);
-  assert.equal(d.kpis.concluido, 1);
-  assert.equal(d.kpis.cancelado, 1);
-  assert.ok(d.porArea.some((a) => a.area === "CAPEX" && a.processos === 3));
-  console.log(`  · vencidos=${d.kpis.vencido} a_vencer=${d.kpis.a_vencer} sem_data=${d.kpis.sem_data} valor=${d.kpis.valorTotal}`);
-  ok("panorama soma as duas bases ativas (8 processos; 1 concluído; 1 cancelado)");
-}
-
-console.log("\n— Busca, filtros, ordenação, paginação —");
-{
-  const q = await (await fetch(`${BASE}/api/processos?q=CROMATÓGRAFO`)).json();
-  assert.equal(q.total, 1, "busca deve ignorar acentos");
-  const q2 = await (await fetch(`${BASE}/api/processos?q=cromatografo`)).json();
-  assert.equal(q2.total, 1);
-  ok("busca sem acento encontra texto acentuado (e vice-versa)");
-
-  const f = await (await fetch(`${BASE}/api/processos?area=CAPEX&situacao=vencido`)).json();
-  assert.ok(f.rows.every((r) => r.area === "CAPEX" && r.situacao === "vencido"));
-  ok(`filtros combinados área+situação (${f.total} resultado(s))`);
-
-  const s = await (await fetch(`${BASE}/api/processos?sort=valor&dir=desc&pageSize=10`)).json();
-  const valores = s.rows.map((r) => r.valor ?? -1);
-  assert.deepEqual(valores, [...valores].sort((a, b) => b - a));
-  ok("ordenação por valor decrescente");
-
-  const p1 = await (await fetch(`${BASE}/api/processos?pageSize=5&page=1`)).json();
-  const p2 = await (await fetch(`${BASE}/api/processos?pageSize=5&page=2`)).json();
-  assert.equal(p1.rows.length, 5);
-  assert.equal(p2.rows.length, 3);
-  assert.notDeepEqual(p1.rows.map((r) => r.id), p2.rows.map((r) => r.id));
-  ok("paginação 5 por página (5 + 3)");
-
-  const facets = await (await fetch(`${BASE}/api/processos?facets=1`)).json();
-  assert.ok(facets.facets.areas.length >= 2 && facets.facets.etapas.length >= 1);
-  ok("facetas de área e etapa disponíveis");
-}
-
-console.log("\n— Exportação CSV —");
-{
-  const res = await fetch(`${BASE}/api/processos/export?area=CAPEX`);
-  const buf = await res.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  assert.equal(res.headers.get("content-type").includes("text/csv"), true);
-  assert.ok(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf, "BOM UTF-8 presente (Excel)");
-  const text = new TextDecoder().decode(bytes.subarray(3));
-  assert.ok(text.includes("ATA-77/2026") && !text.includes("PA-2025/001"));
-  assert.ok(text.includes(";"));
-  ok("CSV filtrado por área, com BOM e separador ';'");
-}
-
-console.log("\n— Documentos —");
-{
-  const c = await fetch(`${BASE}/api/documentos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titulo: `Manual ${MARCADOR}`, url: "https://sharepoint.interno/manual", categoria: "Manual", descricao: "doc de teste" }) });
-  assert.equal(c.status, 201);
-  const { documento } = await c.json();
-
-  const bad = await fetch(`${BASE}/api/documentos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ titulo: "x", url: "javascript:alert(1)" }) });
-  assert.equal(bad.status, 400);
-
-  const del = await fetch(`${BASE}/api/documentos?id=${documento.id}`, { method: "DELETE" });
-  assert.equal(del.status, 200);
-  ok("cadastro, validação de URL e exclusão de documento");
-}
-
-console.log("\n— Substituição de base (replace mantém histórico) —");
-{
-  const payload = {
-    fileName: `indiretos-${MARCADOR}-v2.xlsx`, sheetName: "Dados", kind: "indiretos",
-    natureza: "operacional", importMode: "replace", referenceDate: "2026-01-27",
-    mapping: mappingIndiretos, rows: rowsIndiretos.slice(0, 2), // só 2 linhas
-  };
-  const c = await (await fetch(`${BASE}/api/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: "commit", ...payload }) })).json();
-  assert.equal(c.ok, true);
-
-  const ds = (await (await fetch(`${BASE}/api/datasets`)).json()).datasets;
-  const inds = ds.filter((d) => d.kind === "indiretos");
-  assert.equal(inds.filter((d) => d.status === "active").length, 1);
-  assert.equal(inds.filter((d) => d.status === "superseded").length, 1);
-
-  const d = await (await fetch(`${BASE}/api/dashboard`)).json();
-  assert.equal(d.variacoes.length, 1);
-  const v = d.variacoes[0];
-  assert.equal(v.atual, 2); // 2 linhas válidas no arquivo v2
-  assert.equal(v.anterior, 5);
-  ok(`substituição arquiva a anterior e gera variação (${v.anterior} → ${v.atual})`);
-}
-
-console.log("\n— Limpeza (remove dados de teste) —");
-{
-  const ds = (await (await fetch(`${BASE}/api/datasets`)).json()).datasets;
-  for (const d of ds) {
-    if (d.file_name.includes(MARCADOR)) {
-      await fetch(`${BASE}/api/datasets?id=${d.id}`, { method: "DELETE" });
-    }
+async function readAll<T>(storeName: string): Promise<T[]> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(storeName, "readonly");
+    return await requestResult(tx.objectStore(storeName).getAll() as IDBRequest<T[]>);
+  } finally {
+    db.close();
   }
-  const d = await (await fetch(`${BASE}/api/dashboard`)).json();
-  assert.equal(d.hasData, false);
-  for (const id of [datasetId1, datasetId2]) {
-    const r = await fetch(`${BASE}/api/datasets?id=${id}`, { method: "DELETE" }).catch(() => null);
-    void r;
-  }
-  ok("ambiente de teste limpo (banco volta ao estado vazio)");
 }
 
-console.log(`\n✔ Todos os grupos de teste passaram (${passou} verificações).\n`);
-```
+async function put<T>(storeName: string, value: T): Promise<void> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).put(value);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Falha ao salvar no armazenamento local."));
+      tx.onabort = () => reject(tx.error ?? new Error("Operação cancelada no armazenamento local."));
+    });
+  } finally {
+    db.close();
+  }
+}
 
----
+async function deleteById(storeName: string, id: number): Promise<void> {
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).delete(id);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Falha ao excluir do armazenamento local."));
+      tx.onabort = () => reject(tx.error ?? new Error("Operação cancelada no armazenamento local."));
+    });
+  } finally {
+    db.close();
+  }
+}
 
-> **Nota:** Os componentes `documents-manager.tsx`, `import-wizard.tsx`, `processos-browser.tsx` e `ui.tsx` contêm o código completo exibido na leitura acima. Devido ao tamanho extenso, seus códigos completos estão preservados no repositório GitHub: https://github.com/lucasdorta-a11y/Atas
+export async function listDatasets(): Promise<StoredDataset[]> {
+  const rows = await readAll<StoredDataset>(DATASETS_STORE);
+  return rows.sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+}
 
+export async function listActiveDatasets(): Promise<StoredDataset[]> {
+  const rows = await listDatasets();
+  return rows.filter((d) => d.status === "active");
+}
 
+/** Snapshots ativos e arquivados, em ordem do mais recente para o mais antigo. */
+export async function listSnapshotDatasets(): Promise<StoredDataset[]> {
+  const rows = await listDatasets();
+  return rows.filter((dataset) => Boolean(dataset.snapshot)).sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+}
 
----
+export async function saveDataset(input: SaveDatasetInput): Promise<StoredDataset> {
+  const existing = await listDatasets();
+  const id = existing.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+  const now = new Date().toISOString();
 
-## CI/CD (GitHub Pages)
+  const superseded = [
+    ...(input.importMode === "replace"
+      ? existing
+          .filter((item) => item.status === "active" && item.kind === input.kind)
+          .map((item) => ({ ...item, status: "superseded" as const }))
+      : []),
+    // Snapshot é uma série única do painel: ao importar uma nova leitura,
+    // a leitura anterior continua no histórico e deixa de ser a ativa.
+    ...(input.snapshot
+      ? existing
+          .filter((item) => item.status === "active" && item.snapshot)
+          .filter((item) => !existing.some((candidate) => candidate.id === item.id && candidate.status === "superseded"))
+          .map((item) => ({ ...item, status: "superseded" as const }))
+      : []),
+  ].filter((item, index, list) => list.findIndex((candidate) => candidate.id === item.id) === index);
 
-### .github/workflows/deploy.yml
+  const dataset: StoredDataset = {
+    id,
+    kind: input.kind,
+    natureza: input.natureza,
+    fileName: input.fileName,
+    sheetName: input.sheetName,
+    referenceDate: input.referenceDate,
+    importedAt: now,
+    status: "active",
+    mode: input.importMode,
+    rowCount: input.rowCount,
+    validCount: input.result.records.length,
+    skippedCount: input.result.skipped,
+    dupCount: input.result.duplicates,
+    warningCount: input.result.warnings,
+    report: {
+      issues: input.result.issues.slice(0, 500),
+      issuesTotal: input.result.issues.length,
+    },
+    records: input.result.records,
+    snapshot: input.snapshot ?? null,
+  };
 
-> **Branch gh-pages:** Workflow que builda o Next.js em modo `output: "export"` e publica o diretório `out/` no GitHub Pages automaticamente a cada push.
+  // Uma única transação mantém a substituição e a nova base consistentes:
+  // se qualquer gravação falhar, nenhuma das alterações é confirmada.
+  const db = await openDatabase();
+  try {
+    const tx = db.transaction(DATASETS_STORE, "readwrite");
+    const store = tx.objectStore(DATASETS_STORE);
+    for (const previous of superseded) store.put(previous);
+    store.put(dataset);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Falha ao salvar a importação local."));
+      tx.onabort = () => reject(tx.error ?? new Error("Importação local cancelada."));
+    });
+  } finally {
+    db.close();
+  }
+  return dataset;
+}
 
-```yaml
-name: Deploy to GitHub Pages
+export async function deleteDataset(id: number): Promise<void> {
+  await deleteById(DATASETS_STORE, id);
+}
 
-on:
-  push:
-    branches: [gh-pages]
-  workflow_dispatch:
+export async function listActiveProcessRows(): Promise<ProcessRow[]> {
+  const datasets = await listActiveDatasets();
+  const rows: ProcessRow[] = [];
+  for (const dataset of datasets) {
+    dataset.records.forEach((record, index) => {
+      const prazo = situacaoPrazo(record.situacaoNorm, record.dataFim);
+      rows.push({
+        id: `${dataset.id}:${index}`,
+        dataset_id: dataset.id,
+        area: record.area,
+        numero: record.numero,
+        objeto: record.objeto,
+        unidade: record.unidade,
+        fornecedor: record.fornecedor,
+        responsavel: record.responsavel,
+        etapa: record.etapa,
+        situacao_fonte: record.situacaoFonte,
+        situacao_norm: record.situacaoNorm,
+        data_inicio: record.dataInicio,
+        data_fim: record.dataFim,
+        quantidade: record.quantidade,
+        valor: record.valor,
+        status_consumo: record.statusConsumo,
+        saving_hist: record.savingHist,
+        saving_prop: record.savingProp,
+        status_renovacao: record.statusRenovacao,
+        data_previsao: record.dataPrevisao,
+        observacao: record.observacao,
+        link: record.link,
+        source_row: record.sourceRow,
+        extra: record.extra,
+        dias: prazo.dias,
+        situacao: prazo.chave,
+        file_name: dataset.fileName,
+        kind: dataset.kind,
+        natureza: dataset.natureza,
+        reference_date: dataset.referenceDate,
+        imported_at: dataset.importedAt,
+      });
+    });
+  }
+  return rows;
+}
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+export async function listDocuments(): Promise<StoredDocument[]> {
+  const rows = await readAll<StoredDocument>(DOCUMENTS_STORE);
+  return rows.sort((a, b) => a.categoria.localeCompare(b.categoria) || a.titulo.localeCompare(b.titulo));
+}
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
+export async function createDocument(input: Omit<StoredDocument, "id" | "createdAt">): Promise<StoredDocument> {
+  const existing = await listDocuments();
+  const id = existing.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+  const document: StoredDocument = { ...input, id, createdAt: new Date().toISOString() };
+  await put(DOCUMENTS_STORE, document);
+  return document;
+}
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm install
-      - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./out
+export async function deleteDocument(id: number): Promise<void> {
+  await deleteById(DOCUMENTS_STORE, id);
+}
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
-```
+export function notifyStaticDataChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(STATIC_DATA_EVENT));
+}
 
-### public/.nojekyll
-
-> Arquivo vazio que impede o GitHub Pages de processar o diretório `_next/` com Jekyll (que ignoraria pastas com prefixo `_`).
-
-```
-(arquivo vazio — conteúdo é apenas uma quebra de linha)
-```
+export function formatStoredDataset(dataset: StoredDataset) {
+  return {
+    id: dataset.id,
+    kind: dataset.kind,
+    natureza: dataset.natureza,
+    file_name: dataset.fileName,
+    sheet_name: dataset.sheetName,
+    reference_date: dataset.referenceDate,
+    imported_at: dataset.importedAt,
+    status: dataset.status,
+    mode: dataset.mode,
+    row_count: dataset.rowCount,
+    valid_count: dataset.validCount,
+    skipped_count: dataset.skippedCount,
+    dup_count: dataset.dupCount,
+    warning_count: dataset.warningCount,
+    registros: dataset.records.length,
+    has_snapshot: Boolean(dataset.snapshot),
+    snapshot_coverage: dataset.snapshot?.coverage ?? null,
+    report: dataset.report,
+  };
+}
+````

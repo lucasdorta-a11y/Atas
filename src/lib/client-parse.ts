@@ -1,6 +1,6 @@
 /**
  * Leitura de arquivos .xlsx/.csv **no navegador** (nada é enviado a
- * serviços de terceiros; o o arquivo é processado localmente e, após a confirmação, os dados ficam no
+ * serviços de terceiros; o arquivo é processado localmente e, após a confirmação, os dados ficam no
  * IndexedDB deste navegador; não há envio automático para terceiros).
  */
 import * as XLSX from "xlsx";
