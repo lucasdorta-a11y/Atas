@@ -7,6 +7,10 @@ import { STATIC_DATA_EVENT } from "@/lib/static-store";
 import { SNAPSHOT_BLOCKS, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
+import { ResumoCards } from "@/components/resumo-cards";
+import { AtasConcluidas } from "@/components/atas-concluidas";
+import { FornecedoresAnalise } from "@/components/fornecedores-analise";
+import { StatusAtas } from "@/components/status-atas";
 import { EmptyState, PageHeader, areaStyle } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
 import clsx from "clsx";
@@ -115,18 +119,12 @@ export default function PanoramaPage() {
     );
   }
 
-  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos } = data;
+  const { kpis, porArea, topCompradores, fornecedores, evolucao, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos, atasConcluidas, statusAtas } = data;
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
   const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
   const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
   const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
-
-  // Helpers para o funil de renovação
-  const getRenov = (area: string, status: string) => {
-    const row = (renovacoes as any[]).find(r => r.area === area && r.status === status);
-    return { atas: row?.atas || 0, itens: row?.itens || 0 };
-  };
 
   const prevByBand = (area: string, band: ForecastBand) => {
     const key = area.toUpperCase() as SnapshotArea;
@@ -223,26 +221,37 @@ export default function PanoramaPage() {
         )}
       />
 
-      {/* Bloco 1: três gráficos da semana anterior e três da semana atual. */}
+      {/* Bloco 1: seis cards de resumo — semana anterior e semana atual. */}
       <section aria-labelledby="comparacao-semanal" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Leitura dos gráficos</h2>
+            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Resumo das atas</h2>
             <p className="mt-1 text-[12.5px] text-ink-soft">A semana anterior é preservada no IndexedDB deste navegador e substituída pela leitura imediatamente anterior após uma nova importação.</p>
           </div>
           <span className="rounded-full bg-navy-50 px-3 py-1 text-[12px] font-semibold text-navy-700">
             Referência anterior: {formatReferenceDate(previousSnapshot?.referenceDate)}
           </span>
         </div>
-        {previousSnapshot && <SnapshotCharts title={`Semana anterior · ${formatReferenceDate(previousSnapshot.referenceDate)}`} kpis={previousSnapshot.kpis} muted />}
+        {previousSnapshot && (
+          <ResumoCards
+            titulo="Resumo das Atas Concluídas"
+            status={`Status semana anterior ${formatShortDate(previousSnapshot.referenceDate)}`}
+            kpis={previousSnapshot.kpis}
+            tone="anterior"
+          />
+        )}
         {ausente("kpis-leitura") ? (
           <BlocoAusente bloco="kpis-leitura" referencia={referencia} />
         ) : (
-          <SnapshotCharts
-            title={`Semana atual${currentSnapshot?.referenceDate ? ` · ${formatReferenceDate(currentSnapshot.referenceDate)}` : ""}`}
+          <ResumoCards
+            titulo="Resumo das Atas Concluídas"
+            status={`Status atual ${formatShortDate(currentSnapshot?.referenceDate)}`}
+            tone="atual"
             kpis={{
               concluidasAtas: kpis.concluidosAtas,
               concluidasItens: kpis.concluidosItens,
+              andamentoAtas: kpis.andamentoAtas,
+              andamentoItens: kpis.andamentoItens,
               saldoItens: kpis.saldoItens,
               consumidoItens: kpis.consumidoItens,
               aVencerAtas: kpis.aVencerAtas,
@@ -251,6 +260,19 @@ export default function PanoramaPage() {
               vencidasItens: kpis.vencidasItens,
             }}
           />
+        )}
+      </section>
+
+      {/* Bloco 1b: atas que passaram a FINALIZADO desde a importação anterior. */}
+      <section aria-labelledby="atas-concluidas-recentes" className="space-y-4">
+        <div>
+          <h2 id="atas-concluidas-recentes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Atas Concluídas desde a Última Atualização</h2>
+          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. O fornecedor vem da aba “Base - Controle de Contratos”, pelo nº do contrato.</p>
+        </div>
+        {ausente("atas-concluidas") ? (
+          <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
+        ) : (
+          <AtasConcluidas dados={atasConcluidas} referencia={referencia} />
         )}
       </section>
 
@@ -408,6 +430,7 @@ export default function PanoramaPage() {
             </table>
           </div>
           )}
+          {!ausente("fornecedores") && <FornecedoresAnalise fornecedores={fornecedores} />}
         </div>
       </section>
 
@@ -450,31 +473,15 @@ export default function PanoramaPage() {
         )}
       </section>
 
-      {/* Bloco 5: Status de Renovações (Ref: Screenshots 5, 6, 7 & 15, 16, 17) */}
-      <section>
-        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Status de Renovações</h2>
-        <div className="space-y-8">
-          {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
-            const naoIniciado = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Iniciado");
-            const naoRenov = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Será Renovado");
-            const novoProj = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Criado Novo Projeto");
-            const emRenov = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Em Renovação");
-
-            return (
-              <div key={area}>
-                <div className={clsx("w-full py-2 text-center text-white font-bold mb-3 tracking-wider", areaStyle(area).band)}>
-                  {area}
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-[12px]">
-                  <RenovBox title="NÃO INICIADO" data={naoIniciado} bg="bg-[#f0e6f5]" />
-                  <RenovBox title="NÃO SERÁ RENOVADO" data={naoRenov} bg="bg-[#f7e6e6]" />
-                  <RenovBox title="CRIADO NOVO PROJETO" data={novoProj} bg="bg-[#fbdca3]" />
-                  <RenovBox title="EM RENOVAÇÃO" data={emRenov} bg="bg-[#eaf5d8]" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Bloco 5: Status das Atas por área (aba dedicada da planilha). */}
+      <section aria-labelledby="status-das-atas">
+        <h2 id="status-das-atas" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-2">Status das Atas</h2>
+        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de cada área, vencimentos prioritários e distribuição por comprador(a), lidos da aba “Status das Atas” importada junto com o resumo.</p>
+        {ausente("status-atas") ? (
+          <BlocoAusente bloco="status-atas" referencia={referencia} />
+        ) : (
+          <StatusAtas areas={statusAtas} referencia={referencia} />
+        )}
       </section>
 
       {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
@@ -550,121 +557,12 @@ function formatReferenceDate(value: string | null | undefined): string {
   return new Date(year, month - 1, day).toLocaleDateString("pt-BR");
 }
 
-type SnapshotChartKpis = {
-  concluidasAtas: number | null;
-  concluidasItens: number | null;
-  saldoItens: number | null;
-  consumidoItens: number | null;
-  aVencerAtas: number | null;
-  aVencerItens: number | null;
-  vencidasAtas: number | null;
-  vencidasItens: number | null;
-};
-
-function SnapshotCharts({ title, kpis, muted = false }: { title: string; kpis: SnapshotChartKpis; muted?: boolean }) {
-  return (
-    <div className={clsx("rounded-2xl border p-4 sm:p-5", muted ? "border-line bg-navy-50/40" : "border-line bg-surface")}>
-      <h3 className="mb-4 text-[15px] font-bold uppercase tracking-wide text-navy-900">{title}</h3>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <MiniMetricChart
-          title="ATA CONCLUÍDAS (VÁLIDAS)"
-          groups={[{ label: "VÁLIDO", bars: [{ label: "ATAS", value: kpis.concluidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.concluidasItens, color: "#e06e1f" }] }]}
-        />
-        <MiniMetricChart
-          title="ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)"
-          groups={[{ label: "COM SALDO", bars: [{ label: "ITENS", value: kpis.saldoItens, color: "#0c2338" }] }, { label: "CONSUMIDO", bars: [{ label: "ITENS", value: kpis.consumidoItens, color: "#e06e1f" }] }]}
-        />
-        <MiniMetricChart
-          title="ATAS VENCIDAS E A VENCER"
-          groups={[{ label: "RENOVAR", bars: [{ label: "ATAS", value: kpis.aVencerAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.aVencerItens, color: "#e06e1f" }] }, { label: "VENCIDO", bars: [{ label: "ATAS", value: kpis.vencidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.vencidasItens, color: "#e06e1f" }] }]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function MiniMetricChart({ title, groups }: { title: string; groups: Array<{ label: string; bars: Array<{ label: string; value: number | null; color: string }> }> }) {
-  const max = Math.max(1, ...groups.flatMap((group) => group.bars.map((bar) => bar.value ?? 0)));
-  return (
-    <div className="rounded-xl border border-line bg-white p-3" aria-label={title}>
-      <h4 className="min-h-8 text-center text-[11px] font-bold uppercase leading-tight text-navy-900">{title}</h4>
-      <div className="mt-3 flex h-32 items-end justify-around gap-2 border-b border-line px-1">
-        {groups.map((group) => (
-          <div key={group.label} className="flex h-full flex-1 items-end justify-center gap-1">
-            {group.bars.map((bar) => {
-              const value = bar.value ?? 0;
-              return (
-                <div key={`${group.label}-${bar.label}`} className="flex h-full w-7 flex-col items-center justify-end">
-                  <span className="mb-1 text-[10px] font-bold text-navy-900">{fmtInt(value)}</span>
-                  <div className="w-full rounded-t-sm" style={{ height: `${Math.max(value ? 5 : 2, (value / max) * 78)}px`, backgroundColor: bar.color }} />
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex justify-around gap-2 text-center text-[9px] font-bold uppercase text-ink-soft">
-        {groups.map((group) => <span key={group.label} className="flex-1">{group.label}</span>)}
-      </div>
-      <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[9px] text-ink-soft">
-        {[...new Map(groups.flatMap((group) => group.bars.map((bar) => [bar.label, bar.color] as const))).entries()].map(([label, color]) => (
-          <span key={label} className="inline-flex items-center gap-1"><span className="h-2 w-2" style={{ backgroundColor: color }} aria-hidden="true" />{label}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function KpiChartCard({ title, bars, groupLabel }: { title: string, bars: { label: string, val: number, color: string }[], groupLabel?: string }) {
-  const max = Math.max(...bars.map(b => b.val), 1);
-  return (
-    <div className="card p-4 border border-line flex flex-col items-center justify-center">
-      <h3 className="text-[12px] font-bold text-neutral-500 uppercase tracking-wide text-center mb-6 h-8">{title}</h3>
-      <div className="flex items-end gap-2 h-24 mb-2 relative">
-        {bars.map((b, i) => (
-          <div key={b.label} className="flex flex-col items-center justify-end w-10">
-            <span className="text-[11px] font-bold text-white px-1 py-0.5 rounded-sm z-10" style={{ backgroundColor: b.color, transform: 'translateY(5px)' }}>
-              {b.val}
-            </span>
-            <div className="w-full" style={{ height: `${(b.val / max) * 60}px`, backgroundColor: b.color }} />
-          </div>
-        ))}
-      </div>
-      <div className="w-full border-t border-line mt-1 relative pt-2 text-center text-[10px] font-bold text-neutral-500">
-        {groupLabel ? groupLabel : (
-          <div className="flex gap-4 justify-center">
-            {bars.map(b => <span key={b.label}>{b.label}</span>)}
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col gap-1 mt-4 items-end w-full pr-4 text-[10px] font-bold text-neutral-500">
-        {bars.map(b => (
-          <div key={b.label} className="flex items-center gap-1.5">
-            <span className="w-2 h-2" style={{ backgroundColor: b.color }} />
-            {b.label}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RenovBox({ title, data, bg }: { title: string, data: { atas: number, itens: number }, bg: string }) {
-  return (
-    <div className="flex flex-col border border-line">
-      <div className="bg-navy-950 text-white font-bold py-2 px-1 text-[11px]">{title}</div>
-      <div className={clsx("flex-1 py-4 font-medium flex flex-col items-center justify-center min-h-[60px]", bg)}>
-        {data.atas === 0 && data.itens === 0 ? (
-          <span className="text-neutral-500">0</span>
-        ) : (
-          <>
-            <span className="text-navy-950">{fmtInt(data.atas)} ATAS</span>
-            <span className="text-navy-950">{fmtInt(data.itens)} ITENS</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
+/** dd/mm, como nos títulos dos cards do SharePoint. */
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "sem data";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
 }
 
 function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {

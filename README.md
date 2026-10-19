@@ -48,11 +48,20 @@ O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que correspo
 Para conferir uma planilha sem abrir o navegador, com Node.js 20+: o loader local transpila apenas os tipos necessários para os scripts.
 
 ```bash
-npm run extrair -- amostras/planilha.xlsx --ref=2026-10-14
-npm run panorama:dry-run -- amostras/planilha.xlsx --ref=2026-10-14
+# gera planilhas fictícias com o layout esperado (nomes e números inventados)
+npm run amostras
+
+# quais blocos são reconhecidos e com quais números
+npm run extrair -- amostras/semana-atual.xlsx --ref=2026-10-13
+
+# monta o StaticDashboardData completo que a tela usa
+npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
+
+# compara atas FINALIZADO com a importação anterior
+npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13 --anterior amostras/semana-anterior.xlsx --ref-anterior=2026-10-05
 ```
 
-Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução e previsões.
+Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução, previsões, atas concluídas e status das atas. A pasta `amostras/` é ignorada pelo Git.
 
 ## Publicação no GitHub Pages
 
@@ -91,15 +100,19 @@ A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. 
 
 As áreas usam uma paleta única em todo o painel: Indiretos verde-água (`#0b7c7b`), Diretos azul (`#0a6fd6`) e CAPEX laranja (`#fca500`). O botão de atualização reprocessa os dados do IndexedDB local sem backend.
 
-### Três gráficos e KPIs
+### Cards de resumo (semana anterior × semana atual)
 
 Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situação apresentada`, `ATAS` e `ITENS`. Os rótulos aceitos são:
 
 - `ATA CONCLUÍDAS (VÁLIDAS)` + `VÁLIDAS` → atas e itens concluídos;
-- `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e consumidos;
+- `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e sem saldo;
 - `ATAS VENCIDAS E A VENCER` + `A VENCER (RENOVAR)` ou `VENCIDAS` → atas/itens a vencer e vencidos.
 
-A comparação semanal mostra os três gráficos da semana anterior acima dos três da semana atual. A primeira referência exibida é 28/09, com os valores da captura fornecida (58/956, 877/80, 58/1.215 e 48/334). Depois de uma nova importação, a leitura anterior permanece no histórico e passa a ser automaticamente a semana anterior.
+O card `ATAS EM ANDAMENTO (GERAL)` pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esse quadro, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 05/10, com 58/956, 68/4.778, 877, 80, 48/334 e 58/1.215; novas importações passam a formar o histórico real.
+
+### Atas concluídas desde a última atualização
+
+Logo abaixo dos cards, o painel lista as atas que passaram a `FINALIZADO` desde a importação anterior, uma linha por ata: descrição, contrato, fornecedor, quantidade de itens, comprador(a), área e valor. A fonte é a aba `Base - Atas Em andamento`, com as colunas `DESCRIÇÃO DOS LOTES ATAS`, `QTD ITENS`, `COMPRADOR`, `AREA`, `ETAPA ATUAL` e `N° CONTRATO`. O fornecedor é resolvido pela aba `Base - Controle de Contratos`, usando `Contrato`, `Item` ou `Material` e `Fornecedor`; códigos finais entre parênteses são removidos. Na primeira leitura, todas as atas finalizadas são listadas; depois, só as chaves ausentes na importação anterior aparecem.
 
 ### Valores, saving e redução
 
@@ -115,9 +128,13 @@ A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as co
 
 ### Evolução e previsões
 
-A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status de renovações** permanece visível e não tem alteração funcional nesta versão.
+A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status das Atas** é lido exclusivamente da aba dedicada `Status das Atas`, sem fallback operacional.
 
 As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha: próximos 15 dias, de 16 a 30 dias, de 31 a 60 dias, acima de 60 dias e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Se um bloco não for encontrado, o painel informa “bloco não encontrado” em vez de exibir zeros. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal; meses sem ano recebem o ano correto quando atravessam dezembro. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). A faixa dos compradores é calculada usando a data de referência da planilha, não a data em que a importação foi feita. As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+
+### Status das Atas por área
+
+O bloco `Status das Atas` substitui o antigo funil de renovações quando a aba dedicada está presente. Ele reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`), os quadros `TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS` e `A RENOVAR`, além das tabelas `CONTRATO SAP | VENCIMENTO | COMPRADOR(A)` e `COMPRADOR(A) | VIG. | VENC.`. Notas sobre vencimentos são exibidas no próprio bloco; uma área não encontrada permanece explicitamente sinalizada.
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 

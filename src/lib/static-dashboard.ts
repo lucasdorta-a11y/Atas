@@ -11,6 +11,8 @@ import {
   type DashboardSnapshotPayload,
   type ForecastBand,
   type SnapshotArea,
+  type SnapshotAtaConcluida,
+  type SnapshotStatusAtasArea,
   SNAPSHOT_AREAS,
   type SnapshotBlockKey,
 } from "@/lib/dashboard-snapshot";
@@ -18,15 +20,28 @@ import {
 /** Blocos do panorama que podem ficar sem dado quando a planilha não os traz. */
 export const PANORAMA_BLOCKS = [
   "kpis-leitura",
+  "atas-concluidas",
   "valores-por-area",
   "saving",
   "top-compradores",
   "fornecedores",
   "evolucao",
+  "status-atas",
   "previsao-faixas",
   "previsao-meses",
 ] as const;
 export type PanoramaBlock = (typeof PANORAMA_BLOCKS)[number];
+
+/** Atas que passaram a FINALIZADO desde a importação anterior. */
+export interface AtasConcluidasResult {
+  disponivel: boolean;
+  primeiraLeitura: boolean;
+  comparadoComReferencia: string | null;
+  comparadoComImportadoEm: string | null;
+  totalFinalizadas: number;
+  novas: SnapshotAtaConcluida[];
+}
+
 export type PanoramaBlockSource = "snapshot" | "registros" | "ausente";
 
 export interface StaticDashboardData {
@@ -55,6 +70,8 @@ export interface StaticDashboardData {
     itens: number;
     concluidosAtas: number;
     concluidosItens: number;
+    andamentoAtas: number;
+    andamentoItens: number;
     saldoAtas: number;
     saldoItens: number;
     consumidoAtas: number;
@@ -104,7 +121,8 @@ export interface StaticDashboardData {
     a_vencer_atas: number;
     a_vencer_itens: number;
   }>;
-  renovacoes: Array<{ area: string; status: string; atas: number; itens: number }>;
+  atasConcluidas: AtasConcluidasResult;
+  statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   previsoes: Array<{
     area: string;
     responsavel: string;
@@ -178,8 +196,50 @@ function forecastBandDays(band: ForecastBand): number {
   return 61;
 }
 
-function snapshotHas(snapshot: DashboardSnapshotPayload | null, key: string): boolean {
+function snapshotHas(snapshot: DashboardSnapshotPayload | null | undefined, key: string): boolean {
   return Boolean(snapshot?.coverage.found.includes(key));
+}
+
+/** Compara as atas FINALIZADO atuais com a importação anterior que trouxe a aba. */
+function buildAtasConcluidas(
+  current: DashboardSnapshotPayload | null,
+  datasets: Array<{ snapshot: DashboardSnapshotPayload | null | undefined; importedAt: string }>,
+): AtasConcluidasResult {
+  const empty: AtasConcluidasResult = {
+    disponivel: false,
+    primeiraLeitura: true,
+    comparadoComReferencia: null,
+    comparadoComImportadoEm: null,
+    totalFinalizadas: 0,
+    novas: [],
+  };
+  if (!current || !snapshotHas(current, "atas-concluidas")) return empty;
+  const atuais = current.atasConcluidas ?? [];
+  const older = datasets.slice(1).filter((dataset) => snapshotHas(dataset.snapshot, "atas-concluidas"));
+  const currentRef = current.referenceDate;
+  const previous = older.find((dataset) => {
+    const ref = dataset.snapshot?.referenceDate ?? null;
+    return !currentRef || !ref || ref < currentRef;
+  }) ?? older[0] ?? null;
+  const previousKeys = new Set((previous?.snapshot?.atasConcluidas ?? []).map((ata) => ata.key));
+  const novas = previous ? atuais.filter((ata) => !previousKeys.has(ata.key)) : [...atuais];
+  const maps = [
+    current.fornecedoresPorContrato ?? {},
+    ...datasets.slice(1).map((dataset) => dataset.snapshot?.fornecedoresPorContrato ?? {}),
+  ];
+  const resolved = novas.map((ata) => {
+    if (ata.fornecedor || !ata.contrato) return ata;
+    const fornecedor = maps.map((map) => map[ata.contrato!]).find(Boolean) ?? null;
+    return { ...ata, fornecedor };
+  });
+  return {
+    disponivel: true,
+    primeiraLeitura: !previous,
+    comparadoComReferencia: previous?.snapshot?.referenceDate ?? null,
+    comparadoComImportadoEm: previous?.importedAt ?? null,
+    totalFinalizadas: atuais.length,
+    novas: resolved,
+  };
 }
 
 export async function getStaticDashboardData(): Promise<StaticDashboardData> {
@@ -212,6 +272,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     itens: valueOf(rows, "quantidade"),
     concluidosAtas: rows.filter((r) => r.situacao_norm === "concluido").length,
     concluidosItens: rows.filter((r) => r.situacao_norm === "concluido").reduce((s, r) => s + n(r.quantidade), 0),
+    andamentoAtas: rows.filter((r) => r.situacao_norm === null).length,
+    andamentoItens: rows.filter((r) => r.situacao_norm === null).reduce((s, r) => s + n(r.quantidade), 0),
     saldoAtas: rows.filter((r) => r.status_consumo === "Com Saldo").length,
     saldoItens: rows.filter((r) => r.status_consumo === "Com Saldo").reduce((s, r) => s + n(r.quantidade), 0),
     consumidoAtas: rows.filter((r) => r.status_consumo === "Consumido").length,
@@ -277,6 +339,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   if (currentSnapshot && snapshotHas(currentSnapshot, "kpis-leitura")) {
     kpis.concluidosAtas = currentSnapshot.kpis.concluidasAtas ?? kpis.concluidosAtas;
     kpis.concluidosItens = currentSnapshot.kpis.concluidasItens ?? kpis.concluidosItens;
+    kpis.andamentoAtas = currentSnapshot.kpis.andamentoAtas ?? kpis.andamentoAtas;
+    kpis.andamentoItens = currentSnapshot.kpis.andamentoItens ?? kpis.andamentoItens;
     kpis.saldoItens = currentSnapshot.kpis.saldoItens ?? kpis.saldoItens;
     kpis.consumidoItens = currentSnapshot.kpis.consumidoItens ?? kpis.consumidoItens;
     kpis.aVencerAtas = currentSnapshot.kpis.aVencerAtas ?? kpis.aVencerAtas;
@@ -356,13 +420,14 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
       }))
     : [];
 
-  const renewalGroups = new Map<string, { area: string; status: string; atas: number; itens: number }>();
-  for (const row of rows) {
-    const key = groupKey(row.area ?? "Não informado", row.status_renovacao ?? "Outros");
-    const current = renewalGroups.get(key) ?? { area: row.area ?? "Não informado", status: row.status_renovacao ?? "Outros", atas: 0, itens: 0 };
-    current.atas += 1;
-    current.itens += n(row.quantidade);
-    renewalGroups.set(key, current);
+  const atasConcluidas = buildAtasConcluidas(currentSnapshot, snapshotDatasets);
+  const statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null> = {
+    INDIRETOS: null,
+    DIRETOS: null,
+    CAPEX: null,
+  };
+  if (currentSnapshot && snapshotHas(currentSnapshot, "status-atas")) {
+    for (const area of SNAPSHOT_AREAS) statusAtas[area] = currentSnapshot.statusAtas?.[area] ?? null;
   }
 
   const forecastGroups = new Map<string, { area: string; responsavel: string; data_previsao: string; dias: number; atas: number; itens: number; band?: ForecastBand }>();
@@ -437,11 +502,13 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     snapshotHas(currentSnapshot, key) ? "snapshot" : fallback ? "registros" : "ausente";
   const blocos: Record<PanoramaBlock, PanoramaBlockSource> = {
     "kpis-leitura": fromSnapshotOr("kpis-leitura", hasRows),
+    "atas-concluidas": fromSnapshotOr("atas-concluidas", false),
     "valores-por-area": fromSnapshotOr("valores-por-area", rows.some((row) => row.valor !== null)),
     saving: fromSnapshotOr("saving", rows.some((row) => row.saving_hist !== null || row.saving_prop !== null)),
     "top-compradores": fromSnapshotOr("top-compradores", rows.some((row) => Boolean(row.responsavel?.trim()))),
     fornecedores: fromSnapshotOr("fornecedores", false),
     evolucao: fromSnapshotOr("evolucao", hasRows),
+    "status-atas": fromSnapshotOr("status-atas", false),
     "previsao-faixas": snapshotHas(currentSnapshot, "previsao-faixas") || snapshotHas(currentSnapshot, "previsoes-cruzadas")
       ? "snapshot"
       : rows.some((row) => row.situacao_norm === null && Boolean(row.data_previsao)) ? "registros" : "ausente",
@@ -469,7 +536,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     topCompradores,
     fornecedores,
     evolucao: [...currentEvolution.values()],
-    renovacoes: [...renewalGroups.values()].sort((a, b) => a.area.localeCompare(b.area) || a.status.localeCompare(b.status)),
+    atasConcluidas,
+    statusAtas,
     previsoes,
     datasets: allDatasets.map(formatStoredDataset),
   };

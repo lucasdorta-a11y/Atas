@@ -120,3 +120,23 @@ for (const area of ["INDIRETOS", "DIRETOS", "CAPEX"] as const) {
   const rows = payload.previsaoMeses[area].rows;
   console.log(`  ${area}: ${rows.map((row) => `${row.label}${row.year ? `/${row.year}` : ""}=${number(row.atas)}/${number(row.itens)}`).join("; ") || "—"}`);
 }
+
+console.log(`\nFornecedor por contrato: ${Object.keys(payload.fornecedoresPorContrato).length} contratos mapeados`);
+console.log(`Atas concluídas (FINALIZADO) na base de andamento: ${payload.atasConcluidas.length}`);
+for (const ata of payload.atasConcluidas.slice(0, 15)) {
+  console.log(`  ${(ata.contrato ?? "—").padEnd(12)} ${ata.descricao.slice(0, 40).padEnd(40)} ${number(ata.itens).padStart(5)} itens  ${(ata.comprador ?? "—").padEnd(24)} ${ata.area ?? "—"} → ${ata.fornecedor ?? "(fornecedor não encontrado)"}`);
+}
+if (payload.atasConcluidas.length > 15) console.log(`  … e mais ${payload.atasConcluidas.length - 15}`);
+
+console.log("\nStatus das atas por área:");
+for (const area of SNAPSHOT_AREAS) {
+  const status = payload.statusAtas[area];
+  if (!status) {
+    console.log(`  ${area.padEnd(10)} —`);
+    continue;
+  }
+  console.log(`  ${area.padEnd(10)} base=${status.baseDate ?? "—"} total=${number(status.total)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)}`);
+  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"}`).join("; ") || "—"}`);
+  console.log(`             carteira: ${status.carteira.map((item) => `${item.comprador} ${number(item.vigentes)}/${number(item.vencidas)}/${number(item.aRenovar)}/${number(item.total)}`).join("; ") || "—"}`);
+  console.log(`             notas: ${status.notas.join(" | ") || "—"}`);
+}

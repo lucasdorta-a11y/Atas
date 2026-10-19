@@ -25,6 +25,9 @@ export const SNAPSHOT_BLOCK_KEYS = [
   "previsao-faixas",
   "previsao-meses",
   "previsoes-cruzadas",
+  "atas-concluidas",
+  "contratos-fornecedores",
+  "status-atas",
 ] as const;
 export type SnapshotBlockKey = (typeof SNAPSHOT_BLOCK_KEYS)[number];
 
@@ -38,6 +41,18 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60, acima de 60 e vencidas" },
   "previsao-meses": { label: "Previsão de conclusão por mês", esperado: "pivô PREVISÃO DE CONCLUSÃO POR MÊS" },
   "previsoes-cruzadas": { label: "Previsões por comprador", esperado: "COMPRADOR, AREA e PRAZO CONCLUSÃO" },
+  "atas-concluidas": {
+    label: "Atas concluídas (base de andamento)",
+    esperado: "aba Base - Atas Em andamento com as colunas DESCRIÇÃO DOS LOTES ATAS, QTD ITENS, COMPRADOR, AREA, ETAPA ATUAL e N° CONTRATO",
+  },
+  "contratos-fornecedores": {
+    label: "Fornecedor por contrato",
+    esperado: "aba Base - Controle de Contratos com as colunas Contrato, Item (ou Material) e Fornecedor",
+  },
+  "status-atas": {
+    label: "Status das atas por área",
+    esperado: "aba Status das Atas com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL/VIGENTES/VENCIDAS/ATÉ 15 DIAS/16 A 30 DIAS/A RENOVAR, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) e tabela COMPRADOR(A) | VIG. | VENC.",
+  },
 };
 
 export function snapshotBlockLabel(key: string): string {
@@ -47,6 +62,9 @@ export function snapshotBlockLabel(key: string): string {
 export interface SnapshotKpis {
   concluidasAtas: number | null;
   concluidasItens: number | null;
+  /** Card “ATAS EM ANDAMENTO (GERAL)”; soma das áreas quando o card não existe. */
+  andamentoAtas: number | null;
+  andamentoItens: number | null;
   saldoItens: number | null;
   consumidoItens: number | null;
   aVencerAtas: number | null;
@@ -129,6 +147,51 @@ export interface SnapshotMonthlyForecastArea {
   rows: SnapshotMonthlyForecastRow[];
 }
 
+/** Uma ata da aba “Base - Atas Em andamento” cuja ETAPA ATUAL é FINALIZADO. */
+export interface SnapshotAtaConcluida {
+  /** Número do contrato (só dígitos) ou descrição|comprador|área quando não houver contrato. */
+  key: string;
+  descricao: string;
+  contrato: string | null;
+  fornecedor: string | null;
+  itens: number | null;
+  comprador: string | null;
+  area: SnapshotArea | null;
+  etapa: string;
+  valor: number | null;
+}
+
+export interface SnapshotStatusPrioridade {
+  contrato: string;
+  vencimento: string | null;
+  comprador: string | null;
+}
+
+export interface SnapshotStatusCarteira {
+  comprador: string;
+  vigentes: number | null;
+  vencidas: number | null;
+  aRenovar: number | null;
+  total: number | null;
+}
+
+/** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
+export interface SnapshotStatusAtasArea {
+  area: SnapshotArea;
+  baseDate: string | null;
+  titulo: string | null;
+  subtitulo: string | null;
+  total: number | null;
+  vigentes: number | null;
+  vencidas: number | null;
+  ate15: number | null;
+  de16a30: number | null;
+  aRenovar: number | null;
+  prioridades: SnapshotStatusPrioridade[];
+  carteira: SnapshotStatusCarteira[];
+  notas: string[];
+}
+
 export interface SnapshotCoverage {
   found: string[];
   missing: string[];
@@ -148,6 +211,11 @@ export interface DashboardSnapshotPayload {
   evolucao: Record<SnapshotArea, SnapshotEvolution>;
   previsoes: Record<ForecastBand, Record<SnapshotArea, SnapshotForecastArea>>;
   previsaoMeses: Record<SnapshotArea, SnapshotMonthlyForecastArea>;
+  /** Atas FINALIZADO na base de andamento; a comparação acontece no painel. */
+  atasConcluidas: SnapshotAtaConcluida[];
+  /** Contrato (só dígitos) → fornecedor da aba de controle de contratos. */
+  fornecedoresPorContrato: Record<string, string>;
+  statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   coverage: SnapshotCoverage;
   notes: string[];
 }
@@ -165,6 +233,8 @@ function emptyKpis(): SnapshotKpis {
   return {
     concluidasAtas: null,
     concluidasItens: null,
+    andamentoAtas: null,
+    andamentoItens: null,
     saldoItens: null,
     consumidoItens: null,
     aVencerAtas: null,
@@ -247,6 +317,9 @@ export function emptyDashboardSnapshot(referenceDate: string | null = null, sour
     evolucao: makeAreaRecord(emptyEvolution),
     previsoes: makeForecastRecord(),
     previsaoMeses: makeMonthlyForecastRecord(),
+    atasConcluidas: [],
+    fornecedoresPorContrato: {},
+    statusAtas: makeAreaRecord(() => null),
     coverage: { found: [], missing: [] },
     notes: [],
   };
@@ -821,10 +894,11 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       if (label === "QTD ITEM" || label === "QTD ITENS") {
         itens = numericAt(matrix, r + 1, column) ?? itens;
       }
-      // Assim que o par desta coluna foi encontrado, não atravessar uma
-      // tabela posterior que repita QTD ATAS/QTD ITENS (por exemplo, o pivô
-      // de previsão logo abaixo).
+      // O quadro termina quando as duas métricas foram lidas ou numa linha em
+      // branco depois de já encontrar a primeira; sem isso a janela alcançaria
+      // uma tabela seguinte e trocaria o valor lido.
       if (atas !== null && itens !== null) break;
+      if ((atas !== null || itens !== null) && isBlank(matrix[r])) break;
       // O próximo quadro começa antes de outra métrica ser encontrada.
       if (r > headerRow + 1 && headerInfo(matrix[r]?.[column])) break;
     }
@@ -1485,6 +1559,349 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
   if (found) addFound(payload, "previsoes-cruzadas");
 }
 
+/* ----------------------- atas em andamento (geral) ----------------- */
+
+/**
+ * Card “ATAS EM ANDAMENTO (GERAL)” do resumo. Aceita rótulo seguido dos
+ * cabeçalhos QTD ATAS/QTD ITENS, dois números na mesma linha ou uma célula
+ * composta como “70 ATAS / 5000 ITENS”.
+ */
+function extractAndamentoGeral(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    for (let r = 0; r < matrix.length; r += 1) {
+      const row = matrix[r] ?? [];
+      for (let c = 0; c < row.length; c += 1) {
+        const label = exact(row[c]).replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+        if (!/^ATAS? EM ANDAMENTO( GERAL)?$/.test(label)) continue;
+        const pair = pairFromHeaders(matrix, r, c) ?? pairFromRow(row, c) ?? pairFromComposite(matrix, r, c);
+        if (!pair) continue;
+        payload.kpis.andamentoAtas = pair.atas;
+        payload.kpis.andamentoItens = pair.itens;
+        addFound(payload, "kpis-leitura");
+        return;
+      }
+    }
+  }
+}
+
+function pairFromHeaders(matrix: unknown[][], rowIndex: number, column: number): { atas: number | null; itens: number | null } | null {
+  let atas: number | null = null;
+  let itens: number | null = null;
+  for (let r = rowIndex; r <= Math.min(matrix.length - 1, rowIndex + 4); r += 1) {
+    const row = matrix[r] ?? [];
+    for (let c = Math.max(0, column - 1); c <= Math.min(row.length - 1, column + 6); c += 1) {
+      const label = exact(row[c]);
+      const isAtas = label === "QTD ATA" || label === "QTD ATAS";
+      const isItens = label === "QTD ITEM" || label === "QTD ITENS";
+      if (!isAtas && !isItens) continue;
+      const value = integerValue(matrix[r + 1]?.[c]) ?? integerValue(row[c + 1]);
+      if (value === null) continue;
+      if (isAtas && atas === null) atas = value;
+      if (isItens && itens === null) itens = value;
+    }
+  }
+  return atas === null && itens === null ? null : { atas, itens };
+}
+
+function pairFromRow(row: unknown[], column: number): { atas: number | null; itens: number | null } | null {
+  const numbers: number[] = [];
+  for (let c = column + 1; c < row.length && numbers.length < 2; c += 1) {
+    const text = cellText(row[c]);
+    if (!text) continue;
+    const value = integerValue(text);
+    if (value === null) break;
+    numbers.push(value);
+  }
+  return numbers.length === 2 ? { atas: numbers[0], itens: numbers[1] } : null;
+}
+
+function pairFromComposite(matrix: unknown[][], rowIndex: number, column: number): { atas: number | null; itens: number | null } | null {
+  const candidates = [matrix[rowIndex]?.[column + 1], matrix[rowIndex + 1]?.[column], matrix[rowIndex]?.[column]];
+  for (const candidate of candidates) {
+    const text = exact(candidate);
+    if (!/ATAS?/.test(text) || !/ITENS?/.test(text) || !/\d/.test(text)) continue;
+    const pair = evolutionPairFromCell(candidate);
+    if (pair.atas !== null || pair.itens !== null) return pair;
+  }
+  return null;
+}
+
+/* --------------------- fornecedor por contrato (SAP) --------------- */
+
+/** Número de contrato só com dígitos; textos curtos não contam. */
+function contractKey(value: unknown): string | null {
+  const text = cellText(value);
+  if (!text) return null;
+  const digits = text.replace(/\D/g, "");
+  return digits.length >= 6 ? digits : null;
+}
+
+/** Remove código entre parênteses no fim do nome do fornecedor/comprador. */
+function stripCode(value: string): string {
+  return value.replace(/\s*\((?:[A-Z]{0,3}\s?\d{1,10})\)\s*$/i, "").trim();
+}
+
+function extractContratosFornecedores(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) =>
+      rowHas(row, ["Contrato", "Fornecedor"])
+      && (rowHas(row, ["Item"]) || rowHas(row, ["Material"]) || rowHas(row, ["Cód SAP"])),
+    );
+    for (const headerRow of headerRows) {
+      const header = matrix[headerRow] ?? [];
+      const contratoCol = columnIndex(header, (value) => value === "CONTRATO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
+      if (contratoCol < 0 || fornecedorCol < 0) continue;
+      let blankRun = 0;
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 25) break;
+          continue;
+        }
+        blankRun = 0;
+        const key = contractKey(row[contratoCol]);
+        const fornecedor = stripCode(cellText(row[fornecedorCol]));
+        if (!key || !fornecedor) continue;
+        if (!payload.fornecedoresPorContrato[key]) payload.fornecedoresPorContrato[key] = fornecedor;
+        found = true;
+      }
+    }
+  }
+  if (found) addFound(payload, "contratos-fornecedores");
+}
+
+/* ---------------- atas concluídas (base de andamento) -------------- */
+
+const CONCLUDED_STAGES = new Set(["FINALIZADO", "FINALIZADA", "FINALIZADOS", "FINALIZADAS", "CONCLUIDO", "CONCLUIDA", "CONCLUIDOS", "CONCLUIDAS"]);
+
+function isContractHeader(value: string): boolean {
+  const label = value.replace(/[.°º]/g, "").replace(/\s+/g, " ").trim();
+  return /^(N|NO|NUM|NUMERO)?( DO| DE)?\s?CONTRATO( SAP)?$/.test(label);
+}
+
+function extractAtasConcluidas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) => rowHas(row, ["DESCRIÇÃO DOS LOTES ATAS", "ETAPA ATUAL"]));
+    for (const headerRow of headerRows) {
+      const header = matrix[headerRow] ?? [];
+      const descCol = columnIndex(header, (value) => value === "DESCRICAO DOS LOTES ATAS");
+      const etapaCol = columnIndex(header, (value) => value === "ETAPA ATUAL");
+      if (descCol < 0 || etapaCol < 0) continue;
+      const itensCol = columnIndex(header, (value) => value === "QTD ITENS" || value === "QTD ITEM" || value === "QTD DE ITENS");
+      const compradorCol = columnIndex(header, (value) => /^COMPRADOR\s?(\(A\)|A)?$/.test(value));
+      const areaCol = columnIndex(header, (value) => value === "AREA");
+      const contratoCol = columnIndex(header, isContractHeader);
+      const valorCol = columnIndex(header, (value) => value === "ESTIMATIVA VALOR TOTAL" || value === "VALOR TOTAL" || value === "VALOR ESTIMADO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
+      found = true;
+      let blankRun = 0;
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 25) break;
+          continue;
+        }
+        blankRun = 0;
+        const etapa = cellText(row[etapaCol]);
+        if (!CONCLUDED_STAGES.has(exact(etapa))) continue;
+        const descricao = cellText(row[descCol]);
+        if (!descricao) continue;
+        const contrato = contratoCol >= 0 ? contractKey(row[contratoCol]) : null;
+        const comprador = compradorCol >= 0 ? stripCode(cellText(row[compradorCol])) || null : null;
+        const area = areaCol >= 0 ? isArea(row[areaCol]) : null;
+        const itens = itensCol >= 0 ? integerValue(row[itensCol]) : null;
+        const valor = valorCol >= 0 ? numberValue(row[valorCol]) : null;
+        const fornecedor = fornecedorCol >= 0 ? stripCode(cellText(row[fornecedorCol])) || null : null;
+        const key = contrato ?? [exact(descricao), exact(comprador ?? ""), area ?? ""].join("|");
+        if (payload.atasConcluidas.some((item) => item.key === key)) continue;
+        payload.atasConcluidas.push({ key, descricao, contrato, fornecedor, itens, comprador, area, etapa, valor });
+      }
+    }
+  }
+  if (found) addFound(payload, "atas-concluidas");
+}
+
+/* ------------------- status das atas por área (aba) ---------------- */
+
+const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar"> = {
+  TOTAL: "total",
+  "TOTAL DE ATAS": "total",
+  VIGENTES: "vigentes",
+  VIGENTE: "vigentes",
+  VENCIDAS: "vencidas",
+  VENCIDA: "vencidas",
+  "ATE 15 DIAS": "ate15",
+  "ATE 15": "ate15",
+  "16 A 30 DIAS": "de16a30",
+  "DE 16 A 30 DIAS": "de16a30",
+  "16 A 30": "de16a30",
+  "A RENOVAR": "aRenovar",
+};
+
+function tileKeyOf(label: string) {
+  return STATUS_TILES[label.replace(/\s+/g, " ").trim()] ?? null;
+}
+
+function isBuyerHeader(value: string): boolean {
+  return /^COMPRADOR\s?(\(A\)|A|\(A\)S|ES)?$/.test(value);
+}
+
+function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
+  return {
+    area,
+    baseDate: null,
+    titulo: null,
+    subtitulo: null,
+    total: null,
+    vigentes: null,
+    vencidas: null,
+    ate15: null,
+    de16a30: null,
+    aRenovar: null,
+    prioridades: [],
+    carteira: [],
+    notas: [],
+  };
+}
+
+function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number, end: number): SnapshotStatusAtasArea | null {
+  const block = emptyStatusArea(area);
+  let tiles = 0;
+  let prioridadesHeader = -1;
+  let carteiraHeader = -1;
+
+  for (let r = start; r < end; r += 1) {
+    const row = matrix[r] ?? [];
+    const headerLike = row.some((value) => /^VIG\.?$|^VENC\.?$|CONTRATO/.test(exact(value)));
+    for (let c = 0; c < row.length; c += 1) {
+      const text = cellText(row[c]);
+      if (!text) continue;
+      const label = exact(text);
+      const base = text.match(/BASE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (base) block.baseDate = parseDateBR(base[1], "Base").iso ?? block.baseDate;
+      if (label.includes("STATUS DAS ATAS")) {
+        if (!block.titulo) block.titulo = text;
+        continue;
+      }
+      if (base) {
+        if (!block.subtitulo) block.subtitulo = text.split("|")[0].replace(/BASE:?.*$/i, "").trim() || null;
+        continue;
+      }
+      const tileKey = tileKeyOf(label);
+      if (tileKey) {
+        const above = r > start ? integerValue(matrix[r - 1]?.[c]) : null;
+        const below = above === null && !headerLike ? integerValue(matrix[r + 1]?.[c]) : null;
+        const value = above ?? below;
+        if (value !== null && block[tileKey] === null) {
+          block[tileKey] = value;
+          tiles += 1;
+          continue;
+        }
+      } else {
+        const single = label.match(/^(\d{1,5})\s+(.+)$/);
+        const singleKey = single ? tileKeyOf(single[2]) : null;
+        if (single && singleKey && block[singleKey] === null) {
+          block[singleKey] = Number(single[1]);
+          tiles += 1;
+          continue;
+        }
+      }
+      if (text.length > 12 && /VENCEM ENTRE|VENCIDAS?:|NOVO PROCESSO|CONTINUIDADE DA DEMANDA|ENCERRAD/.test(label) && block.notas.length < 6) {
+        if (!block.notas.includes(text)) block.notas.push(text);
+      }
+    }
+
+    if (prioridadesHeader < 0) {
+      const contratoCol = columnIndex(row, (value) => value === "CONTRATO SAP" || value === "CONTRATO" || value === "CONTRATO (SAP)");
+      if (contratoCol >= 0) {
+        const vencCol = columnIndex(row, (value) => value === "VENCIMENTO" || value === "DATA DE VENCIMENTO" || value === "DATA VENCIMENTO" || value === "FIM VIGENCIA" || value === "FIM DA VIGENCIA");
+        const compradorCol = row.findIndex((value, index) => index > contratoCol && isBuyerHeader(exact(value)));
+        prioridadesHeader = r;
+        for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
+          const dataRow = matrix[dr] ?? [];
+          const rawContrato = cellText(dataRow[contratoCol]);
+          const normalizedContrato = exact(rawContrato);
+          if (!rawContrato || isBuyerHeader(normalizedContrato) || normalizedContrato.startsWith("TOTAL")) break;
+          const contrato = contractKey(rawContrato) ?? rawContrato;
+          const vencimentoRaw = vencCol >= 0 ? cellText(dataRow[vencCol]) : "";
+          const vencimento = vencimentoRaw ? parseDateBR(vencimentoRaw, "Vencimento").iso : null;
+          const comprador = compradorCol >= 0 ? stripCode(cellText(dataRow[compradorCol])) || null : null;
+          block.prioridades.push({ contrato, vencimento, comprador });
+        }
+      }
+    }
+
+    if (carteiraHeader < 0) {
+      const vigCol = columnIndex(row, (value) => /^VIG\.?$|^VIGENTES?$/.test(value));
+      const vencidasCol = columnIndex(row, (value) => /^VENC\.?$|^VENCIDAS?$/.test(value));
+      if (vigCol >= 0 && vencidasCol >= 0) {
+        let compradorCol = -1;
+        for (let c = vigCol - 1; c >= 0; c -= 1) {
+          if (isBuyerHeader(exact(row[c]))) {
+            compradorCol = c;
+            break;
+          }
+        }
+        if (compradorCol >= 0) {
+          const renovarCol = columnIndex(row, (value) => value === "A RENOVAR" || value === "RENOVAR");
+          const totalCol = row.findIndex((value, index) => index > vigCol && exact(value) === "TOTAL");
+          carteiraHeader = r;
+          for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
+            const dataRow = matrix[dr] ?? [];
+            const comprador = stripCode(cellText(dataRow[compradorCol]));
+            if (!comprador || /^TOTAL/.test(exact(comprador))) break;
+            block.carteira.push({
+              comprador,
+              vigentes: integerValue(dataRow[vigCol]),
+              vencidas: integerValue(dataRow[vencidasCol]),
+              aRenovar: renovarCol >= 0 ? integerValue(dataRow[renovarCol]) : null,
+              total: totalCol >= 0 ? integerValue(dataRow[totalCol]) : null,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const tables = block.prioridades.length + block.carteira.length;
+  const accepted = tiles >= 2 || (Boolean(block.titulo) && (tiles > 0 || tables > 0));
+  if (!accepted) return null;
+  block.prioridades.sort((a, b) => (a.vencimento ?? "9999").localeCompare(b.vencimento ?? "9999"));
+  return block;
+}
+
+function extractStatusAtas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const bands: Array<{ area: SnapshotArea; row: number }> = [];
+    matrix.forEach((row, index) => {
+      const cells = (row ?? []).map(cellText).filter(Boolean);
+      if (cells.length === 0) return;
+      const area = isArea(cells[0]);
+      if (!area) return;
+      if (cells.every((cell) => isArea(cell) === area)) bands.push({ area, row: index });
+    });
+    for (let b = 0; b < bands.length; b += 1) {
+      const start = bands[b].row + 1;
+      const end = bands[b + 1]?.row ?? matrix.length;
+      const block = parseStatusBlock(matrix, bands[b].area, start, end);
+      if (!block || payload.statusAtas[bands[b].area]) continue;
+      payload.statusAtas[bands[b].area] = block;
+      found = true;
+    }
+  }
+  if (found) addFound(payload, "status-atas");
+}
+
 /* ---------------------------- API pública ------------------------- */
 
 export function extractSnapshotPayload(
@@ -1503,6 +1920,24 @@ export function extractSnapshotPayload(
   extractForecastBandFallback(payload, sheets);
   extractMonthlyForecastTable(payload, sheets);
   extractForecastRows(payload, sheets);
+  extractAndamentoGeral(payload, sheets);
+  extractContratosFornecedores(payload, sheets);
+  extractAtasConcluidas(payload, sheets);
+  extractStatusAtas(payload, sheets);
+
+  // Sem o card geral, “em andamento” é a soma das três áreas da evolução —
+  // somente quando as três existem, para não exibir uma soma parcial como total.
+  if (payload.kpis.andamentoAtas === null && SNAPSHOT_AREAS.every((area) => payload.evolucao[area].andamentoAtas !== null)) {
+    payload.kpis.andamentoAtas = SNAPSHOT_AREAS.reduce((sum, area) => sum + (payload.evolucao[area].andamentoAtas ?? 0), 0);
+  }
+  if (payload.kpis.andamentoItens === null && SNAPSHOT_AREAS.every((area) => payload.evolucao[area].andamentoItens !== null)) {
+    payload.kpis.andamentoItens = SNAPSHOT_AREAS.reduce((sum, area) => sum + (payload.evolucao[area].andamentoItens ?? 0), 0);
+  }
+  for (const ata of payload.atasConcluidas) {
+    if (!ata.fornecedor && ata.contrato && payload.fornecedoresPorContrato[ata.contrato]) {
+      ata.fornecedor = payload.fornecedoresPorContrato[ata.contrato];
+    }
+  }
 
   const allKnown = [...SNAPSHOT_BLOCK_KEYS];
   payload.coverage.missing = allKnown.filter((key) => !payload.coverage.found.includes(key));
@@ -1517,15 +1952,17 @@ export function hasSnapshotPayloadMeaningfulData(payload: DashboardSnapshotPaylo
 }
 
 /**
- * Referência inicial de 28/09 solicitada para que a comparação semanal não
- * fique vazia antes de existir uma segunda importação. São somente os números
- * da tabela “LEITURA DOS GRÁFICOS” fornecida como referência.
+ * Referência inicial de 05/10 para que a comparação semanal não fique vazia
+ * antes de existir uma segunda importação. São somente os números dos cards
+ * de resumo fornecidos como referência.
  */
 export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
-  const payload = emptyDashboardSnapshot("2026-09-28", ["Referência fornecida nas capturas — 28/09"]);
+  const payload = emptyDashboardSnapshot("2026-10-05", ["Referência fornecida nas capturas — 05/10"]);
   payload.kpis = {
     concluidasAtas: 58,
     concluidasItens: 956,
+    andamentoAtas: 68,
+    andamentoItens: 4778,
     saldoItens: 877,
     consumidoItens: 80,
     aVencerAtas: 58,
@@ -1534,7 +1971,7 @@ export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
     vencidasItens: 334,
   };
   payload.coverage.found = ["kpis-leitura"];
-  payload.coverage.missing = ["valores-por-area", "saving", "top-compradores", "fornecedores", "evolucao", "previsao-faixas", "previsao-meses", "previsoes-cruzadas"];
-  payload.notes.push("Referência inicial fixa apenas para a comparação dos três gráficos; será substituída pelo snapshot imediatamente anterior após novas importações.");
+  payload.coverage.missing = SNAPSHOT_BLOCK_KEYS.filter((key) => key !== "kpis-leitura");
+  payload.notes.push("Referência inicial fixa apenas para os cards da semana anterior; será substituída pelo snapshot imediatamente anterior após novas importações.");
   return payload;
 }

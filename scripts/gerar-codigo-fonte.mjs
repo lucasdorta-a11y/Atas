@@ -3,7 +3,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const output = path.join(root, "fonte.md");
-const excluded = new Set([".git", ".next", "out", "node_modules", "build", "dist", "coverage", "fonte.md"]);
+const excluded = new Set([".git", ".next", "out", "node_modules", "build", "dist", "coverage", "amostras", "fonte.md"]);
 const extensions = new Map([
   [".ts", "typescript"], [".tsx", "tsx"], [".mjs", "javascript"],
   [".mts", "typescript"], [".json", "json"], [".css", "css"],

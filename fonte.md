@@ -18,6 +18,7 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [public/.nojekyll](#publicnojekyll)
 - [scripts/dev/alias-loader.mjs](#scriptsdevaliasloadermjs)
 - [scripts/dev/extrair-snapshot.mts](#scriptsdevextrairsnapshotmts)
+- [scripts/dev/gerar-amostras.mts](#scriptsdevgeraramostrasmts)
 - [scripts/dev/panorama-dry-run.mts](#scriptsdevpanoramadryrunmts)
 - [scripts/dev/register.mjs](#scriptsdevregistermjs)
 - [scripts/dev/stubs/static-store.mts](#scriptsdevstubsstaticstoremts)
@@ -29,11 +30,15 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [src/app/page.tsx](#srcapppagetsx)
 - [src/app/processos/page.tsx](#srcappprocessospagetsx)
 - [src/components/app-shell.tsx](#srccomponentsappshelltsx)
+- [src/components/atas-concluidas.tsx](#srccomponentsatasconcluidastsx)
 - [src/components/charts.tsx](#srccomponentschartstsx)
 - [src/components/datasets-panel.tsx](#srccomponentsdatasetspaneltsx)
 - [src/components/documents-manager.tsx](#srccomponentsdocumentsmanagertsx)
+- [src/components/fornecedores-analise.tsx](#srccomponentsfornecedoresanalisetsx)
 - [src/components/import-wizard.tsx](#srccomponentsimportwizardtsx)
 - [src/components/processos-browser.tsx](#srccomponentsprocessosbrowsertsx)
+- [src/components/resumo-cards.tsx](#srccomponentsresumocardstsx)
+- [src/components/status-atas.tsx](#srccomponentsstatusatastsx)
 - [src/components/ui.tsx](#srccomponentsuitsx)
 - [src/lib/client-parse.ts](#srclibclientparsets)
 - [src/lib/csv.ts](#srclibcsvts)
@@ -211,11 +216,20 @@ O build cria `out/`. Em produção o site usa o subcaminho `/Atas`, que correspo
 Para conferir uma planilha sem abrir o navegador, com Node.js 20+: o loader local transpila apenas os tipos necessários para os scripts.
 
 ```bash
-npm run extrair -- amostras/planilha.xlsx --ref=2026-10-14
-npm run panorama:dry-run -- amostras/planilha.xlsx --ref=2026-10-14
+# gera planilhas fictícias com o layout esperado (nomes e números inventados)
+npm run amostras
+
+# quais blocos são reconhecidos e com quais números
+npm run extrair -- amostras/semana-atual.xlsx --ref=2026-10-13
+
+# monta o StaticDashboardData completo que a tela usa
+npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
+
+# compara atas FINALIZADO com a importação anterior
+npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13 --anterior amostras/semana-anterior.xlsx --ref-anterior=2026-10-05
 ```
 
-Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução e previsões.
+Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução, previsões, atas concluídas e status das atas. A pasta `amostras/` é ignorada pelo Git.
 
 ## Publicação no GitHub Pages
 
@@ -254,15 +268,19 @@ A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. 
 
 As áreas usam uma paleta única em todo o painel: Indiretos verde-água (`#0b7c7b`), Diretos azul (`#0a6fd6`) e CAPEX laranja (`#fca500`). O botão de atualização reprocessa os dados do IndexedDB local sem backend.
 
-### Três gráficos e KPIs
+### Cards de resumo (semana anterior × semana atual)
 
 Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situação apresentada`, `ATAS` e `ITENS`. Os rótulos aceitos são:
 
 - `ATA CONCLUÍDAS (VÁLIDAS)` + `VÁLIDAS` → atas e itens concluídos;
-- `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e consumidos;
+- `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e sem saldo;
 - `ATAS VENCIDAS E A VENCER` + `A VENCER (RENOVAR)` ou `VENCIDAS` → atas/itens a vencer e vencidos.
 
-A comparação semanal mostra os três gráficos da semana anterior acima dos três da semana atual. A primeira referência exibida é 28/09, com os valores da captura fornecida (58/956, 877/80, 58/1.215 e 48/334). Depois de uma nova importação, a leitura anterior permanece no histórico e passa a ser automaticamente a semana anterior.
+O card `ATAS EM ANDAMENTO (GERAL)` pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esse quadro, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 05/10, com 58/956, 68/4.778, 877, 80, 48/334 e 58/1.215; novas importações passam a formar o histórico real.
+
+### Atas concluídas desde a última atualização
+
+Logo abaixo dos cards, o painel lista as atas que passaram a `FINALIZADO` desde a importação anterior, uma linha por ata: descrição, contrato, fornecedor, quantidade de itens, comprador(a), área e valor. A fonte é a aba `Base - Atas Em andamento`, com as colunas `DESCRIÇÃO DOS LOTES ATAS`, `QTD ITENS`, `COMPRADOR`, `AREA`, `ETAPA ATUAL` e `N° CONTRATO`. O fornecedor é resolvido pela aba `Base - Controle de Contratos`, usando `Contrato`, `Item` ou `Material` e `Fornecedor`; códigos finais entre parênteses são removidos. Na primeira leitura, todas as atas finalizadas são listadas; depois, só as chaves ausentes na importação anterior aparecem.
 
 ### Valores, saving e redução
 
@@ -278,9 +296,13 @@ A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as co
 
 ### Evolução e previsões
 
-A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status de renovações** permanece visível e não tem alteração funcional nesta versão.
+A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status das Atas** é lido exclusivamente da aba dedicada `Status das Atas`, sem fallback operacional.
 
 As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha: próximos 15 dias, de 16 a 30 dias, de 31 a 60 dias, acima de 60 dias e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Se um bloco não for encontrado, o painel informa “bloco não encontrado” em vez de exibir zeros. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal; meses sem ano recebem o ano correto quando atravessam dezembro. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). A faixa dos compradores é calculada usando a data de referência da planilha, não a data em que a importação foi feita. As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+
+### Status das Atas por área
+
+O bloco `Status das Atas` substitui o antigo funil de renovações quando a aba dedicada está presente. Ele reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`), os quadros `TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS` e `A RENOVAR`, além das tabelas `CONTRATO SAP | VENCIMENTO | COMPRADOR(A)` e `COMPRADOR(A) | VIG. | VENC.`. Notas sobre vencimentos são exibidas no próprio bloco; uma área não encontrada permanece explicitamente sinalizada.
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 
@@ -7204,6 +7226,7 @@ export default nextConfig;
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "docs:fonte": "node scripts/gerar-codigo-fonte.mjs",
+    "amostras": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/gerar-amostras.mts",
     "extrair": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/extrair-snapshot.mts",
     "panorama:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/panorama-dry-run.mts"
   },
@@ -7438,6 +7461,155 @@ for (const area of ["INDIRETOS", "DIRETOS", "CAPEX"] as const) {
   const rows = payload.previsaoMeses[area].rows;
   console.log(`  ${area}: ${rows.map((row) => `${row.label}${row.year ? `/${row.year}` : ""}=${number(row.atas)}/${number(row.itens)}`).join("; ") || "—"}`);
 }
+
+console.log(`\nFornecedor por contrato: ${Object.keys(payload.fornecedoresPorContrato).length} contratos mapeados`);
+console.log(`Atas concluídas (FINALIZADO) na base de andamento: ${payload.atasConcluidas.length}`);
+for (const ata of payload.atasConcluidas.slice(0, 15)) {
+  console.log(`  ${(ata.contrato ?? "—").padEnd(12)} ${ata.descricao.slice(0, 40).padEnd(40)} ${number(ata.itens).padStart(5)} itens  ${(ata.comprador ?? "—").padEnd(24)} ${ata.area ?? "—"} → ${ata.fornecedor ?? "(fornecedor não encontrado)"}`);
+}
+if (payload.atasConcluidas.length > 15) console.log(`  … e mais ${payload.atasConcluidas.length - 15}`);
+
+console.log("\nStatus das atas por área:");
+for (const area of SNAPSHOT_AREAS) {
+  const status = payload.statusAtas[area];
+  if (!status) {
+    console.log(`  ${area.padEnd(10)} —`);
+    continue;
+  }
+  console.log(`  ${area.padEnd(10)} base=${status.baseDate ?? "—"} total=${number(status.total)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)}`);
+  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"}`).join("; ") || "—"}`);
+  console.log(`             carteira: ${status.carteira.map((item) => `${item.comprador} ${number(item.vigentes)}/${number(item.vencidas)}/${number(item.aRenovar)}/${number(item.total)}`).join("; ") || "—"}`);
+  console.log(`             notas: ${status.notas.join(" | ") || "—"}`);
+}
+````
+
+## `scripts/dev/gerar-amostras.mts`
+
+````typescript
+/**
+ * Gera planilhas fictícias com o layout dos blocos do painel.
+ * Os nomes e números são deliberadamente inventados e ficam em amostras/,
+ * pasta ignorada pelo Git; servem apenas para exercitar extrair/dry-run.
+ */
+import { mkdirSync } from "node:fs";
+import * as XLSX from "xlsx";
+
+const output = "amostras";
+mkdirSync(output, { recursive: true });
+
+type Matrix = unknown[][];
+
+const resumo = (current: boolean): Matrix => [
+  ["LEITURA DOS GRÁFICOS"],
+  ["Gráfico", "Situação apresentada", "ATAS", "ITENS"],
+  ["ATA CONCLUÍDAS (VÁLIDAS)", "VÁLIDAS", current ? 62 : 58, current ? 1020 : 956],
+  ["ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)", "COM SALDO", 0, current ? 920 : 877],
+  ["ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)", "CONSUMIDOS", 0, current ? 95 : 80],
+  ["ATAS VENCIDAS E A VENCER", "A VENCER (RENOVAR)", current ? 61 : 58, current ? 1300 : 1215],
+  ["ATAS VENCIDAS E A VENCER", "VENCIDAS", current ? 45 : 48, current ? 315 : 334],
+  ["ATAS EM ANDAMENTO (GERAL)", current ? 72 : 68, current ? 4980 : 4778],
+  ["VALOR INDIRETOS", 125000],
+  ["VALOR DIRETOS", 240000],
+  ["VALOR CAPEX", 310000],
+  ["Rótulos de Linha", "VALOR CONTRATADO R$", "SAVING HISTÓRICO R$", "SAVING PROPOSTA INICIAL R$", "REDUÇÃO HISTÓRICO %", "REDUÇÃO PROPOSTA INICIAL %"],
+  ["INDIRETOS", 125000, 12500, 19000, "10%", "15,2%"],
+  ["DIRETOS", 240000, 24000, 36000, "10%", "15%"],
+  ["CAPEX", 310000, 31000, 46500, "10%", "15%"],
+  ["TOTAL", 675000, 67500, 101500, "10%", "15%"],
+  ["TOP COMP INDIRETOS", "ITENS", "ATAS", "TOTAL ATAS ÁREA", "TOP COMP DIRETOS", "ITENS", "ATAS", "TOTAL ATAS ÁREA", "TOP COMP CAPEX", "ITENS", "ATAS", "TOTAL ATAS ÁREA"],
+  ["ANA SILVA", 320, 12, 25, "BRUNO LIMA", 410, 14, 31, "CARLA SOUZA", 280, 8, 18],
+  ["DIEGO COSTA", 220, 8, 25, "ELISA ROCHA", 300, 10, 31, "FABIO ALVES", 180, 6, 18],
+  ["FORNECEDORES GERAL"],
+  ["FORNECEDOR", "QTD ATAS", "QTD ITENS", "% CONCENTRAÇÃO DE ITENS", "ANÁLISE"],
+  ["ACME MATERIAL", 12, 160, "22%", "Alta Concentração"],
+  ["BETA SERVIÇOS", 9, 110, "15%", "Alta Concentração"],
+  ["GAMA INDUSTRIAL", 7, 90, "12%", "Volume Médio"],
+  ["DELTA TECNOLOGIA", 5, 70, "9%", "Volume Médio"],
+  ["OUTROS FORNECEDORES", 4, 50, "7%", "Pulverizado"],
+  ["TOTAL", 37, 480, "100%", null],
+  ["ATA INDIRETOS", "ATA DIRETOS", "ATA CAPEX"],
+  ["QTD ATAS", "QTD ATAS", "QTD ATAS"],
+  [12, 14, 8],
+  ["QTD ITENS", "QTD ITENS", "QTD ITENS"],
+  [320, 410, 280],
+  ["EVOLUÇÃO POR ÁREA (EM ANDAMENTO)"],
+  ["Rótulos de Linha", "QTD ATAS", "QTD ITENS"],
+  ["INDIRETOS", 25, 700],
+  ["DIRETOS", 31, 900],
+  ["CAPEX", 18, 500],
+  ["PREVISÃO DE CONCLUSÃO POR FAIXA"],
+  ["INDIRETOS", null, "DIRETOS", null, "CAPEX"],
+  ["Rótulos de Linha", "QTD ATAS", "QTD ITENS", "QTD ATAS", "QTD ITENS", "QTD ATAS", "QTD ITENS"],
+  ["ATÉ 15 DIAS", 3, 40, 4, 60, 2, 25],
+  ["ATÉ 30 DIAS", 5, 70, 6, 90, 3, 35],
+  ["ATÉ 60 DIAS", 7, 100, 8, 120, 4, 55],
+  ["ACIMA DE 60 DIAS", 9, 140, 10, 160, 5, 70],
+  ["PREVISÕES VENCIDAS", 2, 30, 3, 45, 1, 12],
+  ["PREVISÃO DE CONCLUSÃO POR MÊS"],
+  ["INDIRETOS", null, "DIRETOS", null, "CAPEX"],
+  ["Rótulos de Linha", "QTD ATAS", "QTD ITENS", "QTD ATAS", "QTD ITENS", "QTD ATAS", "QTD ITENS"],
+  ["Outubro", 2, 25, 3, 40, 1, 15],
+  ["Novembro", 4, 60, 5, 75, 2, 30],
+  ["Dezembro", 6, 90, 7, 110, 3, 45],
+  ["Vencida/Sem Previsão", 2, 30, 3, 45, 1, 12],
+];
+
+const andamento = (current: boolean): Matrix => [
+  ["DESCRIÇÃO DOS LOTES ATAS", "QTD ITENS", "COMPRADOR", "AREA", "ETAPA ATUAL", "N° CONTRATO", "ESTIMATIVA VALOR TOTAL"],
+  ["Kit de vidraria", 40, "ANA SILVA", "INDIRETOS", current ? "FINALIZADO" : "EM ANDAMENTO", "4600001001", 12000],
+  ["Reagentes de laboratório", 60, "BRUNO LIMA", "DIRETOS", "FINALIZADO", "4600001002", 24000],
+  ["Serviço de calibração", 25, "CARLA SOUZA", "CAPEX", current ? "FINALIZADA" : "EM ANDAMENTO", "4600001003", 18000],
+];
+
+const contratos: Matrix = [
+  ["Contrato", "Item", "Fornecedor"],
+  ["4600001001", "Material A", "ACME MATERIAL (1000411)"],
+  ["4600001002", "Material B", "BETA SERVIÇOS (1000412)"],
+  ["4600001003", "Material C", "GAMA INDUSTRIAL (1000413)"],
+];
+
+const cruzamento: Matrix = [
+  ["COMPRADOR", "AREA", "PRAZO CONCLUSÃO", "QTD ATAS", "QTD ITENS"],
+  ["ANA SILVA", "INDIRETOS", "15/10/2026", 1, 10],
+  ["BRUNO LIMA", "DIRETOS", "20/11/2026", 2, 20],
+  ["CARLA SOUZA", "CAPEX", "31/01/2027", 3, 30],
+];
+
+const statusAtas = (): Matrix => {
+  const area = (name: string, base: string, offset: number): Matrix => [
+    [name],
+    [`${name} | Status das Atas`],
+    [`Carteira da área e ações prioritárias | Base: ${base}`],
+    ["10 TOTAL", "8 VIGENTES", "2 VENCIDAS", "3 ATÉ 15 DIAS", "4 16 A 30 DIAS", "1 A RENOVAR"],
+    ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)"],
+    [`460000${2000 + offset}`, "20/10/2026", "ANA SILVA"],
+    [`460000${2001 + offset}`, "05/11/2026", "BRUNO LIMA"],
+    ["COMPRADOR(A)", "VIG.", "VENC.", "A RENOVAR", "TOTAL"],
+    ["ANA SILVA", 4, 1, 1, 5],
+    ["BRUNO LIMA", 3, 1, 0, 4],
+    ["TOTAL", 7, 2, 1, 9],
+    ["4 atas adicionais vencem entre 31 e 60 dias."],
+  ];
+  return [...area("INDIRETOS", "13/10/2026", 0), ...area("DIRETOS", "13/10/2026", 10), ...area("CAPEX", "13/10/2026", 20)];
+};
+
+function makeWorkbook(current: boolean) {
+  const workbook = XLSX.utils.book_new();
+  for (const [name, matrix] of [
+    ["Resumo semanal", resumo(current)],
+    ["Base - Atas Em andamento", andamento(current)],
+    ["Base - Controle de Contratos", contratos],
+    ["Base - Cruzamento por comprador", cruzamento],
+    ["Status das Atas", statusAtas()],
+  ] as Array<[string, Matrix]>) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(matrix), name);
+  }
+  return workbook;
+}
+
+XLSX.writeFile(makeWorkbook(true), `${output}/semana-atual.xlsx`);
+XLSX.writeFile(makeWorkbook(false), `${output}/semana-anterior.xlsx`);
+console.log(`Amostras geradas em ${output}/semana-atual.xlsx e ${output}/semana-anterior.xlsx.`);
 ````
 
 ## `scripts/dev/panorama-dry-run.mts`
@@ -7447,7 +7619,10 @@ for (const area of ["INDIRETOS", "DIRETOS", "CAPEX"] as const) {
  * Simula o panorama no Node: lê as planilhas, extrai o snapshot e monta o
  * mesmo StaticDashboardData da tela, sem navegador nem IndexedDB.
  *
- *   npm run panorama:dry-run -- amostras/a.csv amostras/b.csv --ref=2026-10-14
+ *   npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
+ *
+ * Para comparar com a importação anterior:
+ *   npm run panorama:dry-run -- atual.xlsx --ref=2026-10-13 --anterior anterior.xlsx --ref-anterior=2026-10-05
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -7455,39 +7630,68 @@ import * as XLSX from "xlsx";
 import { extractSnapshotPayload, type SnapshotSourceSheet } from "@/lib/dashboard-snapshot";
 
 const args = process.argv.slice(2);
-const files = args.filter((arg) => !arg.startsWith("--"));
+const separator = args.indexOf("--anterior");
+const currentArgs = separator >= 0 ? args.slice(0, separator) : args;
+const previousArgs = separator >= 0 ? args.slice(separator + 1) : [];
+const files = currentArgs.filter((arg) => !arg.startsWith("--"));
+const previousFiles = previousArgs.filter((arg) => !arg.startsWith("--"));
 const referenceDate = args.find((arg) => arg.startsWith("--ref="))?.slice(6) ?? null;
+const previousReferenceDate = args.find((arg) => arg.startsWith("--ref-anterior="))?.slice(15) ?? null;
 
 if (files.length === 0) {
-  console.error("uso: npm run panorama:dry-run -- <arquivo.csv|xlsx> [...] [--ref=AAAA-MM-DD]");
+  console.error("uso: npm run panorama:dry-run -- <arquivo.csv|xlsx> [...] [--ref=AAAA-MM-DD] [--anterior <arquivo> ... --ref-anterior=AAAA-MM-DD]");
   process.exit(1);
 }
 
-const sheets: SnapshotSourceSheet[] = [];
-for (const file of files) {
-  const buffer = readFileSync(file);
-  const workbook = path.extname(file).toLowerCase() === ".csv"
-    ? XLSX.read(new TextDecoder("utf-8").decode(buffer), { type: "string", FS: ";", raw: true })
-    : XLSX.read(buffer, { type: "buffer", cellDates: true });
-  for (const sheetName of workbook.SheetNames) {
-    sheets.push({
-      fileName: path.basename(file),
-      sheetName,
-      matrix: XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
-        header: 1,
-        raw: true,
-        defval: null,
-        blankrows: true,
-      }) as unknown[][],
-    });
+function decodeCsv(buffer: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder("windows-1252").decode(buffer);
   }
 }
 
-const snapshot = extractSnapshotPayload(sheets, {
+function delimiter(text: string): string {
+  const sample = text.split(/\r\n|\r|\n/).slice(0, 5).join("\n");
+  return [";", ",", "\t", "|"].sort((a, b) => (sample.split(b).length - 1) - (sample.split(a).length - 1))[0];
+}
+
+function readSheets(inputFiles: string[]): SnapshotSourceSheet[] {
+  const sheets: SnapshotSourceSheet[] = [];
+  for (const file of inputFiles) {
+    const buffer = readFileSync(file);
+    const ext = path.extname(file).toLowerCase();
+    const workbook = ext === ".csv"
+      ? XLSX.read(decodeCsv(buffer), { type: "string", FS: delimiter(decodeCsv(buffer)), raw: true })
+      : XLSX.read(buffer, { type: "buffer", cellDates: true });
+    for (const sheetName of workbook.SheetNames) {
+      sheets.push({
+        fileName: path.basename(file),
+        sheetName,
+        matrix: XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+          header: 1,
+          raw: true,
+          defval: null,
+          blankrows: true,
+        }) as unknown[][],
+      });
+    }
+  }
+  return sheets;
+}
+
+const current = extractSnapshotPayload(readSheets(files), {
   referenceDate,
   fileNames: files.map((file) => path.basename(file)),
 });
-(globalThis as Record<string, unknown>).__ATAS_STORE__ = { snapshots: [snapshot], rows: [], datasets: [] };
+const snapshots = [current];
+if (previousFiles.length > 0) {
+  snapshots.push(extractSnapshotPayload(readSheets(previousFiles), {
+    referenceDate: previousReferenceDate,
+    fileNames: previousFiles.map((file) => path.basename(file)),
+  }));
+}
+(globalThis as Record<string, unknown>).__ATAS_STORE__ = { snapshots, rows: [], datasets: [] };
 
 const storeModule = await import("@/lib/static-store");
 if (!("__STUB__" in storeModule)) {
@@ -7496,7 +7700,7 @@ if (!("__STUB__" in storeModule)) {
 }
 const { getStaticDashboardData } = await import("@/lib/static-dashboard");
 const data = await getStaticDashboardData();
-console.log("hasData:", data.hasData, "| referência:", data.currentSnapshot?.referenceDate);
+console.log("hasData:", data.hasData, "| referência:", data.currentSnapshot?.referenceDate, "| anterior:", data.previousSnapshot?.referenceDate);
 console.log("\nBlocos:", data.blocos);
 console.log("\nKPIs:", data.kpis);
 console.log("\nPor área:", data.porArea);
@@ -7505,6 +7709,8 @@ console.log("\nTop compradores:", data.topCompradores);
 console.log("\nFornecedores:", data.fornecedores);
 console.log("\nEvolução:", data.evolucao);
 console.log("\nPrevisões:", data.previsoes.length, data.previsoes.slice(0, 5));
+console.log("\natasConcluidas:", data.atasConcluidas);
+console.log("\nstatusAtas:", data.statusAtas);
 ````
 
 ## `scripts/dev/register.mjs`
@@ -7576,7 +7782,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const output = path.join(root, "fonte.md");
-const excluded = new Set([".git", ".next", "out", "node_modules", "build", "dist", "coverage", "fonte.md"]);
+const excluded = new Set([".git", ".next", "out", "node_modules", "build", "dist", "coverage", "amostras", "fonte.md"]);
 const extensions = new Map([
   [".ts", "typescript"], [".tsx", "tsx"], [".mjs", "javascript"],
   [".mts", "typescript"], [".json", "json"], [".css", "css"],
@@ -7913,6 +8119,10 @@ import { STATIC_DATA_EVENT } from "@/lib/static-store";
 import { SNAPSHOT_BLOCKS, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
+import { ResumoCards } from "@/components/resumo-cards";
+import { AtasConcluidas } from "@/components/atas-concluidas";
+import { FornecedoresAnalise } from "@/components/fornecedores-analise";
+import { StatusAtas } from "@/components/status-atas";
 import { EmptyState, PageHeader, areaStyle } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
 import clsx from "clsx";
@@ -8021,18 +8231,12 @@ export default function PanoramaPage() {
     );
   }
 
-  const { kpis, porArea, topCompradores, fornecedores, evolucao, renovacoes, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos } = data;
+  const { kpis, porArea, topCompradores, fornecedores, evolucao, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos, atasConcluidas, statusAtas } = data;
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
   const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
   const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
   const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
-
-  // Helpers para o funil de renovação
-  const getRenov = (area: string, status: string) => {
-    const row = (renovacoes as any[]).find(r => r.area === area && r.status === status);
-    return { atas: row?.atas || 0, itens: row?.itens || 0 };
-  };
 
   const prevByBand = (area: string, band: ForecastBand) => {
     const key = area.toUpperCase() as SnapshotArea;
@@ -8129,26 +8333,37 @@ export default function PanoramaPage() {
         )}
       />
 
-      {/* Bloco 1: três gráficos da semana anterior e três da semana atual. */}
+      {/* Bloco 1: seis cards de resumo — semana anterior e semana atual. */}
       <section aria-labelledby="comparacao-semanal" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Leitura dos gráficos</h2>
+            <h2 id="comparacao-semanal" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Resumo das atas</h2>
             <p className="mt-1 text-[12.5px] text-ink-soft">A semana anterior é preservada no IndexedDB deste navegador e substituída pela leitura imediatamente anterior após uma nova importação.</p>
           </div>
           <span className="rounded-full bg-navy-50 px-3 py-1 text-[12px] font-semibold text-navy-700">
             Referência anterior: {formatReferenceDate(previousSnapshot?.referenceDate)}
           </span>
         </div>
-        {previousSnapshot && <SnapshotCharts title={`Semana anterior · ${formatReferenceDate(previousSnapshot.referenceDate)}`} kpis={previousSnapshot.kpis} muted />}
+        {previousSnapshot && (
+          <ResumoCards
+            titulo="Resumo das Atas Concluídas"
+            status={`Status semana anterior ${formatShortDate(previousSnapshot.referenceDate)}`}
+            kpis={previousSnapshot.kpis}
+            tone="anterior"
+          />
+        )}
         {ausente("kpis-leitura") ? (
           <BlocoAusente bloco="kpis-leitura" referencia={referencia} />
         ) : (
-          <SnapshotCharts
-            title={`Semana atual${currentSnapshot?.referenceDate ? ` · ${formatReferenceDate(currentSnapshot.referenceDate)}` : ""}`}
+          <ResumoCards
+            titulo="Resumo das Atas Concluídas"
+            status={`Status atual ${formatShortDate(currentSnapshot?.referenceDate)}`}
+            tone="atual"
             kpis={{
               concluidasAtas: kpis.concluidosAtas,
               concluidasItens: kpis.concluidosItens,
+              andamentoAtas: kpis.andamentoAtas,
+              andamentoItens: kpis.andamentoItens,
               saldoItens: kpis.saldoItens,
               consumidoItens: kpis.consumidoItens,
               aVencerAtas: kpis.aVencerAtas,
@@ -8157,6 +8372,19 @@ export default function PanoramaPage() {
               vencidasItens: kpis.vencidasItens,
             }}
           />
+        )}
+      </section>
+
+      {/* Bloco 1b: atas que passaram a FINALIZADO desde a importação anterior. */}
+      <section aria-labelledby="atas-concluidas-recentes" className="space-y-4">
+        <div>
+          <h2 id="atas-concluidas-recentes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Atas Concluídas desde a Última Atualização</h2>
+          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. O fornecedor vem da aba “Base - Controle de Contratos”, pelo nº do contrato.</p>
+        </div>
+        {ausente("atas-concluidas") ? (
+          <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
+        ) : (
+          <AtasConcluidas dados={atasConcluidas} referencia={referencia} />
         )}
       </section>
 
@@ -8314,6 +8542,7 @@ export default function PanoramaPage() {
             </table>
           </div>
           )}
+          {!ausente("fornecedores") && <FornecedoresAnalise fornecedores={fornecedores} />}
         </div>
       </section>
 
@@ -8356,31 +8585,15 @@ export default function PanoramaPage() {
         )}
       </section>
 
-      {/* Bloco 5: Status de Renovações (Ref: Screenshots 5, 6, 7 & 15, 16, 17) */}
-      <section>
-        <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Status de Renovações</h2>
-        <div className="space-y-8">
-          {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
-            const naoIniciado = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Iniciado");
-            const naoRenov = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Não Será Renovado");
-            const novoProj = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Criado Novo Projeto");
-            const emRenov = getRenov(area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", "Em Renovação");
-
-            return (
-              <div key={area}>
-                <div className={clsx("w-full py-2 text-center text-white font-bold mb-3 tracking-wider", areaStyle(area).band)}>
-                  {area}
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center text-[12px]">
-                  <RenovBox title="NÃO INICIADO" data={naoIniciado} bg="bg-[#f0e6f5]" />
-                  <RenovBox title="NÃO SERÁ RENOVADO" data={naoRenov} bg="bg-[#f7e6e6]" />
-                  <RenovBox title="CRIADO NOVO PROJETO" data={novoProj} bg="bg-[#fbdca3]" />
-                  <RenovBox title="EM RENOVAÇÃO" data={emRenov} bg="bg-[#eaf5d8]" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Bloco 5: Status das Atas por área (aba dedicada da planilha). */}
+      <section aria-labelledby="status-das-atas">
+        <h2 id="status-das-atas" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-2">Status das Atas</h2>
+        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de cada área, vencimentos prioritários e distribuição por comprador(a), lidos da aba “Status das Atas” importada junto com o resumo.</p>
+        {ausente("status-atas") ? (
+          <BlocoAusente bloco="status-atas" referencia={referencia} />
+        ) : (
+          <StatusAtas areas={statusAtas} referencia={referencia} />
+        )}
       </section>
 
       {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
@@ -8456,121 +8669,12 @@ function formatReferenceDate(value: string | null | undefined): string {
   return new Date(year, month - 1, day).toLocaleDateString("pt-BR");
 }
 
-type SnapshotChartKpis = {
-  concluidasAtas: number | null;
-  concluidasItens: number | null;
-  saldoItens: number | null;
-  consumidoItens: number | null;
-  aVencerAtas: number | null;
-  aVencerItens: number | null;
-  vencidasAtas: number | null;
-  vencidasItens: number | null;
-};
-
-function SnapshotCharts({ title, kpis, muted = false }: { title: string; kpis: SnapshotChartKpis; muted?: boolean }) {
-  return (
-    <div className={clsx("rounded-2xl border p-4 sm:p-5", muted ? "border-line bg-navy-50/40" : "border-line bg-surface")}>
-      <h3 className="mb-4 text-[15px] font-bold uppercase tracking-wide text-navy-900">{title}</h3>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <MiniMetricChart
-          title="ATA CONCLUÍDAS (VÁLIDAS)"
-          groups={[{ label: "VÁLIDO", bars: [{ label: "ATAS", value: kpis.concluidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.concluidasItens, color: "#e06e1f" }] }]}
-        />
-        <MiniMetricChart
-          title="ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)"
-          groups={[{ label: "COM SALDO", bars: [{ label: "ITENS", value: kpis.saldoItens, color: "#0c2338" }] }, { label: "CONSUMIDO", bars: [{ label: "ITENS", value: kpis.consumidoItens, color: "#e06e1f" }] }]}
-        />
-        <MiniMetricChart
-          title="ATAS VENCIDAS E A VENCER"
-          groups={[{ label: "RENOVAR", bars: [{ label: "ATAS", value: kpis.aVencerAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.aVencerItens, color: "#e06e1f" }] }, { label: "VENCIDO", bars: [{ label: "ATAS", value: kpis.vencidasAtas, color: "#0c2338" }, { label: "ITENS", value: kpis.vencidasItens, color: "#e06e1f" }] }]}
-        />
-      </div>
-    </div>
-  );
-}
-
-function MiniMetricChart({ title, groups }: { title: string; groups: Array<{ label: string; bars: Array<{ label: string; value: number | null; color: string }> }> }) {
-  const max = Math.max(1, ...groups.flatMap((group) => group.bars.map((bar) => bar.value ?? 0)));
-  return (
-    <div className="rounded-xl border border-line bg-white p-3" aria-label={title}>
-      <h4 className="min-h-8 text-center text-[11px] font-bold uppercase leading-tight text-navy-900">{title}</h4>
-      <div className="mt-3 flex h-32 items-end justify-around gap-2 border-b border-line px-1">
-        {groups.map((group) => (
-          <div key={group.label} className="flex h-full flex-1 items-end justify-center gap-1">
-            {group.bars.map((bar) => {
-              const value = bar.value ?? 0;
-              return (
-                <div key={`${group.label}-${bar.label}`} className="flex h-full w-7 flex-col items-center justify-end">
-                  <span className="mb-1 text-[10px] font-bold text-navy-900">{fmtInt(value)}</span>
-                  <div className="w-full rounded-t-sm" style={{ height: `${Math.max(value ? 5 : 2, (value / max) * 78)}px`, backgroundColor: bar.color }} />
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex justify-around gap-2 text-center text-[9px] font-bold uppercase text-ink-soft">
-        {groups.map((group) => <span key={group.label} className="flex-1">{group.label}</span>)}
-      </div>
-      <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[9px] text-ink-soft">
-        {[...new Map(groups.flatMap((group) => group.bars.map((bar) => [bar.label, bar.color] as const))).entries()].map(([label, color]) => (
-          <span key={label} className="inline-flex items-center gap-1"><span className="h-2 w-2" style={{ backgroundColor: color }} aria-hidden="true" />{label}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function KpiChartCard({ title, bars, groupLabel }: { title: string, bars: { label: string, val: number, color: string }[], groupLabel?: string }) {
-  const max = Math.max(...bars.map(b => b.val), 1);
-  return (
-    <div className="card p-4 border border-line flex flex-col items-center justify-center">
-      <h3 className="text-[12px] font-bold text-neutral-500 uppercase tracking-wide text-center mb-6 h-8">{title}</h3>
-      <div className="flex items-end gap-2 h-24 mb-2 relative">
-        {bars.map((b, i) => (
-          <div key={b.label} className="flex flex-col items-center justify-end w-10">
-            <span className="text-[11px] font-bold text-white px-1 py-0.5 rounded-sm z-10" style={{ backgroundColor: b.color, transform: 'translateY(5px)' }}>
-              {b.val}
-            </span>
-            <div className="w-full" style={{ height: `${(b.val / max) * 60}px`, backgroundColor: b.color }} />
-          </div>
-        ))}
-      </div>
-      <div className="w-full border-t border-line mt-1 relative pt-2 text-center text-[10px] font-bold text-neutral-500">
-        {groupLabel ? groupLabel : (
-          <div className="flex gap-4 justify-center">
-            {bars.map(b => <span key={b.label}>{b.label}</span>)}
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col gap-1 mt-4 items-end w-full pr-4 text-[10px] font-bold text-neutral-500">
-        {bars.map(b => (
-          <div key={b.label} className="flex items-center gap-1.5">
-            <span className="w-2 h-2" style={{ backgroundColor: b.color }} />
-            {b.label}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RenovBox({ title, data, bg }: { title: string, data: { atas: number, itens: number }, bg: string }) {
-  return (
-    <div className="flex flex-col border border-line">
-      <div className="bg-navy-950 text-white font-bold py-2 px-1 text-[11px]">{title}</div>
-      <div className={clsx("flex-1 py-4 font-medium flex flex-col items-center justify-center min-h-[60px]", bg)}>
-        {data.atas === 0 && data.itens === 0 ? (
-          <span className="text-neutral-500">0</span>
-        ) : (
-          <>
-            <span className="text-navy-950">{fmtInt(data.atas)} ATAS</span>
-            <span className="text-navy-950">{fmtInt(data.itens)} ITENS</span>
-          </>
-        )}
-      </div>
-    </div>
-  );
+/** dd/mm, como nos títulos dos cards do SharePoint. */
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "sem data";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
 }
 
 function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
@@ -8903,6 +9007,70 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </ul>
       </nav>
+      )}
+    </div>
+  );
+}
+````
+
+## `src/components/atas-concluidas.tsx`
+
+````tsx
+import { fmtCurrency, fmtDate, fmtInt } from "@/lib/format";
+import type { AtasConcluidasResult } from "@/lib/static-dashboard";
+
+export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasResult; referencia: string | null }) {
+  const comparacao = dados.primeiraLeitura
+    ? "Primeira leitura da aba de andamento"
+    : `Comparado com a importação de ${fmtDate(dados.comparadoComReferencia)}`;
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4">
+        <div>
+          <h3 className="text-[14.5px] font-bold text-navy-950">Atas que passaram a FINALIZADO</h3>
+          <p className="mt-1 text-[12.5px] text-ink-soft">{comparacao}{referencia ? ` · base atual ${fmtDate(referencia)}` : ""}</p>
+        </div>
+        <span className="rounded-full bg-ok-100 px-3 py-1 text-[12px] font-semibold text-ok-700">
+          {fmtInt(dados.novas.length)} novas · {fmtInt(dados.totalFinalizadas)} finalizadas na base
+        </span>
+      </div>
+      {dados.novas.length === 0 ? (
+        <p className="px-5 py-8 text-center text-[13.5px] text-ink-soft">
+          Nenhuma ata nova passou a FINALIZADO desde a importação anterior.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-[12.5px]">
+            <caption className="sr-only">Atas concluídas desde a última atualização</caption>
+            <thead className="bg-navy-950 text-white">
+              <tr>
+                {[
+                  "ATA",
+                  "CONTRATO",
+                  "FORNECEDOR",
+                  "QTD. DE ITENS",
+                  "COMPRADOR(A)",
+                  "ÁREA",
+                  "VALOR",
+                ].map((label) => <th key={label} scope="col" className="px-3 py-3 font-bold">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/70">
+              {dados.novas.map((ata) => (
+                <tr key={ata.key} className="hover:bg-navy-50/50">
+                  <td className="max-w-[280px] px-3 py-3 font-semibold text-navy-950">ATA: {ata.descricao}</td>
+                  <td className="tnum px-3 py-3 text-ink">{ata.contrato ?? "—"}</td>
+                  <td className="px-3 py-3 text-ink">{ata.fornecedor ?? "—"}</td>
+                  <td className="tnum px-3 py-3 text-ink">{fmtInt(ata.itens)}</td>
+                  <td className="px-3 py-3 text-ink">{ata.comprador ?? "—"}</td>
+                  <td className="px-3 py-3 font-semibold text-navy-700">{ata.area ?? "—"}</td>
+                  <td className="tnum px-3 py-3 text-ink">{fmtCurrency(ata.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -9690,6 +9858,45 @@ function NovoDocumento({ onCreated }: { onCreated: (d: DocItem) => void }) {
         {salvando ? "Salvando…" : "Salvar documento"}
       </button>
     </form>
+  );
+}
+````
+
+## `src/components/fornecedores-analise.tsx`
+
+````tsx
+import { fmtInt, fmtNum } from "@/lib/format";
+
+interface SupplierRow {
+  fornecedor: string;
+  atas: number;
+  itens: number;
+  concentracao: number;
+  analise: string | null;
+}
+
+export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRow[] }) {
+  const total = fornecedores.find((row) => /^(TOTAL|TOTAL GERAL)$/i.test(row.fornecedor));
+  const outros = fornecedores.find((row) => row.fornecedor.toUpperCase() === "OUTROS FORNECEDORES");
+  const principais = fornecedores.filter((row) => !/^(TOTAL|TOTAL GERAL)$/i.test(row.fornecedor) && row.fornecedor.toUpperCase() !== "OUTROS FORNECEDORES");
+  const primeiro = principais[0];
+  const concentration = principais.reduce((sum, row) => sum + (row.concentracao || 0), 0);
+
+  return (
+    <aside className="mt-4 rounded-xl border border-accent-200 bg-accent-50 px-4 py-4" aria-label="Análise automática de fornecedores">
+      <h4 className="text-[13px] font-bold uppercase tracking-[0.07em] text-accent-700">Análise automática</h4>
+      <ul className="mt-2 grid gap-2 text-[12.5px] leading-relaxed text-ink sm:grid-cols-3">
+        <li>
+          {primeiro ? <><strong>{primeiro.fornecedor}</strong> concentra {fmtNum(primeiro.concentracao)}% dos itens entre os principais fornecedores ({fmtInt(primeiro.itens)} itens).</> : "Não há fornecedor principal reconhecido para analisar."}
+        </li>
+        <li>
+          {total ? <>A tabela soma <strong>{fmtInt(total.atas)} atas</strong> e <strong>{fmtInt(total.itens)} itens</strong>; os quatro principais representam {fmtNum(concentration)}% da concentração informada.</> : "A linha TOTAL não foi localizada na tabela de fornecedores."}
+        </li>
+        <li>
+          {outros ? <>OUTROS FORNECEDORES reúne {fmtInt(outros.atas)} atas e {fmtInt(outros.itens)} itens ({fmtNum(outros.concentracao)}%).</> : "A linha OUTROS FORNECEDORES não foi localizada."}
+        </li>
+      </ul>
+    </aside>
   );
 }
 ````
@@ -11548,6 +11755,165 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 ````
 
+## `src/components/resumo-cards.tsx`
+
+````tsx
+import { fmtInt } from "@/lib/format";
+import type { SnapshotKpis } from "@/lib/dashboard-snapshot";
+
+export function ResumoCards({
+  titulo,
+  status,
+  kpis,
+  tone,
+}: {
+  titulo: string;
+  status: string;
+  kpis: SnapshotKpis;
+  tone: "anterior" | "atual";
+}) {
+  const cards = [
+    { label: "Concluídas", value: kpis.concluidasAtas, detail: `${fmtInt(kpis.concluidasItens)} itens`, tone: "navy" },
+    { label: "Em andamento", value: kpis.andamentoAtas, detail: `${fmtInt(kpis.andamentoItens)} itens`, tone: "blue" },
+    { label: "Itens com saldo", value: kpis.saldoItens, detail: "itens válidos", tone: "teal" },
+    { label: "Itens sem saldo", value: kpis.consumidoItens, detail: "itens válidos", tone: "orange" },
+    { label: "Vencidas", value: kpis.vencidasAtas, detail: `${fmtInt(kpis.vencidasItens)} itens`, tone: "red" },
+    { label: "A vencer", value: kpis.aVencerAtas, detail: `${fmtInt(kpis.aVencerItens)} itens`, tone: "amber" },
+  ] as const;
+
+  return (
+    <section className="card overflow-hidden" aria-label={`${titulo} — ${status}`}>
+      <div className={tone === "anterior" ? "bg-[#f8e8e8] px-5 py-3" : "bg-[#e7e7e7] px-5 py-3"}>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[15px] font-bold uppercase tracking-[0.06em] text-navy-950">{titulo}</h3>
+          <span className="text-[12px] font-semibold text-ink-soft">{status}</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+        {cards.map((card) => (
+          <div key={card.label} className="min-h-[112px] px-3 py-4 text-center sm:px-4">
+            <div className={`mx-auto mb-2 h-1 w-12 rounded-full ${
+              card.tone === "navy" ? "bg-navy-700" :
+              card.tone === "blue" ? "bg-diretos-500" :
+              card.tone === "teal" ? "bg-indiretos-500" :
+              card.tone === "orange" ? "bg-accent-500" :
+              card.tone === "red" ? "bg-danger-600" : "bg-warn-600"
+            }`} aria-hidden="true" />
+            <p className="tnum font-display text-[25px] font-bold tracking-tight text-navy-950">{fmtInt(card.value)}</p>
+            <p className="mt-1 text-[11.5px] font-bold uppercase leading-tight text-ink-soft">{card.label}</p>
+            <p className="mt-1 text-[11px] text-ink-soft">{card.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+````
+
+## `src/components/status-atas.tsx`
+
+````tsx
+import { fmtDate, fmtInt } from "@/lib/format";
+import { areaStyle } from "@/components/ui";
+import type { SnapshotArea, SnapshotStatusAtasArea } from "@/lib/dashboard-snapshot";
+
+const AREAS: SnapshotArea[] = ["INDIRETOS", "DIRETOS", "CAPEX"];
+
+export function StatusAtas({
+  areas,
+  referencia,
+}: {
+  areas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
+  referencia: string | null;
+}) {
+  return (
+    <div className="space-y-6">
+      {AREAS.map((area) => {
+        const status = areas[area];
+        return status ? <StatusArea key={area} status={status} referencia={referencia} /> : (
+          <div key={area} className="card border-dashed px-5 py-6 text-center text-[13px] text-ink-soft">
+            <strong className="text-navy-900">{area}</strong> — bloco não encontrado na aba Status das Atas.
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatusArea({ status, referencia }: { status: SnapshotStatusAtasArea; referencia: string | null }) {
+  const style = areaStyle(status.area);
+  const tiles = [
+    ["TOTAL", status.total],
+    ["VIGENTES", status.vigentes],
+    ["VENCIDAS", status.vencidas],
+    ["ATÉ 15 DIAS", status.ate15],
+    ["16 A 30 DIAS", status.de16a30],
+    ["A RENOVAR", status.aRenovar],
+  ] as const;
+  return (
+    <section className="card overflow-hidden" aria-label={`Status das atas — ${status.area}`}>
+      <div className={`px-5 py-3 text-center font-bold ${style.band}`}>
+        <div className="text-[16px] uppercase tracking-wide">{status.area}</div>
+        <div className="mt-1 text-[12px] font-medium opacity-90">
+          {status.titulo ?? "Status das Atas"}{status.baseDate ? ` · base ${fmtDate(status.baseDate)}` : referencia ? ` · referência ${fmtDate(referencia)}` : ""}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+        {tiles.map(([label, value]) => (
+          <div key={label} className="px-3 py-4 text-center">
+            <p className="tnum text-[22px] font-bold text-navy-950">{fmtInt(value)}</p>
+            <p className="mt-1 text-[10.5px] font-bold uppercase leading-tight text-ink-soft">{label}</p>
+          </div>
+        ))}
+      </div>
+      {(status.prioridades.length > 0 || status.carteira.length > 0 || status.notas.length > 0) && (
+        <div className="grid gap-5 border-t border-line p-5 lg:grid-cols-2">
+          {status.prioridades.length > 0 && (
+            <div>
+              <h4 className="text-[12px] font-bold uppercase tracking-[0.07em] text-navy-900">Prioridades de vencimento</h4>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[360px] text-[12px]">
+                  <thead className="bg-navy-50 text-left text-ink-soft">
+                    <tr><th className="px-2 py-2">CONTRATO SAP</th><th className="px-2 py-2">VENCIMENTO</th><th className="px-2 py-2">COMPRADOR(A)</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/70">
+                    {status.prioridades.map((item, index) => (
+                      <tr key={`${item.contrato}-${index}`}><td className="tnum px-2 py-2 font-semibold">{item.contrato}</td><td className="px-2 py-2">{fmtDate(item.vencimento)}</td><td className="px-2 py-2">{item.comprador ?? "—"}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {status.carteira.length > 0 && (
+            <div>
+              <h4 className="text-[12px] font-bold uppercase tracking-[0.07em] text-navy-900">Carteira por comprador(a)</h4>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[360px] text-[12px]">
+                  <thead className="bg-navy-50 text-left text-ink-soft">
+                    <tr><th className="px-2 py-2">COMPRADOR(A)</th><th className="px-2 py-2">VIG.</th><th className="px-2 py-2">VENC.</th><th className="px-2 py-2">A RENOVAR</th><th className="px-2 py-2">TOTAL</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/70">
+                    {status.carteira.map((item) => (
+                      <tr key={item.comprador}><td className="px-2 py-2 font-semibold">{item.comprador}</td><td className="tnum px-2 py-2">{fmtInt(item.vigentes)}</td><td className="tnum px-2 py-2">{fmtInt(item.vencidas)}</td><td className="tnum px-2 py-2">{fmtInt(item.aRenovar)}</td><td className="tnum px-2 py-2">{fmtInt(item.total)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {status.notas.length > 0 && (
+            <div className="lg:col-span-2 space-y-2">
+              {status.notas.map((note) => <p key={note} className="rounded-lg bg-warn-100 px-3 py-2 text-[12.5px] leading-relaxed text-warn-700">{note}</p>)}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+````
+
 ## `src/components/ui.tsx`
 
 ````tsx
@@ -12033,6 +12399,9 @@ export const SNAPSHOT_BLOCK_KEYS = [
   "previsao-faixas",
   "previsao-meses",
   "previsoes-cruzadas",
+  "atas-concluidas",
+  "contratos-fornecedores",
+  "status-atas",
 ] as const;
 export type SnapshotBlockKey = (typeof SNAPSHOT_BLOCK_KEYS)[number];
 
@@ -12046,6 +12415,18 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60, acima de 60 e vencidas" },
   "previsao-meses": { label: "Previsão de conclusão por mês", esperado: "pivô PREVISÃO DE CONCLUSÃO POR MÊS" },
   "previsoes-cruzadas": { label: "Previsões por comprador", esperado: "COMPRADOR, AREA e PRAZO CONCLUSÃO" },
+  "atas-concluidas": {
+    label: "Atas concluídas (base de andamento)",
+    esperado: "aba Base - Atas Em andamento com as colunas DESCRIÇÃO DOS LOTES ATAS, QTD ITENS, COMPRADOR, AREA, ETAPA ATUAL e N° CONTRATO",
+  },
+  "contratos-fornecedores": {
+    label: "Fornecedor por contrato",
+    esperado: "aba Base - Controle de Contratos com as colunas Contrato, Item (ou Material) e Fornecedor",
+  },
+  "status-atas": {
+    label: "Status das atas por área",
+    esperado: "aba Status das Atas com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL/VIGENTES/VENCIDAS/ATÉ 15 DIAS/16 A 30 DIAS/A RENOVAR, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) e tabela COMPRADOR(A) | VIG. | VENC.",
+  },
 };
 
 export function snapshotBlockLabel(key: string): string {
@@ -12055,6 +12436,9 @@ export function snapshotBlockLabel(key: string): string {
 export interface SnapshotKpis {
   concluidasAtas: number | null;
   concluidasItens: number | null;
+  /** Card “ATAS EM ANDAMENTO (GERAL)”; soma das áreas quando o card não existe. */
+  andamentoAtas: number | null;
+  andamentoItens: number | null;
   saldoItens: number | null;
   consumidoItens: number | null;
   aVencerAtas: number | null;
@@ -12137,6 +12521,51 @@ export interface SnapshotMonthlyForecastArea {
   rows: SnapshotMonthlyForecastRow[];
 }
 
+/** Uma ata da aba “Base - Atas Em andamento” cuja ETAPA ATUAL é FINALIZADO. */
+export interface SnapshotAtaConcluida {
+  /** Número do contrato (só dígitos) ou descrição|comprador|área quando não houver contrato. */
+  key: string;
+  descricao: string;
+  contrato: string | null;
+  fornecedor: string | null;
+  itens: number | null;
+  comprador: string | null;
+  area: SnapshotArea | null;
+  etapa: string;
+  valor: number | null;
+}
+
+export interface SnapshotStatusPrioridade {
+  contrato: string;
+  vencimento: string | null;
+  comprador: string | null;
+}
+
+export interface SnapshotStatusCarteira {
+  comprador: string;
+  vigentes: number | null;
+  vencidas: number | null;
+  aRenovar: number | null;
+  total: number | null;
+}
+
+/** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
+export interface SnapshotStatusAtasArea {
+  area: SnapshotArea;
+  baseDate: string | null;
+  titulo: string | null;
+  subtitulo: string | null;
+  total: number | null;
+  vigentes: number | null;
+  vencidas: number | null;
+  ate15: number | null;
+  de16a30: number | null;
+  aRenovar: number | null;
+  prioridades: SnapshotStatusPrioridade[];
+  carteira: SnapshotStatusCarteira[];
+  notas: string[];
+}
+
 export interface SnapshotCoverage {
   found: string[];
   missing: string[];
@@ -12156,6 +12585,11 @@ export interface DashboardSnapshotPayload {
   evolucao: Record<SnapshotArea, SnapshotEvolution>;
   previsoes: Record<ForecastBand, Record<SnapshotArea, SnapshotForecastArea>>;
   previsaoMeses: Record<SnapshotArea, SnapshotMonthlyForecastArea>;
+  /** Atas FINALIZADO na base de andamento; a comparação acontece no painel. */
+  atasConcluidas: SnapshotAtaConcluida[];
+  /** Contrato (só dígitos) → fornecedor da aba de controle de contratos. */
+  fornecedoresPorContrato: Record<string, string>;
+  statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   coverage: SnapshotCoverage;
   notes: string[];
 }
@@ -12173,6 +12607,8 @@ function emptyKpis(): SnapshotKpis {
   return {
     concluidasAtas: null,
     concluidasItens: null,
+    andamentoAtas: null,
+    andamentoItens: null,
     saldoItens: null,
     consumidoItens: null,
     aVencerAtas: null,
@@ -12255,6 +12691,9 @@ export function emptyDashboardSnapshot(referenceDate: string | null = null, sour
     evolucao: makeAreaRecord(emptyEvolution),
     previsoes: makeForecastRecord(),
     previsaoMeses: makeMonthlyForecastRecord(),
+    atasConcluidas: [],
+    fornecedoresPorContrato: {},
+    statusAtas: makeAreaRecord(() => null),
     coverage: { found: [], missing: [] },
     notes: [],
   };
@@ -12829,10 +13268,11 @@ function extractEvolution(payload: DashboardSnapshotPayload, sheets: SnapshotSou
       if (label === "QTD ITEM" || label === "QTD ITENS") {
         itens = numericAt(matrix, r + 1, column) ?? itens;
       }
-      // Assim que o par desta coluna foi encontrado, não atravessar uma
-      // tabela posterior que repita QTD ATAS/QTD ITENS (por exemplo, o pivô
-      // de previsão logo abaixo).
+      // O quadro termina quando as duas métricas foram lidas ou numa linha em
+      // branco depois de já encontrar a primeira; sem isso a janela alcançaria
+      // uma tabela seguinte e trocaria o valor lido.
       if (atas !== null && itens !== null) break;
+      if ((atas !== null || itens !== null) && isBlank(matrix[r])) break;
       // O próximo quadro começa antes de outra métrica ser encontrada.
       if (r > headerRow + 1 && headerInfo(matrix[r]?.[column])) break;
     }
@@ -13493,6 +13933,349 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
   if (found) addFound(payload, "previsoes-cruzadas");
 }
 
+/* ----------------------- atas em andamento (geral) ----------------- */
+
+/**
+ * Card “ATAS EM ANDAMENTO (GERAL)” do resumo. Aceita rótulo seguido dos
+ * cabeçalhos QTD ATAS/QTD ITENS, dois números na mesma linha ou uma célula
+ * composta como “70 ATAS / 5000 ITENS”.
+ */
+function extractAndamentoGeral(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    for (let r = 0; r < matrix.length; r += 1) {
+      const row = matrix[r] ?? [];
+      for (let c = 0; c < row.length; c += 1) {
+        const label = exact(row[c]).replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+        if (!/^ATAS? EM ANDAMENTO( GERAL)?$/.test(label)) continue;
+        const pair = pairFromHeaders(matrix, r, c) ?? pairFromRow(row, c) ?? pairFromComposite(matrix, r, c);
+        if (!pair) continue;
+        payload.kpis.andamentoAtas = pair.atas;
+        payload.kpis.andamentoItens = pair.itens;
+        addFound(payload, "kpis-leitura");
+        return;
+      }
+    }
+  }
+}
+
+function pairFromHeaders(matrix: unknown[][], rowIndex: number, column: number): { atas: number | null; itens: number | null } | null {
+  let atas: number | null = null;
+  let itens: number | null = null;
+  for (let r = rowIndex; r <= Math.min(matrix.length - 1, rowIndex + 4); r += 1) {
+    const row = matrix[r] ?? [];
+    for (let c = Math.max(0, column - 1); c <= Math.min(row.length - 1, column + 6); c += 1) {
+      const label = exact(row[c]);
+      const isAtas = label === "QTD ATA" || label === "QTD ATAS";
+      const isItens = label === "QTD ITEM" || label === "QTD ITENS";
+      if (!isAtas && !isItens) continue;
+      const value = integerValue(matrix[r + 1]?.[c]) ?? integerValue(row[c + 1]);
+      if (value === null) continue;
+      if (isAtas && atas === null) atas = value;
+      if (isItens && itens === null) itens = value;
+    }
+  }
+  return atas === null && itens === null ? null : { atas, itens };
+}
+
+function pairFromRow(row: unknown[], column: number): { atas: number | null; itens: number | null } | null {
+  const numbers: number[] = [];
+  for (let c = column + 1; c < row.length && numbers.length < 2; c += 1) {
+    const text = cellText(row[c]);
+    if (!text) continue;
+    const value = integerValue(text);
+    if (value === null) break;
+    numbers.push(value);
+  }
+  return numbers.length === 2 ? { atas: numbers[0], itens: numbers[1] } : null;
+}
+
+function pairFromComposite(matrix: unknown[][], rowIndex: number, column: number): { atas: number | null; itens: number | null } | null {
+  const candidates = [matrix[rowIndex]?.[column + 1], matrix[rowIndex + 1]?.[column], matrix[rowIndex]?.[column]];
+  for (const candidate of candidates) {
+    const text = exact(candidate);
+    if (!/ATAS?/.test(text) || !/ITENS?/.test(text) || !/\d/.test(text)) continue;
+    const pair = evolutionPairFromCell(candidate);
+    if (pair.atas !== null || pair.itens !== null) return pair;
+  }
+  return null;
+}
+
+/* --------------------- fornecedor por contrato (SAP) --------------- */
+
+/** Número de contrato só com dígitos; textos curtos não contam. */
+function contractKey(value: unknown): string | null {
+  const text = cellText(value);
+  if (!text) return null;
+  const digits = text.replace(/\D/g, "");
+  return digits.length >= 6 ? digits : null;
+}
+
+/** Remove código entre parênteses no fim do nome do fornecedor/comprador. */
+function stripCode(value: string): string {
+  return value.replace(/\s*\((?:[A-Z]{0,3}\s?\d{1,10})\)\s*$/i, "").trim();
+}
+
+function extractContratosFornecedores(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) =>
+      rowHas(row, ["Contrato", "Fornecedor"])
+      && (rowHas(row, ["Item"]) || rowHas(row, ["Material"]) || rowHas(row, ["Cód SAP"])),
+    );
+    for (const headerRow of headerRows) {
+      const header = matrix[headerRow] ?? [];
+      const contratoCol = columnIndex(header, (value) => value === "CONTRATO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
+      if (contratoCol < 0 || fornecedorCol < 0) continue;
+      let blankRun = 0;
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 25) break;
+          continue;
+        }
+        blankRun = 0;
+        const key = contractKey(row[contratoCol]);
+        const fornecedor = stripCode(cellText(row[fornecedorCol]));
+        if (!key || !fornecedor) continue;
+        if (!payload.fornecedoresPorContrato[key]) payload.fornecedoresPorContrato[key] = fornecedor;
+        found = true;
+      }
+    }
+  }
+  if (found) addFound(payload, "contratos-fornecedores");
+}
+
+/* ---------------- atas concluídas (base de andamento) -------------- */
+
+const CONCLUDED_STAGES = new Set(["FINALIZADO", "FINALIZADA", "FINALIZADOS", "FINALIZADAS", "CONCLUIDO", "CONCLUIDA", "CONCLUIDOS", "CONCLUIDAS"]);
+
+function isContractHeader(value: string): boolean {
+  const label = value.replace(/[.°º]/g, "").replace(/\s+/g, " ").trim();
+  return /^(N|NO|NUM|NUMERO)?( DO| DE)?\s?CONTRATO( SAP)?$/.test(label);
+}
+
+function extractAtasConcluidas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) => rowHas(row, ["DESCRIÇÃO DOS LOTES ATAS", "ETAPA ATUAL"]));
+    for (const headerRow of headerRows) {
+      const header = matrix[headerRow] ?? [];
+      const descCol = columnIndex(header, (value) => value === "DESCRICAO DOS LOTES ATAS");
+      const etapaCol = columnIndex(header, (value) => value === "ETAPA ATUAL");
+      if (descCol < 0 || etapaCol < 0) continue;
+      const itensCol = columnIndex(header, (value) => value === "QTD ITENS" || value === "QTD ITEM" || value === "QTD DE ITENS");
+      const compradorCol = columnIndex(header, (value) => /^COMPRADOR\s?(\(A\)|A)?$/.test(value));
+      const areaCol = columnIndex(header, (value) => value === "AREA");
+      const contratoCol = columnIndex(header, isContractHeader);
+      const valorCol = columnIndex(header, (value) => value === "ESTIMATIVA VALOR TOTAL" || value === "VALOR TOTAL" || value === "VALOR ESTIMADO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
+      found = true;
+      let blankRun = 0;
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 25) break;
+          continue;
+        }
+        blankRun = 0;
+        const etapa = cellText(row[etapaCol]);
+        if (!CONCLUDED_STAGES.has(exact(etapa))) continue;
+        const descricao = cellText(row[descCol]);
+        if (!descricao) continue;
+        const contrato = contratoCol >= 0 ? contractKey(row[contratoCol]) : null;
+        const comprador = compradorCol >= 0 ? stripCode(cellText(row[compradorCol])) || null : null;
+        const area = areaCol >= 0 ? isArea(row[areaCol]) : null;
+        const itens = itensCol >= 0 ? integerValue(row[itensCol]) : null;
+        const valor = valorCol >= 0 ? numberValue(row[valorCol]) : null;
+        const fornecedor = fornecedorCol >= 0 ? stripCode(cellText(row[fornecedorCol])) || null : null;
+        const key = contrato ?? [exact(descricao), exact(comprador ?? ""), area ?? ""].join("|");
+        if (payload.atasConcluidas.some((item) => item.key === key)) continue;
+        payload.atasConcluidas.push({ key, descricao, contrato, fornecedor, itens, comprador, area, etapa, valor });
+      }
+    }
+  }
+  if (found) addFound(payload, "atas-concluidas");
+}
+
+/* ------------------- status das atas por área (aba) ---------------- */
+
+const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar"> = {
+  TOTAL: "total",
+  "TOTAL DE ATAS": "total",
+  VIGENTES: "vigentes",
+  VIGENTE: "vigentes",
+  VENCIDAS: "vencidas",
+  VENCIDA: "vencidas",
+  "ATE 15 DIAS": "ate15",
+  "ATE 15": "ate15",
+  "16 A 30 DIAS": "de16a30",
+  "DE 16 A 30 DIAS": "de16a30",
+  "16 A 30": "de16a30",
+  "A RENOVAR": "aRenovar",
+};
+
+function tileKeyOf(label: string) {
+  return STATUS_TILES[label.replace(/\s+/g, " ").trim()] ?? null;
+}
+
+function isBuyerHeader(value: string): boolean {
+  return /^COMPRADOR\s?(\(A\)|A|\(A\)S|ES)?$/.test(value);
+}
+
+function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
+  return {
+    area,
+    baseDate: null,
+    titulo: null,
+    subtitulo: null,
+    total: null,
+    vigentes: null,
+    vencidas: null,
+    ate15: null,
+    de16a30: null,
+    aRenovar: null,
+    prioridades: [],
+    carteira: [],
+    notas: [],
+  };
+}
+
+function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number, end: number): SnapshotStatusAtasArea | null {
+  const block = emptyStatusArea(area);
+  let tiles = 0;
+  let prioridadesHeader = -1;
+  let carteiraHeader = -1;
+
+  for (let r = start; r < end; r += 1) {
+    const row = matrix[r] ?? [];
+    const headerLike = row.some((value) => /^VIG\.?$|^VENC\.?$|CONTRATO/.test(exact(value)));
+    for (let c = 0; c < row.length; c += 1) {
+      const text = cellText(row[c]);
+      if (!text) continue;
+      const label = exact(text);
+      const base = text.match(/BASE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (base) block.baseDate = parseDateBR(base[1], "Base").iso ?? block.baseDate;
+      if (label.includes("STATUS DAS ATAS")) {
+        if (!block.titulo) block.titulo = text;
+        continue;
+      }
+      if (base) {
+        if (!block.subtitulo) block.subtitulo = text.split("|")[0].replace(/BASE:?.*$/i, "").trim() || null;
+        continue;
+      }
+      const tileKey = tileKeyOf(label);
+      if (tileKey) {
+        const above = r > start ? integerValue(matrix[r - 1]?.[c]) : null;
+        const below = above === null && !headerLike ? integerValue(matrix[r + 1]?.[c]) : null;
+        const value = above ?? below;
+        if (value !== null && block[tileKey] === null) {
+          block[tileKey] = value;
+          tiles += 1;
+          continue;
+        }
+      } else {
+        const single = label.match(/^(\d{1,5})\s+(.+)$/);
+        const singleKey = single ? tileKeyOf(single[2]) : null;
+        if (single && singleKey && block[singleKey] === null) {
+          block[singleKey] = Number(single[1]);
+          tiles += 1;
+          continue;
+        }
+      }
+      if (text.length > 12 && /VENCEM ENTRE|VENCIDAS?:|NOVO PROCESSO|CONTINUIDADE DA DEMANDA|ENCERRAD/.test(label) && block.notas.length < 6) {
+        if (!block.notas.includes(text)) block.notas.push(text);
+      }
+    }
+
+    if (prioridadesHeader < 0) {
+      const contratoCol = columnIndex(row, (value) => value === "CONTRATO SAP" || value === "CONTRATO" || value === "CONTRATO (SAP)");
+      if (contratoCol >= 0) {
+        const vencCol = columnIndex(row, (value) => value === "VENCIMENTO" || value === "DATA DE VENCIMENTO" || value === "DATA VENCIMENTO" || value === "FIM VIGENCIA" || value === "FIM DA VIGENCIA");
+        const compradorCol = row.findIndex((value, index) => index > contratoCol && isBuyerHeader(exact(value)));
+        prioridadesHeader = r;
+        for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
+          const dataRow = matrix[dr] ?? [];
+          const rawContrato = cellText(dataRow[contratoCol]);
+          const normalizedContrato = exact(rawContrato);
+          if (!rawContrato || isBuyerHeader(normalizedContrato) || normalizedContrato.startsWith("TOTAL")) break;
+          const contrato = contractKey(rawContrato) ?? rawContrato;
+          const vencimentoRaw = vencCol >= 0 ? cellText(dataRow[vencCol]) : "";
+          const vencimento = vencimentoRaw ? parseDateBR(vencimentoRaw, "Vencimento").iso : null;
+          const comprador = compradorCol >= 0 ? stripCode(cellText(dataRow[compradorCol])) || null : null;
+          block.prioridades.push({ contrato, vencimento, comprador });
+        }
+      }
+    }
+
+    if (carteiraHeader < 0) {
+      const vigCol = columnIndex(row, (value) => /^VIG\.?$|^VIGENTES?$/.test(value));
+      const vencidasCol = columnIndex(row, (value) => /^VENC\.?$|^VENCIDAS?$/.test(value));
+      if (vigCol >= 0 && vencidasCol >= 0) {
+        let compradorCol = -1;
+        for (let c = vigCol - 1; c >= 0; c -= 1) {
+          if (isBuyerHeader(exact(row[c]))) {
+            compradorCol = c;
+            break;
+          }
+        }
+        if (compradorCol >= 0) {
+          const renovarCol = columnIndex(row, (value) => value === "A RENOVAR" || value === "RENOVAR");
+          const totalCol = row.findIndex((value, index) => index > vigCol && exact(value) === "TOTAL");
+          carteiraHeader = r;
+          for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
+            const dataRow = matrix[dr] ?? [];
+            const comprador = stripCode(cellText(dataRow[compradorCol]));
+            if (!comprador || /^TOTAL/.test(exact(comprador))) break;
+            block.carteira.push({
+              comprador,
+              vigentes: integerValue(dataRow[vigCol]),
+              vencidas: integerValue(dataRow[vencidasCol]),
+              aRenovar: renovarCol >= 0 ? integerValue(dataRow[renovarCol]) : null,
+              total: totalCol >= 0 ? integerValue(dataRow[totalCol]) : null,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  const tables = block.prioridades.length + block.carteira.length;
+  const accepted = tiles >= 2 || (Boolean(block.titulo) && (tiles > 0 || tables > 0));
+  if (!accepted) return null;
+  block.prioridades.sort((a, b) => (a.vencimento ?? "9999").localeCompare(b.vencimento ?? "9999"));
+  return block;
+}
+
+function extractStatusAtas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  let found = false;
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    const bands: Array<{ area: SnapshotArea; row: number }> = [];
+    matrix.forEach((row, index) => {
+      const cells = (row ?? []).map(cellText).filter(Boolean);
+      if (cells.length === 0) return;
+      const area = isArea(cells[0]);
+      if (!area) return;
+      if (cells.every((cell) => isArea(cell) === area)) bands.push({ area, row: index });
+    });
+    for (let b = 0; b < bands.length; b += 1) {
+      const start = bands[b].row + 1;
+      const end = bands[b + 1]?.row ?? matrix.length;
+      const block = parseStatusBlock(matrix, bands[b].area, start, end);
+      if (!block || payload.statusAtas[bands[b].area]) continue;
+      payload.statusAtas[bands[b].area] = block;
+      found = true;
+    }
+  }
+  if (found) addFound(payload, "status-atas");
+}
+
 /* ---------------------------- API pública ------------------------- */
 
 export function extractSnapshotPayload(
@@ -13511,6 +14294,24 @@ export function extractSnapshotPayload(
   extractForecastBandFallback(payload, sheets);
   extractMonthlyForecastTable(payload, sheets);
   extractForecastRows(payload, sheets);
+  extractAndamentoGeral(payload, sheets);
+  extractContratosFornecedores(payload, sheets);
+  extractAtasConcluidas(payload, sheets);
+  extractStatusAtas(payload, sheets);
+
+  // Sem o card geral, “em andamento” é a soma das três áreas da evolução —
+  // somente quando as três existem, para não exibir uma soma parcial como total.
+  if (payload.kpis.andamentoAtas === null && SNAPSHOT_AREAS.every((area) => payload.evolucao[area].andamentoAtas !== null)) {
+    payload.kpis.andamentoAtas = SNAPSHOT_AREAS.reduce((sum, area) => sum + (payload.evolucao[area].andamentoAtas ?? 0), 0);
+  }
+  if (payload.kpis.andamentoItens === null && SNAPSHOT_AREAS.every((area) => payload.evolucao[area].andamentoItens !== null)) {
+    payload.kpis.andamentoItens = SNAPSHOT_AREAS.reduce((sum, area) => sum + (payload.evolucao[area].andamentoItens ?? 0), 0);
+  }
+  for (const ata of payload.atasConcluidas) {
+    if (!ata.fornecedor && ata.contrato && payload.fornecedoresPorContrato[ata.contrato]) {
+      ata.fornecedor = payload.fornecedoresPorContrato[ata.contrato];
+    }
+  }
 
   const allKnown = [...SNAPSHOT_BLOCK_KEYS];
   payload.coverage.missing = allKnown.filter((key) => !payload.coverage.found.includes(key));
@@ -13525,15 +14326,17 @@ export function hasSnapshotPayloadMeaningfulData(payload: DashboardSnapshotPaylo
 }
 
 /**
- * Referência inicial de 28/09 solicitada para que a comparação semanal não
- * fique vazia antes de existir uma segunda importação. São somente os números
- * da tabela “LEITURA DOS GRÁFICOS” fornecida como referência.
+ * Referência inicial de 05/10 para que a comparação semanal não fique vazia
+ * antes de existir uma segunda importação. São somente os números dos cards
+ * de resumo fornecidos como referência.
  */
 export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
-  const payload = emptyDashboardSnapshot("2026-09-28", ["Referência fornecida nas capturas — 28/09"]);
+  const payload = emptyDashboardSnapshot("2026-10-05", ["Referência fornecida nas capturas — 05/10"]);
   payload.kpis = {
     concluidasAtas: 58,
     concluidasItens: 956,
+    andamentoAtas: 68,
+    andamentoItens: 4778,
     saldoItens: 877,
     consumidoItens: 80,
     aVencerAtas: 58,
@@ -13542,8 +14345,8 @@ export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
     vencidasItens: 334,
   };
   payload.coverage.found = ["kpis-leitura"];
-  payload.coverage.missing = ["valores-por-area", "saving", "top-compradores", "fornecedores", "evolucao", "previsao-faixas", "previsao-meses", "previsoes-cruzadas"];
-  payload.notes.push("Referência inicial fixa apenas para a comparação dos três gráficos; será substituída pelo snapshot imediatamente anterior após novas importações.");
+  payload.coverage.missing = SNAPSHOT_BLOCK_KEYS.filter((key) => key !== "kpis-leitura");
+  payload.notes.push("Referência inicial fixa apenas para os cards da semana anterior; será substituída pelo snapshot imediatamente anterior após novas importações.");
   return payload;
 }
 ````
@@ -14210,6 +15013,8 @@ import {
   type DashboardSnapshotPayload,
   type ForecastBand,
   type SnapshotArea,
+  type SnapshotAtaConcluida,
+  type SnapshotStatusAtasArea,
   SNAPSHOT_AREAS,
   type SnapshotBlockKey,
 } from "@/lib/dashboard-snapshot";
@@ -14217,15 +15022,28 @@ import {
 /** Blocos do panorama que podem ficar sem dado quando a planilha não os traz. */
 export const PANORAMA_BLOCKS = [
   "kpis-leitura",
+  "atas-concluidas",
   "valores-por-area",
   "saving",
   "top-compradores",
   "fornecedores",
   "evolucao",
+  "status-atas",
   "previsao-faixas",
   "previsao-meses",
 ] as const;
 export type PanoramaBlock = (typeof PANORAMA_BLOCKS)[number];
+
+/** Atas que passaram a FINALIZADO desde a importação anterior. */
+export interface AtasConcluidasResult {
+  disponivel: boolean;
+  primeiraLeitura: boolean;
+  comparadoComReferencia: string | null;
+  comparadoComImportadoEm: string | null;
+  totalFinalizadas: number;
+  novas: SnapshotAtaConcluida[];
+}
+
 export type PanoramaBlockSource = "snapshot" | "registros" | "ausente";
 
 export interface StaticDashboardData {
@@ -14254,6 +15072,8 @@ export interface StaticDashboardData {
     itens: number;
     concluidosAtas: number;
     concluidosItens: number;
+    andamentoAtas: number;
+    andamentoItens: number;
     saldoAtas: number;
     saldoItens: number;
     consumidoAtas: number;
@@ -14303,7 +15123,8 @@ export interface StaticDashboardData {
     a_vencer_atas: number;
     a_vencer_itens: number;
   }>;
-  renovacoes: Array<{ area: string; status: string; atas: number; itens: number }>;
+  atasConcluidas: AtasConcluidasResult;
+  statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   previsoes: Array<{
     area: string;
     responsavel: string;
@@ -14377,8 +15198,50 @@ function forecastBandDays(band: ForecastBand): number {
   return 61;
 }
 
-function snapshotHas(snapshot: DashboardSnapshotPayload | null, key: string): boolean {
+function snapshotHas(snapshot: DashboardSnapshotPayload | null | undefined, key: string): boolean {
   return Boolean(snapshot?.coverage.found.includes(key));
+}
+
+/** Compara as atas FINALIZADO atuais com a importação anterior que trouxe a aba. */
+function buildAtasConcluidas(
+  current: DashboardSnapshotPayload | null,
+  datasets: Array<{ snapshot: DashboardSnapshotPayload | null | undefined; importedAt: string }>,
+): AtasConcluidasResult {
+  const empty: AtasConcluidasResult = {
+    disponivel: false,
+    primeiraLeitura: true,
+    comparadoComReferencia: null,
+    comparadoComImportadoEm: null,
+    totalFinalizadas: 0,
+    novas: [],
+  };
+  if (!current || !snapshotHas(current, "atas-concluidas")) return empty;
+  const atuais = current.atasConcluidas ?? [];
+  const older = datasets.slice(1).filter((dataset) => snapshotHas(dataset.snapshot, "atas-concluidas"));
+  const currentRef = current.referenceDate;
+  const previous = older.find((dataset) => {
+    const ref = dataset.snapshot?.referenceDate ?? null;
+    return !currentRef || !ref || ref < currentRef;
+  }) ?? older[0] ?? null;
+  const previousKeys = new Set((previous?.snapshot?.atasConcluidas ?? []).map((ata) => ata.key));
+  const novas = previous ? atuais.filter((ata) => !previousKeys.has(ata.key)) : [...atuais];
+  const maps = [
+    current.fornecedoresPorContrato ?? {},
+    ...datasets.slice(1).map((dataset) => dataset.snapshot?.fornecedoresPorContrato ?? {}),
+  ];
+  const resolved = novas.map((ata) => {
+    if (ata.fornecedor || !ata.contrato) return ata;
+    const fornecedor = maps.map((map) => map[ata.contrato!]).find(Boolean) ?? null;
+    return { ...ata, fornecedor };
+  });
+  return {
+    disponivel: true,
+    primeiraLeitura: !previous,
+    comparadoComReferencia: previous?.snapshot?.referenceDate ?? null,
+    comparadoComImportadoEm: previous?.importedAt ?? null,
+    totalFinalizadas: atuais.length,
+    novas: resolved,
+  };
 }
 
 export async function getStaticDashboardData(): Promise<StaticDashboardData> {
@@ -14411,6 +15274,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     itens: valueOf(rows, "quantidade"),
     concluidosAtas: rows.filter((r) => r.situacao_norm === "concluido").length,
     concluidosItens: rows.filter((r) => r.situacao_norm === "concluido").reduce((s, r) => s + n(r.quantidade), 0),
+    andamentoAtas: rows.filter((r) => r.situacao_norm === null).length,
+    andamentoItens: rows.filter((r) => r.situacao_norm === null).reduce((s, r) => s + n(r.quantidade), 0),
     saldoAtas: rows.filter((r) => r.status_consumo === "Com Saldo").length,
     saldoItens: rows.filter((r) => r.status_consumo === "Com Saldo").reduce((s, r) => s + n(r.quantidade), 0),
     consumidoAtas: rows.filter((r) => r.status_consumo === "Consumido").length,
@@ -14476,6 +15341,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   if (currentSnapshot && snapshotHas(currentSnapshot, "kpis-leitura")) {
     kpis.concluidosAtas = currentSnapshot.kpis.concluidasAtas ?? kpis.concluidosAtas;
     kpis.concluidosItens = currentSnapshot.kpis.concluidasItens ?? kpis.concluidosItens;
+    kpis.andamentoAtas = currentSnapshot.kpis.andamentoAtas ?? kpis.andamentoAtas;
+    kpis.andamentoItens = currentSnapshot.kpis.andamentoItens ?? kpis.andamentoItens;
     kpis.saldoItens = currentSnapshot.kpis.saldoItens ?? kpis.saldoItens;
     kpis.consumidoItens = currentSnapshot.kpis.consumidoItens ?? kpis.consumidoItens;
     kpis.aVencerAtas = currentSnapshot.kpis.aVencerAtas ?? kpis.aVencerAtas;
@@ -14555,13 +15422,14 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
       }))
     : [];
 
-  const renewalGroups = new Map<string, { area: string; status: string; atas: number; itens: number }>();
-  for (const row of rows) {
-    const key = groupKey(row.area ?? "Não informado", row.status_renovacao ?? "Outros");
-    const current = renewalGroups.get(key) ?? { area: row.area ?? "Não informado", status: row.status_renovacao ?? "Outros", atas: 0, itens: 0 };
-    current.atas += 1;
-    current.itens += n(row.quantidade);
-    renewalGroups.set(key, current);
+  const atasConcluidas = buildAtasConcluidas(currentSnapshot, snapshotDatasets);
+  const statusAtas: Record<SnapshotArea, SnapshotStatusAtasArea | null> = {
+    INDIRETOS: null,
+    DIRETOS: null,
+    CAPEX: null,
+  };
+  if (currentSnapshot && snapshotHas(currentSnapshot, "status-atas")) {
+    for (const area of SNAPSHOT_AREAS) statusAtas[area] = currentSnapshot.statusAtas?.[area] ?? null;
   }
 
   const forecastGroups = new Map<string, { area: string; responsavel: string; data_previsao: string; dias: number; atas: number; itens: number; band?: ForecastBand }>();
@@ -14636,11 +15504,13 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     snapshotHas(currentSnapshot, key) ? "snapshot" : fallback ? "registros" : "ausente";
   const blocos: Record<PanoramaBlock, PanoramaBlockSource> = {
     "kpis-leitura": fromSnapshotOr("kpis-leitura", hasRows),
+    "atas-concluidas": fromSnapshotOr("atas-concluidas", false),
     "valores-por-area": fromSnapshotOr("valores-por-area", rows.some((row) => row.valor !== null)),
     saving: fromSnapshotOr("saving", rows.some((row) => row.saving_hist !== null || row.saving_prop !== null)),
     "top-compradores": fromSnapshotOr("top-compradores", rows.some((row) => Boolean(row.responsavel?.trim()))),
     fornecedores: fromSnapshotOr("fornecedores", false),
     evolucao: fromSnapshotOr("evolucao", hasRows),
+    "status-atas": fromSnapshotOr("status-atas", false),
     "previsao-faixas": snapshotHas(currentSnapshot, "previsao-faixas") || snapshotHas(currentSnapshot, "previsoes-cruzadas")
       ? "snapshot"
       : rows.some((row) => row.situacao_norm === null && Boolean(row.data_previsao)) ? "registros" : "ausente",
@@ -14668,7 +15538,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
     topCompradores,
     fornecedores,
     evolucao: [...currentEvolution.values()],
-    renovacoes: [...renewalGroups.values()].sort((a, b) => a.area.localeCompare(b.area) || a.status.localeCompare(b.status)),
+    atasConcluidas,
+    statusAtas,
     previsoes,
     datasets: allDatasets.map(formatStoredDataset),
   };
