@@ -1,58 +1,77 @@
-import { fmtCurrency, fmtDate, fmtInt } from "@/lib/format";
-import type { AtasConcluidasResult } from "@/lib/static-dashboard";
+"use client";
 
+import { CircleCheckBig } from "lucide-react";
+import type { AtasConcluidasResult } from "@/lib/static-dashboard";
+import { AreaTag } from "@/components/ui";
+import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
+
+/**
+ * Lista compacta das atas que passaram a FINALIZADO desde a importação
+ * anterior (uma linha por ata). O fornecedor vem da aba de controle de
+ * contratos, cruzado pelo nº do contrato.
+ */
 export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasResult; referencia: string | null }) {
-  const comparacao = dados.primeiraLeitura
-    ? "Primeira leitura da aba de andamento"
-    : `Comparado com a importação de ${fmtDate(dados.comparadoComReferencia)}`;
+  const { novas, primeiraLeitura, comparadoComReferencia, comparadoComImportadoEm, totalFinalizadas } = dados;
+  const semFornecedor = novas.filter((ata) => ata.contrato && !ata.fornecedor).length;
+  const semContrato = novas.filter((ata) => !ata.contrato).length;
+
+  const comparacao = primeiraLeitura
+    ? `Sem base anterior para comparação. Esta é a primeira importação com a aba de andamento: todas as ${fmtInt(totalFinalizadas)} atas FINALIZADO aparecem abaixo como posição da base atual, não como novas conclusões do período. A partir da próxima importação, só entram as que mudaram para FINALIZADO.`
+    : `Base de ${fmtDate(referencia)} comparada com a importação de ${comparadoComReferencia ? fmtDate(comparadoComReferencia) : fmtDateTime(comparadoComImportadoEm)}: ${fmtInt(novas.length)} ${novas.length === 1 ? "ata passou" : "atas passaram"} a FINALIZADO (${fmtInt(totalFinalizadas)} finalizadas no total).`;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4">
-        <div>
-          <h3 className="text-[14.5px] font-bold text-navy-950">Atas que passaram a FINALIZADO</h3>
-          <p className="mt-1 text-[12.5px] text-ink-soft">{comparacao}{referencia ? ` · base atual ${fmtDate(referencia)}` : ""}</p>
-        </div>
-        <span className="rounded-full bg-ok-100 px-3 py-1 text-[12px] font-semibold text-ok-700">
-          {fmtInt(dados.novas.length)} novas · {fmtInt(dados.totalFinalizadas)} finalizadas na base
-        </span>
+    <div className="card overflow-hidden text-[12.5px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-ok-100/60 px-5 py-3">
+        <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-ok-700">
+          <CircleCheckBig size={16} aria-hidden="true" />
+          {fmtInt(novas.length)} {primeiraLeitura ? (novas.length === 1 ? "ata finalizada na base atual" : "atas finalizadas na base atual") : (novas.length === 1 ? "ata concluída" : "atas concluídas")}
+        </p>
+        <p className="text-[12px] text-ink-soft">{comparacao}</p>
       </div>
-      {dados.novas.length === 0 ? (
-        <p className="px-5 py-8 text-center text-[13.5px] text-ink-soft">
-          Nenhuma ata nova passou a FINALIZADO desde a importação anterior.
+      {novas.length === 0 ? (
+        <p role="status" className="px-5 py-6 text-center text-ink-soft">
+          {primeiraLeitura ? "Nenhuma ata FINALIZADO na base atual. Sem base anterior para comparação." : "Nenhuma ata passou a FINALIZADO desde a importação anterior."}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-[12.5px]">
-            <caption className="sr-only">Atas concluídas desde a última atualização</caption>
-            <thead className="bg-navy-950 text-white">
-              <tr>
-                {[
-                  "ATA",
-                  "CONTRATO",
-                  "FORNECEDOR",
-                  "QTD. DE ITENS",
-                  "COMPRADOR(A)",
-                  "ÁREA",
-                  "VALOR",
-                ].map((label) => <th key={label} scope="col" className="px-3 py-3 font-bold">{label}</th>)}
+        <div className="max-h-[460px] overflow-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-navy-950 text-[11px] font-bold uppercase text-white">
+                <th className="px-4 py-2">Ata</th>
+                <th className="px-3 py-2">Contrato</th>
+                <th className="px-3 py-2">Fornecedor</th>
+                <th className="px-3 py-2 text-right">Qtd. de itens</th>
+                <th className="px-3 py-2">Comprador(a)</th>
+                <th className="px-3 py-2">Área</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line/70">
-              {dados.novas.map((ata) => (
-                <tr key={ata.key} className="hover:bg-navy-50/50">
-                  <td className="max-w-[280px] px-3 py-3 font-semibold text-navy-950">ATA: {ata.descricao}</td>
-                  <td className="tnum px-3 py-3 text-ink">{ata.contrato ?? "—"}</td>
-                  <td className="px-3 py-3 text-ink">{ata.fornecedor ?? "—"}</td>
-                  <td className="tnum px-3 py-3 text-ink">{fmtInt(ata.itens)}</td>
-                  <td className="px-3 py-3 text-ink">{ata.comprador ?? "—"}</td>
-                  <td className="px-3 py-3 font-semibold text-navy-700">{ata.area ?? "—"}</td>
-                  <td className="tnum px-3 py-3 text-ink">{fmtCurrency(ata.valor)}</td>
+            <tbody className="divide-y divide-line">
+              {novas.map((ata) => (
+                <tr key={ata.key} className="odd:bg-white even:bg-navy-50/40">
+                  <td className="px-4 py-2 font-semibold uppercase text-navy-950">
+                    <span className="text-ink-soft">ATA: </span>
+                    {ata.descricao}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-navy-900">{ata.contrato ?? <span className="text-ink-soft">—</span>}</td>
+                  <td className="px-3 py-2 uppercase text-navy-900">
+                    {ata.fornecedor ?? (
+                      <span className="text-ink-soft" title={ata.contrato ? "Contrato não encontrado na aba Base - Controle de Contratos" : "Ata sem nº de contrato na base"}>—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy-900">{fmtInt(ata.itens)}</td>
+                  <td className="px-3 py-2 text-navy-900">{ata.comprador ?? <span className="text-ink-soft">—</span>}</td>
+                  <td className="px-3 py-2">{ata.area ? <AreaTag area={ata.area} /> : <span className="text-ink-soft">—</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {(semFornecedor > 0 || semContrato > 0) && (
+        <p className="border-t border-line px-5 py-2 text-[11.5px] text-ink-soft">
+          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: o contrato não consta na aba “Base - Controle de Contratos” importada. `}
+          {semContrato > 0 && `${fmtInt(semContrato)} ${semContrato === 1 ? "ata sem nº de contrato" : "atas sem nº de contrato"} na base de andamento.`}
+        </p>
       )}
     </div>
   );

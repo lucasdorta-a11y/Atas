@@ -1,3 +1,4 @@
+// src/components/documentos/documents-manager.tsx
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -174,7 +175,7 @@ function RegrasDePreenchimento() {
     <div className="card space-y-4 p-5 lg:sticky lg:top-[84px]">
       <h2 className="text-[16px] font-display font-bold text-navy-900">Parâmetros do Mapeamento</h2>
       <div className="space-y-4 text-[12px] text-ink-soft">
-        <p><strong className="text-ink">Status “A Renovar”:</strong> Adotada a régua de 100 dias pré-vencimento para garantir margem de tempo na estruturação e renovação dos processos.</p>
+        <p><strong className="text-ink">Status “A vencer (30 dias)”:</strong> Contratos com vencimento entre hoje e os próximos 30 dias, conforme a regra de classificação do sistema.</p>
         <p><strong className="text-ink">Base “Em Andamento”:</strong> Apurada cruzando a Planilha de Atas em Andamento com o relatório SAP (mapeamento de todos os projetos 7000 criados neste ano sem requisição).</p>
         <p><strong className="text-ink">Snapshot local:</strong> A leitura da semana atual/anterior é gravada no IndexedDB deste navegador. Não há sincronização com SharePoint nem compartilhamento com outros usuários ou dispositivos.</p>
       </div>

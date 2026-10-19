@@ -38,7 +38,7 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   "top-compradores": { label: "Top compradores por área", esperado: "blocos TOP COMP por área" },
   fornecedores: { label: "Representatividade de fornecedores", esperado: "tabela FORNECEDORES GERAL" },
   evolucao: { label: "Evolução por área", esperado: "evolução por status atual e tabela EM ANDAMENTO" },
-  "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60, acima de 60 e vencidas" },
+  "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60 e vencidas; a faixa acima de 60 dias é lida e calculada, mas não exibida" },
   "previsao-meses": { label: "Previsão de conclusão por mês", esperado: "pivô PREVISÃO DE CONCLUSÃO POR MÊS" },
   "previsoes-cruzadas": { label: "Previsões por comprador", esperado: "COMPRADOR, AREA e PRAZO CONCLUSÃO" },
   "atas-concluidas": {
@@ -1952,23 +1952,23 @@ export function hasSnapshotPayloadMeaningfulData(payload: DashboardSnapshotPaylo
 }
 
 /**
- * Referência inicial de 05/10 para que a comparação semanal não fique vazia
- * antes de existir uma segunda importação. São somente os números dos cards
- * de resumo fornecidos como referência.
+ * Referência inicial de 13/10 (status da semana anterior na página do
+ * SharePoint) para que a comparação semanal não fique vazia antes de existir
+ * uma segunda importação. São somente os números dos cards de resumo.
  */
 export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
-  const payload = emptyDashboardSnapshot("2026-10-05", ["Referência fornecida nas capturas — 05/10"]);
+  const payload = emptyDashboardSnapshot("2026-10-13", ["Referência fornecida nas capturas — 13/10"]);
   payload.kpis = {
-    concluidasAtas: 58,
-    concluidasItens: 956,
-    andamentoAtas: 68,
-    andamentoItens: 4778,
-    saldoItens: 877,
-    consumidoItens: 80,
-    aVencerAtas: 58,
-    aVencerItens: 1215,
-    vencidasAtas: 48,
-    vencidasItens: 334,
+    concluidasAtas: 62,
+    concluidasItens: 915,
+    andamentoAtas: 70,
+    andamentoItens: 5000,
+    saldoItens: 862,
+    consumidoItens: 100,
+    aVencerAtas: 59,
+    aVencerItens: 1441,
+    vencidasAtas: 49,
+    vencidasItens: 371,
   };
   payload.coverage.found = ["kpis-leitura"];
   payload.coverage.missing = SNAPSHOT_BLOCK_KEYS.filter((key) => key !== "kpis-leitura");

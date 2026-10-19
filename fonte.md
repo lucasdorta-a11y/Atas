@@ -226,7 +226,7 @@ npm run extrair -- amostras/semana-atual.xlsx --ref=2026-10-13
 npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
 
 # compara atas FINALIZADO com a importação anterior
-npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13 --anterior amostras/semana-anterior.xlsx --ref-anterior=2026-10-05
+npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13 --anterior amostras/semana-anterior.xlsx --ref-anterior=2026-10-13
 ```
 
 Os comandos usam o mesmo `SheetJS → matriz → extrator` da importação local e mostram os blocos reconhecidos, ausentes, fornecedores, evolução, previsões, atas concluídas e status das atas. A pasta `amostras/` é ignorada pelo Git.
@@ -276,11 +276,11 @@ Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situa�
 - `ITENS COM SALDOS E CONSUMIDOS (VÁLIDOS)` + `COM SALDO` ou `CONSUMIDOS` → itens com saldo e sem saldo;
 - `ATAS VENCIDAS E A VENCER` + `A VENCER (RENOVAR)` ou `VENCIDAS` → atas/itens a vencer e vencidos.
 
-O card `ATAS EM ANDAMENTO (GERAL)` pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esse quadro, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 05/10, com 58/956, 68/4.778, 877, 80, 48/334 e 58/1.215; novas importações passam a formar o histórico real.
+O card `ATAS EM ANDAMENTO (GERAL)` pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esse quadro, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 13/10, com 62/915 concluídas, 70/5.000 em andamento, 862 itens com saldo, 100 consumidos, 59/1.441 a vencer e 49/371 vencidas; novas importações passam a formar o histórico real. A seção de comparação também identifica a base atual e a anterior pela data de referência e pelo nome do arquivo; quando a anterior é a referência fixa fornecida nas capturas, isso fica explícito e ela é indicada como sem arquivo importado.
 
 ### Atas concluídas desde a última atualização
 
-Logo abaixo dos cards, o painel lista as atas que passaram a `FINALIZADO` desde a importação anterior, uma linha por ata: descrição, contrato, fornecedor, quantidade de itens, comprador(a), área e valor. A fonte é a aba `Base - Atas Em andamento`, com as colunas `DESCRIÇÃO DOS LOTES ATAS`, `QTD ITENS`, `COMPRADOR`, `AREA`, `ETAPA ATUAL` e `N° CONTRATO`. O fornecedor é resolvido pela aba `Base - Controle de Contratos`, usando `Contrato`, `Item` ou `Material` e `Fornecedor`; códigos finais entre parênteses são removidos. Na primeira leitura, todas as atas finalizadas são listadas; depois, só as chaves ausentes na importação anterior aparecem.
+Logo abaixo dos cards, o painel lista as atas que passaram a `FINALIZADO` desde a importação anterior, uma linha por ata: descrição, contrato, fornecedor, quantidade de itens, comprador(a), área e valor. A fonte é a aba `Base - Atas Em andamento`, com as colunas `DESCRIÇÃO DOS LOTES ATAS`, `QTD ITENS`, `COMPRADOR`, `AREA`, `ETAPA ATUAL` e `N° CONTRATO`. O fornecedor é resolvido pela aba `Base - Controle de Contratos`, usando `Contrato`, `Item` ou `Material` e `Fornecedor`; códigos finais entre parênteses são removidos. Na primeira importação, todas as atas `FINALIZADO` representam a posição atual da base e não são classificadas como novas conclusões do período; depois, só as chaves ausentes na importação anterior aparecem.
 
 ### Valores, saving e redução
 
@@ -298,7 +298,7 @@ A representatividade usa exclusivamente a tabela `FORNECEDORES GERAL`, com as co
 
 A evolução concluída aceita a estrutura vertical `ATA INDIRETOS | ATA DIRETOS | ATA CAPEX`, seguida por `TOTAL`, `QTD ATA`, a linha de valores, `QTD ITENS` e a linha de valores. Também mantém a leitura de saldo, sem saldo, vencidas e a vencer por área. O **EM ANDAMENTO** vem da tabela separada `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)`, com `Rótulos de Linha`, `QTD ATAS` e `QTD ITENS`. O bloco de **Status das Atas** é lido exclusivamente da aba dedicada `Status das Atas`, sem fallback operacional.
 
-As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha: próximos 15 dias, de 16 a 30 dias, de 31 a 60 dias, acima de 60 dias e previsões vencidas. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Se um bloco não for encontrado, o painel informa “bloco não encontrado” em vez de exibir zeros. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal; meses sem ano recebem o ano correto quando atravessam dezembro. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). A faixa dos compradores é calculada usando a data de referência da planilha, não a data em que a importação foi feita. As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
+As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha: próximos 15 dias, até 30 dias, até 60 dias e previsões vencidas. A faixa `acima_60` continua sendo lida e calculada para preservar a integridade do snapshot, mas não é exibida na interface. Faixas de previsões canceladas e finalizadas podem ser importadas no snapshot, mas são deliberadamente ignoradas na interface. Se um bloco não for encontrado, o painel informa “bloco não encontrado” em vez de exibir zeros. Abaixo das faixas, o painel apresenta `Previsão de Conclusão por Mês`, com o mês de referência, os dois meses seguintes e `Vencida/Sem Previsão`, extraídos do pivô mensal; meses sem ano recebem o ano correto quando atravessam dezembro. A planilha complementar de cruzamento deve possuir as colunas exatas `COMPRADOR`, `AREA` e `PRAZO CONCLUSÃO` (e, quando disponíveis, `QTD ATAS` e `QTD ITENS`). A faixa dos compradores é calculada usando a data de referência da planilha, não a data em que a importação foi feita. As listas exibem somente nome, atas e itens: não há bolinha/foto nem o texto “ANALISTA DE COMPRAS”.
 
 ### Status das Atas por área
 
@@ -7761,6 +7761,7 @@ export async function listSnapshotDatasets() {
   return store().snapshots.map((snapshot, index) => ({
     id: index + 1,
     snapshot,
+    fileName: ((snapshot as AnyRecord)?.sourceFiles as string[] | undefined)?.join(", ") ?? "",
     importedAt: new Date(Date.now() - index * 86400000).toISOString(),
     referenceDate: (snapshot as AnyRecord)?.referenceDate ?? null,
     status: "active",
@@ -8132,12 +8133,15 @@ const MONTH_NAMES_PT = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ] as const;
 
+/**
+ * Faixas de previsão em ordem cronológica. No Excel as faixas são exclusivas
+ * ("ATÉ 30 DIAS" não inclui as de até 15); os cálculos permanecem exclusivos.
+ */
 const FAIXAS_PREVISAO: Array<{ band: ForecastBand; title: string; titleClass?: string }> = [
   { band: "ate_15", title: "Previstas para concluir nos próximos 15 dias" },
-  { band: "ate_30", title: "Previstas para concluir de 16 a 30 dias" },
-  { band: "ate_60", title: "Previstas para concluir de 31 a 60 dias" },
-  { band: "acima_60", title: "Previsões para concluir acima de 60 dias" },
-  { band: "vencidas", title: "Previsões vencidas", titleClass: "bg-danger-700 text-white border-danger-700" },
+  { band: "ate_30", title: "Previstas para concluir até 30 dias" },
+  { band: "ate_60", title: "Previstas para concluir até 60 dias" },
+  { band: "vencidas", title: "Previsões Vencidas", titleClass: "bg-danger-700 text-white border-danger-700" },
 ];
 
 export default function PanoramaPage() {
@@ -8234,7 +8238,8 @@ export default function PanoramaPage() {
   const { kpis, porArea, topCompradores, fornecedores, evolucao, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos, atasConcluidas, statusAtas } = data;
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
-  const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
+  // Ordem única das áreas em todos os blocos do painel, conforme a planilha.
+  const areaVisualOrder = ["INDIRETOS", "DIRETOS", "CAPEX"];
   const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
   const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
 
@@ -8344,6 +8349,23 @@ export default function PanoramaPage() {
             Referência anterior: {formatReferenceDate(previousSnapshot?.referenceDate)}
           </span>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2" aria-label="Bases da comparação semanal">
+          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+            <h3 className="font-semibold text-navy-900">Base atual</h3>
+            <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(currentSnapshot?.referenceDate)}</p>
+            <p className="mt-1 break-words text-ink-soft">Arquivo: {currentSnapshot ? (data.snapshotHistory[0]?.fileName || "Nome do arquivo não disponível") : "Sem snapshot importado; indicadores disponíveis vêm dos registros operacionais."}</p>
+          </div>
+          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+            <h3 className="font-semibold text-navy-900">Base anterior</h3>
+            <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(previousSnapshot?.referenceDate)}</p>
+            <p className="mt-1 break-words text-ink-soft">Arquivo: {data.snapshotHistory[1] ? (data.snapshotHistory[1].fileName || "Nome do arquivo não disponível") : previousSnapshot ? "Não se aplica — referência fixa, sem arquivo importado" : "Sem base anterior"}</p>
+          </div>
+        </div>
+        {previousSnapshot && !data.snapshotHistory[1] && (
+          <p role="status" className="rounded-xl border border-line bg-navy-50 p-4 text-[12.5px] text-navy-900">
+            A base anterior usa a referência fixa de {formatReferenceDate(previousSnapshot.referenceDate)}, fornecida na captura do SharePoint, e não uma planilha importada. Ela contém apenas os indicadores de resumo; será substituída pelo histórico real quando houver uma importação anterior disponível.
+          </p>
+        )}
         {previousSnapshot && (
           <ResumoCards
             titulo="Resumo das Atas Concluídas"
@@ -8599,7 +8621,7 @@ export default function PanoramaPage() {
       {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
       <section>
         <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Indicadores - Atas em andamento</h2>
-        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
+        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão por Faixa</h3>
         
         {ausente("previsao-faixas") ? (
           <BlocoAusente bloco="previsao-faixas" referencia={referencia} />
@@ -9016,61 +9038,80 @@ export function AppShell({ children }: { children: ReactNode }) {
 ## `src/components/atas-concluidas.tsx`
 
 ````tsx
-import { fmtCurrency, fmtDate, fmtInt } from "@/lib/format";
-import type { AtasConcluidasResult } from "@/lib/static-dashboard";
+"use client";
 
+import { CircleCheckBig } from "lucide-react";
+import type { AtasConcluidasResult } from "@/lib/static-dashboard";
+import { AreaTag } from "@/components/ui";
+import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
+
+/**
+ * Lista compacta das atas que passaram a FINALIZADO desde a importação
+ * anterior (uma linha por ata). O fornecedor vem da aba de controle de
+ * contratos, cruzado pelo nº do contrato.
+ */
 export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasResult; referencia: string | null }) {
-  const comparacao = dados.primeiraLeitura
-    ? "Primeira leitura da aba de andamento"
-    : `Comparado com a importação de ${fmtDate(dados.comparadoComReferencia)}`;
+  const { novas, primeiraLeitura, comparadoComReferencia, comparadoComImportadoEm, totalFinalizadas } = dados;
+  const semFornecedor = novas.filter((ata) => ata.contrato && !ata.fornecedor).length;
+  const semContrato = novas.filter((ata) => !ata.contrato).length;
+
+  const comparacao = primeiraLeitura
+    ? `Sem base anterior para comparação. Esta é a primeira importação com a aba de andamento: todas as ${fmtInt(totalFinalizadas)} atas FINALIZADO aparecem abaixo como posição da base atual, não como novas conclusões do período. A partir da próxima importação, só entram as que mudaram para FINALIZADO.`
+    : `Base de ${fmtDate(referencia)} comparada com a importação de ${comparadoComReferencia ? fmtDate(comparadoComReferencia) : fmtDateTime(comparadoComImportadoEm)}: ${fmtInt(novas.length)} ${novas.length === 1 ? "ata passou" : "atas passaram"} a FINALIZADO (${fmtInt(totalFinalizadas)} finalizadas no total).`;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-5 py-4">
-        <div>
-          <h3 className="text-[14.5px] font-bold text-navy-950">Atas que passaram a FINALIZADO</h3>
-          <p className="mt-1 text-[12.5px] text-ink-soft">{comparacao}{referencia ? ` · base atual ${fmtDate(referencia)}` : ""}</p>
-        </div>
-        <span className="rounded-full bg-ok-100 px-3 py-1 text-[12px] font-semibold text-ok-700">
-          {fmtInt(dados.novas.length)} novas · {fmtInt(dados.totalFinalizadas)} finalizadas na base
-        </span>
+    <div className="card overflow-hidden text-[12.5px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-ok-100/60 px-5 py-3">
+        <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-ok-700">
+          <CircleCheckBig size={16} aria-hidden="true" />
+          {fmtInt(novas.length)} {primeiraLeitura ? (novas.length === 1 ? "ata finalizada na base atual" : "atas finalizadas na base atual") : (novas.length === 1 ? "ata concluída" : "atas concluídas")}
+        </p>
+        <p className="text-[12px] text-ink-soft">{comparacao}</p>
       </div>
-      {dados.novas.length === 0 ? (
-        <p className="px-5 py-8 text-center text-[13.5px] text-ink-soft">
-          Nenhuma ata nova passou a FINALIZADO desde a importação anterior.
+      {novas.length === 0 ? (
+        <p role="status" className="px-5 py-6 text-center text-ink-soft">
+          {primeiraLeitura ? "Nenhuma ata FINALIZADO na base atual. Sem base anterior para comparação." : "Nenhuma ata passou a FINALIZADO desde a importação anterior."}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-[12.5px]">
-            <caption className="sr-only">Atas concluídas desde a última atualização</caption>
-            <thead className="bg-navy-950 text-white">
-              <tr>
-                {[
-                  "ATA",
-                  "CONTRATO",
-                  "FORNECEDOR",
-                  "QTD. DE ITENS",
-                  "COMPRADOR(A)",
-                  "ÁREA",
-                  "VALOR",
-                ].map((label) => <th key={label} scope="col" className="px-3 py-3 font-bold">{label}</th>)}
+        <div className="max-h-[460px] overflow-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-navy-950 text-[11px] font-bold uppercase text-white">
+                <th className="px-4 py-2">Ata</th>
+                <th className="px-3 py-2">Contrato</th>
+                <th className="px-3 py-2">Fornecedor</th>
+                <th className="px-3 py-2 text-right">Qtd. de itens</th>
+                <th className="px-3 py-2">Comprador(a)</th>
+                <th className="px-3 py-2">Área</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line/70">
-              {dados.novas.map((ata) => (
-                <tr key={ata.key} className="hover:bg-navy-50/50">
-                  <td className="max-w-[280px] px-3 py-3 font-semibold text-navy-950">ATA: {ata.descricao}</td>
-                  <td className="tnum px-3 py-3 text-ink">{ata.contrato ?? "—"}</td>
-                  <td className="px-3 py-3 text-ink">{ata.fornecedor ?? "—"}</td>
-                  <td className="tnum px-3 py-3 text-ink">{fmtInt(ata.itens)}</td>
-                  <td className="px-3 py-3 text-ink">{ata.comprador ?? "—"}</td>
-                  <td className="px-3 py-3 font-semibold text-navy-700">{ata.area ?? "—"}</td>
-                  <td className="tnum px-3 py-3 text-ink">{fmtCurrency(ata.valor)}</td>
+            <tbody className="divide-y divide-line">
+              {novas.map((ata) => (
+                <tr key={ata.key} className="odd:bg-white even:bg-navy-50/40">
+                  <td className="px-4 py-2 font-semibold uppercase text-navy-950">
+                    <span className="text-ink-soft">ATA: </span>
+                    {ata.descricao}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-navy-900">{ata.contrato ?? <span className="text-ink-soft">—</span>}</td>
+                  <td className="px-3 py-2 uppercase text-navy-900">
+                    {ata.fornecedor ?? (
+                      <span className="text-ink-soft" title={ata.contrato ? "Contrato não encontrado na aba Base - Controle de Contratos" : "Ata sem nº de contrato na base"}>—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy-900">{fmtInt(ata.itens)}</td>
+                  <td className="px-3 py-2 text-navy-900">{ata.comprador ?? <span className="text-ink-soft">—</span>}</td>
+                  <td className="px-3 py-2">{ata.area ? <AreaTag area={ata.area} /> : <span className="text-ink-soft">—</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {(semFornecedor > 0 || semContrato > 0) && (
+        <p className="border-t border-line px-5 py-2 text-[11.5px] text-ink-soft">
+          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: o contrato não consta na aba “Base - Controle de Contratos” importada. `}
+          {semContrato > 0 && `${fmtInt(semContrato)} ${semContrato === 1 ? "ata sem nº de contrato" : "atas sem nº de contrato"} na base de andamento.`}
+        </p>
       )}
     </div>
   );
@@ -9529,6 +9570,7 @@ export { notifyBaseUpdated };
 ## `src/components/documents-manager.tsx`
 
 ````tsx
+// src/components/documentos/documents-manager.tsx
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -9705,7 +9747,7 @@ function RegrasDePreenchimento() {
     <div className="card space-y-4 p-5 lg:sticky lg:top-[84px]">
       <h2 className="text-[16px] font-display font-bold text-navy-900">Parâmetros do Mapeamento</h2>
       <div className="space-y-4 text-[12px] text-ink-soft">
-        <p><strong className="text-ink">Status “A Renovar”:</strong> Adotada a régua de 100 dias pré-vencimento para garantir margem de tempo na estruturação e renovação dos processos.</p>
+        <p><strong className="text-ink">Status “A vencer (30 dias)”:</strong> Contratos com vencimento entre hoje e os próximos 30 dias, conforme a regra de classificação do sistema.</p>
         <p><strong className="text-ink">Base “Em Andamento”:</strong> Apurada cruzando a Planilha de Atas em Andamento com o relatório SAP (mapeamento de todos os projetos 7000 criados neste ano sem requisição).</p>
         <p><strong className="text-ink">Snapshot local:</strong> A leitura da semana atual/anterior é gravada no IndexedDB deste navegador. Não há sincronização com SharePoint nem compartilhamento com outros usuários ou dispositivos.</p>
       </div>
@@ -12412,7 +12454,7 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   "top-compradores": { label: "Top compradores por área", esperado: "blocos TOP COMP por área" },
   fornecedores: { label: "Representatividade de fornecedores", esperado: "tabela FORNECEDORES GERAL" },
   evolucao: { label: "Evolução por área", esperado: "evolução por status atual e tabela EM ANDAMENTO" },
-  "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60, acima de 60 e vencidas" },
+  "previsao-faixas": { label: "Previsão de conclusão por faixa", esperado: "faixas até 15, 30, 60 e vencidas; a faixa acima de 60 dias é lida e calculada, mas não exibida" },
   "previsao-meses": { label: "Previsão de conclusão por mês", esperado: "pivô PREVISÃO DE CONCLUSÃO POR MÊS" },
   "previsoes-cruzadas": { label: "Previsões por comprador", esperado: "COMPRADOR, AREA e PRAZO CONCLUSÃO" },
   "atas-concluidas": {
@@ -14326,23 +14368,23 @@ export function hasSnapshotPayloadMeaningfulData(payload: DashboardSnapshotPaylo
 }
 
 /**
- * Referência inicial de 05/10 para que a comparação semanal não fique vazia
- * antes de existir uma segunda importação. São somente os números dos cards
- * de resumo fornecidos como referência.
+ * Referência inicial de 13/10 (status da semana anterior na página do
+ * SharePoint) para que a comparação semanal não fique vazia antes de existir
+ * uma segunda importação. São somente os números dos cards de resumo.
  */
 export function defaultPreviousSnapshot(): DashboardSnapshotPayload {
-  const payload = emptyDashboardSnapshot("2026-10-05", ["Referência fornecida nas capturas — 05/10"]);
+  const payload = emptyDashboardSnapshot("2026-10-13", ["Referência fornecida nas capturas — 13/10"]);
   payload.kpis = {
-    concluidasAtas: 58,
-    concluidasItens: 956,
-    andamentoAtas: 68,
-    andamentoItens: 4778,
-    saldoItens: 877,
-    consumidoItens: 80,
-    aVencerAtas: 58,
-    aVencerItens: 1215,
-    vencidasAtas: 48,
-    vencidasItens: 334,
+    concluidasAtas: 62,
+    concluidasItens: 915,
+    andamentoAtas: 70,
+    andamentoItens: 5000,
+    saldoItens: 862,
+    consumidoItens: 100,
+    aVencerAtas: 59,
+    aVencerItens: 1441,
+    vencidasAtas: 49,
+    vencidasItens: 371,
   };
   payload.coverage.found = ["kpis-leitura"];
   payload.coverage.missing = SNAPSHOT_BLOCK_KEYS.filter((key) => key !== "kpis-leitura");
@@ -15061,6 +15103,7 @@ export interface StaticDashboardData {
   } | null;
   snapshotHistory: Array<{
     id: number;
+    fileName: string;
     referenceDate: string | null;
     importedAt: string;
     status: string;
@@ -15252,9 +15295,9 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   ]);
 
   const currentSnapshot = snapshotDatasets[0]?.snapshot ?? null;
-  // Antes de uma segunda importação, a referência fornecida para 28/09 mantém
-  // os três gráficos comparáveis. A partir da segunda leitura, o histórico real
-  // ocupa este lugar automaticamente.
+  // Antes de uma segunda importação, a referência fornecida para 13/10 mantém
+  // os cards da semana anterior comparáveis. A partir da segunda leitura, o
+  // histórico real ocupa este lugar automaticamente.
   const previousSnapshot = snapshotDatasets[1]?.snapshot ?? (currentSnapshot ? defaultPreviousSnapshot() : null);
 
   const byArea = new Map<string, ProcessRow[]>();
@@ -15519,6 +15562,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
 
   const snapshotHistory = snapshotDatasets.map((dataset) => ({
     id: dataset.id,
+    fileName: dataset.fileName,
     referenceDate: dataset.referenceDate,
     importedAt: dataset.importedAt,
     status: dataset.status,

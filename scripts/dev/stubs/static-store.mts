@@ -31,6 +31,7 @@ export async function listSnapshotDatasets() {
   return store().snapshots.map((snapshot, index) => ({
     id: index + 1,
     snapshot,
+    fileName: ((snapshot as AnyRecord)?.sourceFiles as string[] | undefined)?.join(", ") ?? "",
     importedAt: new Date(Date.now() - index * 86400000).toISOString(),
     referenceDate: (snapshot as AnyRecord)?.referenceDate ?? null,
     status: "active",

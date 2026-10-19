@@ -59,6 +59,7 @@ export interface StaticDashboardData {
   } | null;
   snapshotHistory: Array<{
     id: number;
+    fileName: string;
     referenceDate: string | null;
     importedAt: string;
     status: string;
@@ -250,9 +251,9 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   ]);
 
   const currentSnapshot = snapshotDatasets[0]?.snapshot ?? null;
-  // Antes de uma segunda importação, a referência fornecida para 28/09 mantém
-  // os três gráficos comparáveis. A partir da segunda leitura, o histórico real
-  // ocupa este lugar automaticamente.
+  // Antes de uma segunda importação, a referência fornecida para 13/10 mantém
+  // os cards da semana anterior comparáveis. A partir da segunda leitura, o
+  // histórico real ocupa este lugar automaticamente.
   const previousSnapshot = snapshotDatasets[1]?.snapshot ?? (currentSnapshot ? defaultPreviousSnapshot() : null);
 
   const byArea = new Map<string, ProcessRow[]>();
@@ -517,6 +518,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
 
   const snapshotHistory = snapshotDatasets.map((dataset) => ({
     id: dataset.id,
+    fileName: dataset.fileName,
     referenceDate: dataset.referenceDate,
     importedAt: dataset.importedAt,
     status: dataset.status,

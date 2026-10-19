@@ -20,12 +20,15 @@ const MONTH_NAMES_PT = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ] as const;
 
+/**
+ * Faixas de previsão em ordem cronológica. No Excel as faixas são exclusivas
+ * ("ATÉ 30 DIAS" não inclui as de até 15); os cálculos permanecem exclusivos.
+ */
 const FAIXAS_PREVISAO: Array<{ band: ForecastBand; title: string; titleClass?: string }> = [
   { band: "ate_15", title: "Previstas para concluir nos próximos 15 dias" },
-  { band: "ate_30", title: "Previstas para concluir de 16 a 30 dias" },
-  { band: "ate_60", title: "Previstas para concluir de 31 a 60 dias" },
-  { band: "acima_60", title: "Previsões para concluir acima de 60 dias" },
-  { band: "vencidas", title: "Previsões vencidas", titleClass: "bg-danger-700 text-white border-danger-700" },
+  { band: "ate_30", title: "Previstas para concluir até 30 dias" },
+  { band: "ate_60", title: "Previstas para concluir até 60 dias" },
+  { band: "vencidas", title: "Previsões Vencidas", titleClass: "bg-danger-700 text-white border-danger-700" },
 ];
 
 export default function PanoramaPage() {
@@ -122,7 +125,8 @@ export default function PanoramaPage() {
   const { kpis, porArea, topCompradores, fornecedores, evolucao, previsoes, currentSnapshot, previousSnapshot, savingTotal, blocos, atasConcluidas, statusAtas } = data;
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
-  const areaVisualOrder = ["CAPEX", "DIRETOS", "INDIRETOS"];
+  // Ordem única das áreas em todos os blocos do painel, conforme a planilha.
+  const areaVisualOrder = ["INDIRETOS", "DIRETOS", "CAPEX"];
   const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
   const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
 
@@ -232,6 +236,23 @@ export default function PanoramaPage() {
             Referência anterior: {formatReferenceDate(previousSnapshot?.referenceDate)}
           </span>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2" aria-label="Bases da comparação semanal">
+          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+            <h3 className="font-semibold text-navy-900">Base atual</h3>
+            <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(currentSnapshot?.referenceDate)}</p>
+            <p className="mt-1 break-words text-ink-soft">Arquivo: {currentSnapshot ? (data.snapshotHistory[0]?.fileName || "Nome do arquivo não disponível") : "Sem snapshot importado; indicadores disponíveis vêm dos registros operacionais."}</p>
+          </div>
+          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+            <h3 className="font-semibold text-navy-900">Base anterior</h3>
+            <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(previousSnapshot?.referenceDate)}</p>
+            <p className="mt-1 break-words text-ink-soft">Arquivo: {data.snapshotHistory[1] ? (data.snapshotHistory[1].fileName || "Nome do arquivo não disponível") : previousSnapshot ? "Não se aplica — referência fixa, sem arquivo importado" : "Sem base anterior"}</p>
+          </div>
+        </div>
+        {previousSnapshot && !data.snapshotHistory[1] && (
+          <p role="status" className="rounded-xl border border-line bg-navy-50 p-4 text-[12.5px] text-navy-900">
+            A base anterior usa a referência fixa de {formatReferenceDate(previousSnapshot.referenceDate)}, fornecida na captura do SharePoint, e não uma planilha importada. Ela contém apenas os indicadores de resumo; será substituída pelo histórico real quando houver uma importação anterior disponível.
+          </p>
+        )}
         {previousSnapshot && (
           <ResumoCards
             titulo="Resumo das Atas Concluídas"
@@ -487,7 +508,7 @@ export default function PanoramaPage() {
       {/* Bloco 6: Previsão de Conclusão Por Faixa (Ref: Screenshots 8 & 18) */}
       <section>
         <h2 className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-6">Indicadores - Atas em andamento</h2>
-        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão Por Faixa (Até 60 dias)</h3>
+        <h3 className="text-[17px] font-sans font-semibold leading-tight tracking-normal text-navy-900 mb-4">Previsão de Conclusão por Faixa</h3>
         
         {ausente("previsao-faixas") ? (
           <BlocoAusente bloco="previsao-faixas" referencia={referencia} />
