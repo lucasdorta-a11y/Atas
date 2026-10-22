@@ -14350,6 +14350,31 @@ function parseRenovacaoBanner(row: unknown[]): SnapshotStatusRenovacao | null {
   return { contrato, comprador, vencimento, texto };
 }
 
+/**
+ * No Excel os cards podem estar em células mescladas e a linha dos rótulos
+ * pode ficar separada da linha dos números por uma ou mais linhas formatadas.
+ * Procura primeiro na mesma coluna e depois nas colunas vizinhas do mesmo
+ * cartão, sem atravessar a faixa do bloco.
+ */
+function statusTileValue(matrix: unknown[][], rowIndex: number, column: number, start: number, end: number): number | null {
+  const rows: number[] = [];
+  for (let distance = 1; distance <= 4; distance += 1) {
+    if (rowIndex - distance >= start) rows.push(rowIndex - distance);
+    if (rowIndex + distance < end) rows.push(rowIndex + distance);
+  }
+  for (const row of rows) {
+    const direct = integerValue(matrix[row]?.[column]);
+    if (direct !== null) return direct;
+    for (let offset = 1; offset <= 3; offset += 1) {
+      const left = integerValue(matrix[row]?.[column - offset]);
+      if (left !== null) return left;
+      const right = integerValue(matrix[row]?.[column + offset]);
+      if (right !== null) return right;
+    }
+  }
+  return null;
+}
+
 function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
   return {
     area,
@@ -14408,9 +14433,8 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
       }
       const tileKey = tileKeyOf(label);
       if (tileKey) {
-        const above = r > start ? integerValue(matrix[r - 1]?.[c]) : null;
-        const below = above === null && !headerLike ? integerValue(matrix[r + 1]?.[c]) : null;
-        const value = above ?? below;
+        const nearby = statusTileValue(matrix, r, c, start, end);
+        const value = nearby ?? (!headerLike ? integerValue(matrix[r + 1]?.[c]) : null);
         if (value !== null && block[tileKey] === null) {
           block[tileKey] = value;
           if (tileKey === "totalRenovar" || tileKey === "emAndamento") block.layout = "renovacoes";
