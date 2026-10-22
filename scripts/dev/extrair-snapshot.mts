@@ -135,8 +135,9 @@ for (const area of SNAPSHOT_AREAS) {
     console.log(`  ${area.padEnd(10)} —`);
     continue;
   }
-  console.log(`  ${area.padEnd(10)} base=${status.baseDate ?? "—"} total=${number(status.total)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)}`);
-  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"}`).join("; ") || "—"}`);
+  console.log(`  ${area.padEnd(10)} layout=${status.layout} base=${status.baseDate ?? "—"} total=${number(status.total)} totalRenovar=${number(status.totalRenovar)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)} andamento=${number(status.emAndamento)}`);
+  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"} ${item.situacao ?? "—"}`).join("; ") || "—"}`);
+  if (status.renovacaoEmAndamento) console.log(`             renovação em andamento: ${status.renovacaoEmAndamento.texto}`);
   console.log(`             carteira: ${status.carteira.map((item) => `${item.comprador} ${number(item.vigentes)}/${number(item.vencidas)}/${number(item.aRenovar)}/${number(item.total)}`).join("; ") || "—"}`);
   console.log(`             notas: ${status.notas.join(" | ") || "—"}`);
 }

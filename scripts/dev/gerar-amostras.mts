@@ -88,21 +88,19 @@ const cruzamento: Matrix = [
 ];
 
 const statusAtas = (): Matrix => {
-  const area = (name: string, base: string, offset: number): Matrix => [
+  const area = (name: string, offset: number, banner: boolean): Matrix => [
     [name],
-    [`${name} | Status das Atas`],
-    [`Carteira da área e ações prioritárias | Base: ${base}`],
-    ["10 TOTAL", "8 VIGENTES", "2 VENCIDAS", "3 ATÉ 15 DIAS", "4 16 A 30 DIAS", "1 A RENOVAR"],
-    ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)"],
-    [`460000${2000 + offset}`, "20/10/2026", "ANA SILVA"],
-    [`460000${2001 + offset}`, "05/11/2026", "BRUNO LIMA"],
-    ["COMPRADOR(A)", "VIG.", "VENC.", "A RENOVAR", "TOTAL"],
-    ["ANA SILVA", 4, 1, 1, 5],
-    ["BRUNO LIMA", 3, 1, 0, 4],
-    ["TOTAL", 7, 2, 1, 9],
-    ["4 atas adicionais vencem entre 31 e 60 dias."],
+    [`${name} | Status de Renovações`],
+    ["Carteira em alerta de 100 dias | Atas a renovar"],
+    [11 + offset, 0, 2, banner ? 1 : 0],
+    ["TOTAL A RENOVAR", "VENCIDAS", "ATÉ 15 DIAS", "EM ANDAMENTO"],
+    ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)", "SITUAÇÃO"],
+    [`460000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "LUCAS VICENTINI", banner ? "EM ANDAMENTO" : "A INICIAR"],
+    [`460000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "LUCAS VICENTINI", "A INICIAR"],
+    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 4600000895 | LUCAS VICENTINI | VENCIMENTO 28/10/2026"] as Row] : []),
+    [],
   ];
-  return [...area("INDIRETOS", "13/10/2026", 0), ...area("DIRETOS", "13/10/2026", 10), ...area("CAPEX", "13/10/2026", 20)];
+  return [...area("INDIRETOS", 0, true), ...area("DIRETOS", 10, false), ...area("CAPEX", 20, false)];
 };
 
 function makeWorkbook(current: boolean) {

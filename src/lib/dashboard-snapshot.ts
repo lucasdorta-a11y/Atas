@@ -51,7 +51,7 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   },
   "status-atas": {
     label: "Status das atas por área",
-    esperado: "aba Status das Atas com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL/VIGENTES/VENCIDAS/ATÉ 15 DIAS/16 A 30 DIAS/A RENOVAR, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) e tabela COMPRADOR(A) | VIG. | VENC.",
+    esperado: "aba de status/renovações com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL A RENOVAR/VENCIDAS/ATÉ 15 DIAS/EM ANDAMENTO ou TOTAL/VIGENTES/VENCIDAS, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) | SITUAÇÃO e, quando disponível, faixa RENOVAÇÃO EM ANDAMENTO",
   },
 };
 
@@ -165,6 +165,7 @@ export interface SnapshotStatusPrioridade {
   contrato: string;
   vencimento: string | null;
   comprador: string | null;
+  situacao: string | null;
 }
 
 export interface SnapshotStatusCarteira {
@@ -176,19 +177,37 @@ export interface SnapshotStatusCarteira {
 }
 
 /** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
+export type SnapshotStatusLayout = "atas" | "renovacoes";
+
+export interface SnapshotStatusRenovacao {
+  contrato: string | null;
+  comprador: string | null;
+  vencimento: string | null;
+  texto: string;
+}
+
+/** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
 export interface SnapshotStatusAtasArea {
   area: SnapshotArea;
+  layout: SnapshotStatusLayout;
   baseDate: string | null;
   titulo: string | null;
   subtitulo: string | null;
+  /** Quadro TOTAL no layout da carteira de atas. */
   total: number | null;
   vigentes: number | null;
   vencidas: number | null;
   ate15: number | null;
   de16a30: number | null;
   aRenovar: number | null;
+  /** Quadro TOTAL A RENOVAR no layout novo do SharePoint. */
+  totalRenovar: number | null;
+  /** Quadro EM ANDAMENTO no layout novo do SharePoint. */
+  emAndamento: number | null;
   prioridades: SnapshotStatusPrioridade[];
   carteira: SnapshotStatusCarteira[];
+  /** Faixa “RENOVAÇÃO EM ANDAMENTO” exibida abaixo da tabela de prioridades. */
+  renovacaoEmAndamento: SnapshotStatusRenovacao | null;
   notas: string[];
 }
 
@@ -1731,9 +1750,11 @@ function extractAtasConcluidas(payload: DashboardSnapshotPayload, sheets: Snapsh
 
 /* ------------------- status das atas por área (aba) ---------------- */
 
-const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar"> = {
+const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar" | "totalRenovar" | "emAndamento"> = {
   TOTAL: "total",
   "TOTAL DE ATAS": "total",
+  "TOTAL A RENOVAR": "totalRenovar",
+  "TOTAL RENOVAR": "totalRenovar",
   VIGENTES: "vigentes",
   VIGENTE: "vigentes",
   VENCIDAS: "vencidas",
@@ -1744,6 +1765,8 @@ const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" |
   "DE 16 A 30 DIAS": "de16a30",
   "16 A 30": "de16a30",
   "A RENOVAR": "aRenovar",
+  "EM ANDAMENTO": "emAndamento",
+  ANDAMENTO: "emAndamento",
 };
 
 function tileKeyOf(label: string) {
@@ -1754,9 +1777,29 @@ function isBuyerHeader(value: string): boolean {
   return /^COMPRADOR\s?(\(A\)|A|\(A\)S|ES)?$/.test(value);
 }
 
+function parseRenovacaoBanner(row: unknown[]): SnapshotStatusRenovacao | null {
+  const cells = row.map(cellText).filter(Boolean);
+  const normalized = exact(cells.join(" | "));
+  if (!normalized.includes("RENOVACAO EM ANDAMENTO")) return null;
+  const texto = cells.join(" | ");
+  const contrato = texto.match(/\b\d{6,}\b/)?.[0] ?? null;
+  const rawDate = texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/)?.[0] ?? null;
+  const vencimento = rawDate ? parseDateBR(rawDate, "Vencimento").iso : null;
+  const comprador = cells
+    .flatMap((cell) => cell.split("|"))
+    .map((cell) => cell.trim())
+    .find((cell) => cell
+      && !exact(cell).includes("RENOVACAO EM ANDAMENTO")
+      && !exact(cell).includes("VENCIMENTO")
+      && !/^\d{6,}$/.test(cell)
+      && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(cell)) ?? null;
+  return { contrato, comprador, vencimento, texto };
+}
+
 function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
   return {
     area,
+    layout: "atas",
     baseDate: null,
     titulo: null,
     subtitulo: null,
@@ -1766,8 +1809,11 @@ function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
     ate15: null,
     de16a30: null,
     aRenovar: null,
+    totalRenovar: null,
+    emAndamento: null,
     prioridades: [],
     carteira: [],
+    renovacaoEmAndamento: null,
     notas: [],
   };
 }
@@ -1787,12 +1833,23 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
       const label = exact(text);
       const base = text.match(/BASE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
       if (base) block.baseDate = parseDateBR(base[1], "Base").iso ?? block.baseDate;
-      if (label.includes("STATUS DAS ATAS")) {
+      if (label.includes("STATUS DAS ATAS") || label.includes("STATUS DE RENOVACOES")) {
         if (!block.titulo) block.titulo = text;
+        if (label.includes("STATUS DE RENOVACOES")) block.layout = "renovacoes";
         continue;
       }
       if (base) {
         if (!block.subtitulo) block.subtitulo = text.split("|")[0].replace(/BASE:?.*$/i, "").trim() || null;
+        continue;
+      }
+      if (!block.subtitulo && (label.includes("CARTEIRA") || label.includes("ALERTA") || label.includes("ATAS A RENOVAR"))) {
+        block.subtitulo = text;
+        continue;
+      }
+      const banner = parseRenovacaoBanner(row);
+      if (banner) {
+        block.renovacaoEmAndamento = banner;
+        block.layout = "renovacoes";
         continue;
       }
       const tileKey = tileKeyOf(label);
@@ -1802,6 +1859,7 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
         const value = above ?? below;
         if (value !== null && block[tileKey] === null) {
           block[tileKey] = value;
+          if (tileKey === "totalRenovar" || tileKey === "emAndamento") block.layout = "renovacoes";
           tiles += 1;
           continue;
         }
@@ -1810,6 +1868,7 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
         const singleKey = single ? tileKeyOf(single[2]) : null;
         if (single && singleKey && block[singleKey] === null) {
           block[singleKey] = Number(single[1]);
+          if (singleKey === "totalRenovar" || singleKey === "emAndamento") block.layout = "renovacoes";
           tiles += 1;
           continue;
         }
@@ -1824,9 +1883,12 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
       if (contratoCol >= 0) {
         const vencCol = columnIndex(row, (value) => value === "VENCIMENTO" || value === "DATA DE VENCIMENTO" || value === "DATA VENCIMENTO" || value === "FIM VIGENCIA" || value === "FIM DA VIGENCIA");
         const compradorCol = row.findIndex((value, index) => index > contratoCol && isBuyerHeader(exact(value)));
+        const situacaoCol = row.findIndex((value, index) => index > contratoCol && (exact(value) === "SITUACAO" || exact(value) === "STATUS"));
         prioridadesHeader = r;
         for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
           const dataRow = matrix[dr] ?? [];
+          const rowText = exact(dataRow.map(cellText).filter(Boolean).join(" | "));
+          if (rowText.includes("RENOVACAO EM ANDAMENTO")) break;
           const rawContrato = cellText(dataRow[contratoCol]);
           const normalizedContrato = exact(rawContrato);
           if (!rawContrato || isBuyerHeader(normalizedContrato) || normalizedContrato.startsWith("TOTAL")) break;
@@ -1834,7 +1896,8 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
           const vencimentoRaw = vencCol >= 0 ? cellText(dataRow[vencCol]) : "";
           const vencimento = vencimentoRaw ? parseDateBR(vencimentoRaw, "Vencimento").iso : null;
           const comprador = compradorCol >= 0 ? stripCode(cellText(dataRow[compradorCol])) || null : null;
-          block.prioridades.push({ contrato, vencimento, comprador });
+          const situacao = situacaoCol >= 0 ? cellText(dataRow[situacaoCol]) || null : null;
+          block.prioridades.push({ contrato, vencimento, comprador, situacao });
         }
       }
     }

@@ -302,7 +302,7 @@ As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha
 
 ### Status das Atas por área
 
-O bloco `Status das Atas` substitui o antigo funil de renovações quando a aba dedicada está presente. Ele reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`), os quadros `TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS` e `A RENOVAR`, além das tabelas `CONTRATO SAP | VENCIMENTO | COMPRADOR(A)` e `COMPRADOR(A) | VIG. | VENC.`. Notas sobre vencimentos são exibidas no próprio bloco; uma área não encontrada permanece explicitamente sinalizada.
+O bloco de status/renovações lê a aba dedicada atualizada junto com o resumo e reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`). No layout atual do SharePoint/Excel, cada faixa traz os quadros `TOTAL A RENOVAR`, `VENCIDAS`, `ATÉ 15 DIAS` e `EM ANDAMENTO`, além da tabela `CONTRATO SAP | VENCIMENTO | COMPRADOR(A) | SITUAÇÃO`. Quando existe, a faixa `RENOVAÇÃO EM ANDAMENTO` também é exibida com contrato, comprador e vencimento. O extrator mantém compatibilidade com o layout anterior de carteira (`TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS`, `A RENOVAR` e a carteira por comprador). Uma área não encontrada permanece explicitamente sinalizada.
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 
@@ -7476,8 +7476,9 @@ for (const area of SNAPSHOT_AREAS) {
     console.log(`  ${area.padEnd(10)} —`);
     continue;
   }
-  console.log(`  ${area.padEnd(10)} base=${status.baseDate ?? "—"} total=${number(status.total)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)}`);
-  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"}`).join("; ") || "—"}`);
+  console.log(`  ${area.padEnd(10)} layout=${status.layout} base=${status.baseDate ?? "—"} total=${number(status.total)} totalRenovar=${number(status.totalRenovar)} vig=${number(status.vigentes)} venc=${number(status.vencidas)} ate15=${number(status.ate15)} 16a30=${number(status.de16a30)} aRenovar=${number(status.aRenovar)} andamento=${number(status.emAndamento)}`);
+  console.log(`             prioridades: ${status.prioridades.map((item) => `${item.contrato} ${item.vencimento ?? "—"} ${item.comprador ?? "—"} ${item.situacao ?? "—"}`).join("; ") || "—"}`);
+  if (status.renovacaoEmAndamento) console.log(`             renovação em andamento: ${status.renovacaoEmAndamento.texto}`);
   console.log(`             carteira: ${status.carteira.map((item) => `${item.comprador} ${number(item.vigentes)}/${number(item.vencidas)}/${number(item.aRenovar)}/${number(item.total)}`).join("; ") || "—"}`);
   console.log(`             notas: ${status.notas.join(" | ") || "—"}`);
 }
@@ -7576,21 +7577,19 @@ const cruzamento: Matrix = [
 ];
 
 const statusAtas = (): Matrix => {
-  const area = (name: string, base: string, offset: number): Matrix => [
+  const area = (name: string, offset: number, banner: boolean): Matrix => [
     [name],
-    [`${name} | Status das Atas`],
-    [`Carteira da área e ações prioritárias | Base: ${base}`],
-    ["10 TOTAL", "8 VIGENTES", "2 VENCIDAS", "3 ATÉ 15 DIAS", "4 16 A 30 DIAS", "1 A RENOVAR"],
-    ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)"],
-    [`460000${2000 + offset}`, "20/10/2026", "ANA SILVA"],
-    [`460000${2001 + offset}`, "05/11/2026", "BRUNO LIMA"],
-    ["COMPRADOR(A)", "VIG.", "VENC.", "A RENOVAR", "TOTAL"],
-    ["ANA SILVA", 4, 1, 1, 5],
-    ["BRUNO LIMA", 3, 1, 0, 4],
-    ["TOTAL", 7, 2, 1, 9],
-    ["4 atas adicionais vencem entre 31 e 60 dias."],
+    [`${name} | Status de Renovações`],
+    ["Carteira em alerta de 100 dias | Atas a renovar"],
+    [11 + offset, 0, 2, banner ? 1 : 0],
+    ["TOTAL A RENOVAR", "VENCIDAS", "ATÉ 15 DIAS", "EM ANDAMENTO"],
+    ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)", "SITUAÇÃO"],
+    [`460000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "LUCAS VICENTINI", banner ? "EM ANDAMENTO" : "A INICIAR"],
+    [`460000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "LUCAS VICENTINI", "A INICIAR"],
+    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 4600000895 | LUCAS VICENTINI | VENCIMENTO 28/10/2026"] as Row] : []),
+    [],
   ];
-  return [...area("INDIRETOS", "13/10/2026", 0), ...area("DIRETOS", "13/10/2026", 10), ...area("CAPEX", "13/10/2026", 20)];
+  return [...area("INDIRETOS", 0, true), ...area("DIRETOS", 10, false), ...area("CAPEX", 20, false)];
 };
 
 function makeWorkbook(current: boolean) {
@@ -8610,7 +8609,7 @@ export default function PanoramaPage() {
       {/* Bloco 5: Status das Atas por área (aba dedicada da planilha). */}
       <section aria-labelledby="status-das-atas">
         <h2 id="status-das-atas" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-2">Status das Atas</h2>
-        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de cada área, vencimentos prioritários e distribuição por comprador(a), lidos da aba “Status das Atas” importada junto com o resumo.</p>
+        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de renovações, vencimentos prioritários e situação dos contratos, lidos da aba de status/renovações importada junto com o resumo.</p>
         {ausente("status-atas") ? (
           <BlocoAusente bloco="status-atas" referencia={referencia} />
         ) : (
@@ -11916,9 +11915,17 @@ export function StatusAtas({
     <div className="space-y-6">
       {AREAS.map((area) => {
         const status = areas[area];
-        return status ? <StatusArea key={area} status={status} referencia={referencia} /> : (
-          <div key={area} className="card border-dashed px-5 py-6 text-center text-[13px] text-ink-soft">
-            <strong className="text-navy-900">{area}</strong> — bloco não encontrado na aba Status das Atas.
+        const style = areaStyle(area);
+        return (
+          <div key={area} className="space-y-3">
+            <div className={`w-full rounded-lg px-4 py-2 text-center text-[16px] font-bold uppercase tracking-wide ${style.band}`}>
+              {area}
+            </div>
+            {status ? <StatusArea status={status} referencia={referencia} /> : (
+              <div className="card border-dashed px-5 py-6 text-center text-[13px] text-ink-soft">
+                <strong className="text-navy-900">{area}</strong> — bloco não encontrado na aba de status/renovações.
+              </div>
+            )}
           </div>
         );
       })}
@@ -11927,7 +11934,90 @@ export function StatusAtas({
 }
 
 function StatusArea({ status, referencia }: { status: SnapshotStatusAtasArea; referencia: string | null }) {
-  const style = areaStyle(status.area);
+  const renovacoes = status.layout === "renovacoes"
+    || status.totalRenovar !== null
+    || status.emAndamento !== null;
+  return renovacoes
+    ? <StatusRenovacoesArea status={status} />
+    : <StatusCarteiraArea status={status} referencia={referencia} />;
+}
+
+function StatusRenovacoesArea({ status }: { status: SnapshotStatusAtasArea }) {
+  const totalRenovar = status.totalRenovar ?? status.total;
+  const tiles = [
+    { label: "TOTAL A RENOVAR", value: totalRenovar, tone: "bg-navy-50 border-navy-200 text-navy-800" },
+    { label: "VENCIDAS", value: status.vencidas, tone: "bg-danger-100/70 border-danger-100 text-danger-700" },
+    { label: "ATÉ 15 DIAS", value: status.ate15, tone: "bg-warn-100/70 border-warn-100 text-warn-700" },
+    { label: "EM ANDAMENTO", value: status.emAndamento, tone: "bg-ok-100/70 border-ok-100 text-ok-700" },
+  ];
+  const base = status.baseDate;
+
+  return (
+    <section className="card overflow-hidden" aria-label={`Status de renovações — ${status.area}`}>
+      <div className="border-b border-line px-5 py-4">
+        <h3 className="text-[20px] font-sans font-semibold leading-tight text-navy-900">
+          {status.titulo ?? `${status.area} | Status de Renovações`}
+        </h3>
+        <p className="mt-1 text-[12.5px] text-ink-soft">
+          {status.subtitulo ?? "Carteira em alerta de 100 dias | Atas a renovar"}
+          {base && !status.subtitulo?.includes("Base:") ? ` | Base: ${fmtDate(base)}` : ""}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 border-b border-line p-5 sm:grid-cols-4">
+        {tiles.map((tile) => (
+          <div key={tile.label} className={`rounded-xl border px-3 py-4 ${tile.tone}`}>
+            <p className="tnum text-[28px] font-bold leading-none">{fmtInt(tile.value)}</p>
+            <p className="mt-2 text-[10.5px] font-bold uppercase leading-tight tracking-wide">{tile.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-5">
+        <h4 className="text-[16px] font-semibold text-navy-900">Prioridade | Vencimentos nos próximos 15 dias</h4>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-[12px]">
+            <thead className="bg-navy-50 text-[11px] font-bold uppercase text-ink-soft">
+              <tr>
+                <th className="px-3 py-2">CONTRATO SAP</th>
+                <th className="px-3 py-2">VENCIMENTO</th>
+                <th className="px-3 py-2">COMPRADOR(A)</th>
+                <th className="px-3 py-2">SITUAÇÃO</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line/70">
+              {status.prioridades.length === 0 ? (
+                <tr><td colSpan={4} className="px-3 py-5 text-center text-ink-soft">Nenhum vencimento prioritário informado.</td></tr>
+              ) : status.prioridades.map((item, index) => (
+                <tr key={`${item.contrato}-${index}`}>
+                  <td className="tnum px-3 py-2 font-semibold text-navy-950">{item.contrato}</td>
+                  <td className="px-3 py-2">{fmtDate(item.vencimento)}</td>
+                  <td className="px-3 py-2">{item.comprador ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    {item.situacao ? <span className="inline-flex rounded-full bg-navy-100 px-2.5 py-1 text-[11px] font-semibold text-navy-700">{item.situacao}</span> : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {status.renovacaoEmAndamento && (
+          <div className="mt-3 rounded-lg bg-ok-100 px-4 py-2.5 text-[12px] font-semibold text-ok-700">
+            RENOVAÇÃO EM ANDAMENTO: {status.renovacaoEmAndamento.contrato ?? "—"} | {status.renovacaoEmAndamento.comprador ?? "—"} | VENCIMENTO {fmtDate(status.renovacaoEmAndamento.vencimento)}
+          </div>
+        )}
+        {status.notas.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {status.notas.map((note) => <p key={note} className="rounded-lg bg-warn-100 px-3 py-2 text-[12.5px] leading-relaxed text-warn-700">{note}</p>)}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StatusCarteiraArea({ status, referencia }: { status: SnapshotStatusAtasArea; referencia: string | null }) {
   const tiles = [
     ["TOTAL", status.total],
     ["VIGENTES", status.vigentes],
@@ -11936,13 +12026,17 @@ function StatusArea({ status, referencia }: { status: SnapshotStatusAtasArea; re
     ["16 A 30 DIAS", status.de16a30],
     ["A RENOVAR", status.aRenovar],
   ] as const;
+  const base = status.baseDate ?? referencia;
+
   return (
     <section className="card overflow-hidden" aria-label={`Status das atas — ${status.area}`}>
-      <div className={`px-5 py-3 text-center font-bold ${style.band}`}>
-        <div className="text-[16px] uppercase tracking-wide">{status.area}</div>
-        <div className="mt-1 text-[12px] font-medium opacity-90">
-          {status.titulo ?? "Status das Atas"}{status.baseDate ? ` · base ${fmtDate(status.baseDate)}` : referencia ? ` · referência ${fmtDate(referencia)}` : ""}
-        </div>
+      <div className="border-b border-line px-5 py-4">
+        <h3 className="text-[20px] font-sans font-semibold leading-tight text-navy-900">
+          {status.titulo ?? `${status.area} | Status das Atas`}
+        </h3>
+        <p className="mt-1 text-[12.5px] text-ink-soft">
+          {status.subtitulo ?? "Carteira da área e ações prioritárias"}{base ? ` · base ${fmtDate(base)}` : ""}
+        </p>
       </div>
       <div className="grid grid-cols-2 divide-x divide-y divide-line sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
         {tiles.map(([label, value]) => (
@@ -12511,7 +12605,7 @@ export const SNAPSHOT_BLOCKS: Record<SnapshotBlockKey, { label: string; esperado
   },
   "status-atas": {
     label: "Status das atas por área",
-    esperado: "aba Status das Atas com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL/VIGENTES/VENCIDAS/ATÉ 15 DIAS/16 A 30 DIAS/A RENOVAR, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) e tabela COMPRADOR(A) | VIG. | VENC.",
+    esperado: "aba de status/renovações com uma faixa por área (INDIRETOS, DIRETOS, CAPEX), quadros TOTAL A RENOVAR/VENCIDAS/ATÉ 15 DIAS/EM ANDAMENTO ou TOTAL/VIGENTES/VENCIDAS, tabela CONTRATO SAP | VENCIMENTO | COMPRADOR(A) | SITUAÇÃO e, quando disponível, faixa RENOVAÇÃO EM ANDAMENTO",
   },
 };
 
@@ -12625,6 +12719,7 @@ export interface SnapshotStatusPrioridade {
   contrato: string;
   vencimento: string | null;
   comprador: string | null;
+  situacao: string | null;
 }
 
 export interface SnapshotStatusCarteira {
@@ -12636,19 +12731,37 @@ export interface SnapshotStatusCarteira {
 }
 
 /** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
+export type SnapshotStatusLayout = "atas" | "renovacoes";
+
+export interface SnapshotStatusRenovacao {
+  contrato: string | null;
+  comprador: string | null;
+  vencimento: string | null;
+  texto: string;
+}
+
+/** Bloco “Status das Atas” de uma área, na aba dedicada da planilha. */
 export interface SnapshotStatusAtasArea {
   area: SnapshotArea;
+  layout: SnapshotStatusLayout;
   baseDate: string | null;
   titulo: string | null;
   subtitulo: string | null;
+  /** Quadro TOTAL no layout da carteira de atas. */
   total: number | null;
   vigentes: number | null;
   vencidas: number | null;
   ate15: number | null;
   de16a30: number | null;
   aRenovar: number | null;
+  /** Quadro TOTAL A RENOVAR no layout novo do SharePoint. */
+  totalRenovar: number | null;
+  /** Quadro EM ANDAMENTO no layout novo do SharePoint. */
+  emAndamento: number | null;
   prioridades: SnapshotStatusPrioridade[];
   carteira: SnapshotStatusCarteira[];
+  /** Faixa “RENOVAÇÃO EM ANDAMENTO” exibida abaixo da tabela de prioridades. */
+  renovacaoEmAndamento: SnapshotStatusRenovacao | null;
   notas: string[];
 }
 
@@ -14191,9 +14304,11 @@ function extractAtasConcluidas(payload: DashboardSnapshotPayload, sheets: Snapsh
 
 /* ------------------- status das atas por área (aba) ---------------- */
 
-const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar"> = {
+const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" | "de16a30" | "aRenovar" | "totalRenovar" | "emAndamento"> = {
   TOTAL: "total",
   "TOTAL DE ATAS": "total",
+  "TOTAL A RENOVAR": "totalRenovar",
+  "TOTAL RENOVAR": "totalRenovar",
   VIGENTES: "vigentes",
   VIGENTE: "vigentes",
   VENCIDAS: "vencidas",
@@ -14204,6 +14319,8 @@ const STATUS_TILES: Record<string, "total" | "vigentes" | "vencidas" | "ate15" |
   "DE 16 A 30 DIAS": "de16a30",
   "16 A 30": "de16a30",
   "A RENOVAR": "aRenovar",
+  "EM ANDAMENTO": "emAndamento",
+  ANDAMENTO: "emAndamento",
 };
 
 function tileKeyOf(label: string) {
@@ -14214,9 +14331,29 @@ function isBuyerHeader(value: string): boolean {
   return /^COMPRADOR\s?(\(A\)|A|\(A\)S|ES)?$/.test(value);
 }
 
+function parseRenovacaoBanner(row: unknown[]): SnapshotStatusRenovacao | null {
+  const cells = row.map(cellText).filter(Boolean);
+  const normalized = exact(cells.join(" | "));
+  if (!normalized.includes("RENOVACAO EM ANDAMENTO")) return null;
+  const texto = cells.join(" | ");
+  const contrato = texto.match(/\b\d{6,}\b/)?.[0] ?? null;
+  const rawDate = texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/)?.[0] ?? null;
+  const vencimento = rawDate ? parseDateBR(rawDate, "Vencimento").iso : null;
+  const comprador = cells
+    .flatMap((cell) => cell.split("|"))
+    .map((cell) => cell.trim())
+    .find((cell) => cell
+      && !exact(cell).includes("RENOVACAO EM ANDAMENTO")
+      && !exact(cell).includes("VENCIMENTO")
+      && !/^\d{6,}$/.test(cell)
+      && !/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(cell)) ?? null;
+  return { contrato, comprador, vencimento, texto };
+}
+
 function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
   return {
     area,
+    layout: "atas",
     baseDate: null,
     titulo: null,
     subtitulo: null,
@@ -14226,8 +14363,11 @@ function emptyStatusArea(area: SnapshotArea): SnapshotStatusAtasArea {
     ate15: null,
     de16a30: null,
     aRenovar: null,
+    totalRenovar: null,
+    emAndamento: null,
     prioridades: [],
     carteira: [],
+    renovacaoEmAndamento: null,
     notas: [],
   };
 }
@@ -14247,12 +14387,23 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
       const label = exact(text);
       const base = text.match(/BASE:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
       if (base) block.baseDate = parseDateBR(base[1], "Base").iso ?? block.baseDate;
-      if (label.includes("STATUS DAS ATAS")) {
+      if (label.includes("STATUS DAS ATAS") || label.includes("STATUS DE RENOVACOES")) {
         if (!block.titulo) block.titulo = text;
+        if (label.includes("STATUS DE RENOVACOES")) block.layout = "renovacoes";
         continue;
       }
       if (base) {
         if (!block.subtitulo) block.subtitulo = text.split("|")[0].replace(/BASE:?.*$/i, "").trim() || null;
+        continue;
+      }
+      if (!block.subtitulo && (label.includes("CARTEIRA") || label.includes("ALERTA") || label.includes("ATAS A RENOVAR"))) {
+        block.subtitulo = text;
+        continue;
+      }
+      const banner = parseRenovacaoBanner(row);
+      if (banner) {
+        block.renovacaoEmAndamento = banner;
+        block.layout = "renovacoes";
         continue;
       }
       const tileKey = tileKeyOf(label);
@@ -14262,6 +14413,7 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
         const value = above ?? below;
         if (value !== null && block[tileKey] === null) {
           block[tileKey] = value;
+          if (tileKey === "totalRenovar" || tileKey === "emAndamento") block.layout = "renovacoes";
           tiles += 1;
           continue;
         }
@@ -14270,6 +14422,7 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
         const singleKey = single ? tileKeyOf(single[2]) : null;
         if (single && singleKey && block[singleKey] === null) {
           block[singleKey] = Number(single[1]);
+          if (singleKey === "totalRenovar" || singleKey === "emAndamento") block.layout = "renovacoes";
           tiles += 1;
           continue;
         }
@@ -14284,9 +14437,12 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
       if (contratoCol >= 0) {
         const vencCol = columnIndex(row, (value) => value === "VENCIMENTO" || value === "DATA DE VENCIMENTO" || value === "DATA VENCIMENTO" || value === "FIM VIGENCIA" || value === "FIM DA VIGENCIA");
         const compradorCol = row.findIndex((value, index) => index > contratoCol && isBuyerHeader(exact(value)));
+        const situacaoCol = row.findIndex((value, index) => index > contratoCol && (exact(value) === "SITUACAO" || exact(value) === "STATUS"));
         prioridadesHeader = r;
         for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
           const dataRow = matrix[dr] ?? [];
+          const rowText = exact(dataRow.map(cellText).filter(Boolean).join(" | "));
+          if (rowText.includes("RENOVACAO EM ANDAMENTO")) break;
           const rawContrato = cellText(dataRow[contratoCol]);
           const normalizedContrato = exact(rawContrato);
           if (!rawContrato || isBuyerHeader(normalizedContrato) || normalizedContrato.startsWith("TOTAL")) break;
@@ -14294,7 +14450,8 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
           const vencimentoRaw = vencCol >= 0 ? cellText(dataRow[vencCol]) : "";
           const vencimento = vencimentoRaw ? parseDateBR(vencimentoRaw, "Vencimento").iso : null;
           const comprador = compradorCol >= 0 ? stripCode(cellText(dataRow[compradorCol])) || null : null;
-          block.prioridades.push({ contrato, vencimento, comprador });
+          const situacao = situacaoCol >= 0 ? cellText(dataRow[situacaoCol]) || null : null;
+          block.prioridades.push({ contrato, vencimento, comprador, situacao });
         }
       }
     }

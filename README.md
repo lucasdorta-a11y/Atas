@@ -134,7 +134,7 @@ As faixas exibidas no painel seguem a ordem cronológica e exclusiva da planilha
 
 ### Status das Atas por área
 
-O bloco `Status das Atas` substitui o antigo funil de renovações quando a aba dedicada está presente. Ele reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`), os quadros `TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS` e `A RENOVAR`, além das tabelas `CONTRATO SAP | VENCIMENTO | COMPRADOR(A)` e `COMPRADOR(A) | VIG. | VENC.`. Notas sobre vencimentos são exibidas no próprio bloco; uma área não encontrada permanece explicitamente sinalizada.
+O bloco de status/renovações lê a aba dedicada atualizada junto com o resumo e reconhece uma faixa por área (`INDIRETOS`, `DIRETOS`, `CAPEX`). No layout atual do SharePoint/Excel, cada faixa traz os quadros `TOTAL A RENOVAR`, `VENCIDAS`, `ATÉ 15 DIAS` e `EM ANDAMENTO`, além da tabela `CONTRATO SAP | VENCIMENTO | COMPRADOR(A) | SITUAÇÃO`. Quando existe, a faixa `RENOVAÇÃO EM ANDAMENTO` também é exibida com contrato, comprador e vencimento. O extrator mantém compatibilidade com o layout anterior de carteira (`TOTAL`, `VIGENTES`, `VENCIDAS`, `ATÉ 15 DIAS`, `16 A 30 DIAS`, `A RENOVAR` e a carteira por comprador). Uma área não encontrada permanece explicitamente sinalizada.
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 

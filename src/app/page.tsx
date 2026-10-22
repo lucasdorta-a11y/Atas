@@ -497,7 +497,7 @@ export default function PanoramaPage() {
       {/* Bloco 5: Status das Atas por área (aba dedicada da planilha). */}
       <section aria-labelledby="status-das-atas">
         <h2 id="status-das-atas" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-accent-500 mb-2">Status das Atas</h2>
-        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de cada área, vencimentos prioritários e distribuição por comprador(a), lidos da aba “Status das Atas” importada junto com o resumo.</p>
+        <p className="mb-6 text-[12.5px] text-ink-soft">Carteira de renovações, vencimentos prioritários e situação dos contratos, lidos da aba de status/renovações importada junto com o resumo.</p>
         {ausente("status-atas") ? (
           <BlocoAusente bloco="status-atas" referencia={referencia} />
         ) : (
