@@ -354,7 +354,7 @@ function cellText(value: unknown): string {
     const d = String(value.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
-  return String(value).replace(/\u00a0/g, " ").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+  return String(value).replace(/^\uFEFF/, "").replace(/\u00a0/g, " ").replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** Comparação exata, sem distinguir acentos, caixa, quebras e espaços. */
@@ -635,8 +635,11 @@ function extractSummaryCards(payload: DashboardSnapshotPayload, sheets: Snapshot
           for (let cc = c; cc <= columnEnd && values.length < targetCount; cc += 1) {
             const cell = matrix[rr]?.[cc];
             const text = cellText(cell);
-            if (!text || /ATAS?|ITENS?/i.test(text)) continue;
-            addValue(integerValue(cell), rr - r);
+            if (!text) continue;
+            const pair = evolutionPairFromCell(cell);
+            if (pair.atas !== null) addValue(pair.atas, rr - r);
+            if (pair.itens !== null) addValue(pair.itens, rr - r);
+            if (pair.atas === null && pair.itens === null) addValue(integerValue(cell), rr - r);
           }
         }
 
