@@ -541,6 +541,117 @@ function extractReadingTable(payload: DashboardSnapshotPayload, sheets: Snapshot
   if (found) addFound(payload, "kpis-leitura");
 }
 
+/**
+ * Lê o resumo visual da aba CONTROLE ATAS CONCLUÍDAS. Essa versão da
+ * planilha não possui necessariamente a tabela "LEITURA DOS GRÁFICOS": os
+ * números aparecem em cartões com o rótulo em uma linha e os valores
+ * calculados pelas fórmulas algumas linhas abaixo.
+ */
+function extractSummaryCards(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  type CardKind = "concluidas" | "andamento" | "saldo" | "semSaldo" | "vencidas" | "aVencer";
+  let found = false;
+  const bestDistance: Record<CardKind, number> = {
+    concluidas: Number.POSITIVE_INFINITY,
+    andamento: Number.POSITIVE_INFINITY,
+    saldo: Number.POSITIVE_INFINITY,
+    semSaldo: Number.POSITIVE_INFINITY,
+    vencidas: Number.POSITIVE_INFINITY,
+    aVencer: Number.POSITIVE_INFINITY,
+  };
+
+  const cardKind = (value: unknown): CardKind | null => {
+    const label = exact(value).replace(/[()]/g, " ").replace(/\s+/g, " ").trim();
+    if (!label) return null;
+    if (label.includes("ATA CONCLUIDAS") && label.includes("VALID")) return "concluidas";
+    if (label.includes("ATAS EM ANDAMENTO")) return "andamento";
+    if (label.includes("ITENS SEM SALDO")) return "semSaldo";
+    if (label.includes("ITENS COM SALDO")) return "saldo";
+    if ((label === "ATAS VENCIDAS" || label.startsWith("ATAS VENCIDAS ")) && !label.includes("E A VENCER")) return "vencidas";
+    if (label === "ATAS A VENCER" || label.startsWith("ATAS A VENCER ")) return "aVencer";
+    return null;
+  };
+
+  const setCard = (kind: CardKind, values: number[]) => {
+    if (kind === "concluidas") {
+      if (values[0] !== undefined) payload.kpis.concluidasAtas = values[0];
+      if (values[1] !== undefined) payload.kpis.concluidasItens = values[1];
+    } else if (kind === "andamento") {
+      if (values[0] !== undefined) payload.kpis.andamentoAtas = values[0];
+      if (values[1] !== undefined) payload.kpis.andamentoItens = values[1];
+    } else if (kind === "saldo") {
+      if (values[0] !== undefined) payload.kpis.saldoItens = values[0];
+    } else if (kind === "semSaldo") {
+      if (values[0] !== undefined) payload.kpis.consumidoItens = values[0];
+    } else if (kind === "vencidas") {
+      if (values[0] !== undefined) payload.kpis.vencidasAtas = values[0];
+      if (values[1] !== undefined) payload.kpis.vencidasItens = values[1];
+    } else {
+      if (values[0] !== undefined) payload.kpis.aVencerAtas = values[0];
+      if (values[1] !== undefined) payload.kpis.aVencerItens = values[1];
+    }
+  };
+
+  for (const sheet of sheets) {
+    const matrix = sheet.matrix;
+    for (let r = 0; r < matrix.length; r += 1) {
+      const row = matrix[r] ?? [];
+      for (let c = 0; c < row.length; c += 1) {
+        const kind = cardKind(row[c]);
+        if (!kind) continue;
+
+        // Não atravessa para o próximo cartão quando vários títulos estão na
+        // mesma linha. O limite maior cobre células mescladas do cartão atual.
+        let columnEnd = Math.min(row.length - 1, c + 8);
+        for (let next = c + 1; next <= columnEnd; next += 1) {
+          if (cardKind(row[next])) {
+            columnEnd = next - 1;
+            break;
+          }
+        }
+
+        const values: number[] = [];
+        const targetCount = kind === "saldo" || kind === "semSaldo" ? 1 : 2;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        const addValue = (value: number | null, distance: number) => {
+          if (value !== null && values.length < targetCount) {
+            values.push(value);
+            nearestDistance = Math.min(nearestDistance, distance);
+          }
+        };
+
+        // Também aceita uma célula composta, por exemplo “60 ATAS / 793
+        // ITENS”, caso a exportação elimine as células mescladas.
+        for (let offset = 0; offset <= 2; offset += 1) {
+          const candidate = matrix[r + offset]?.[c];
+          const pair = evolutionPairFromCell(candidate);
+          if (pair.atas !== null) addValue(pair.atas, offset);
+          if (pair.itens !== null) addValue(pair.itens, offset);
+        }
+
+        // No layout mostrado, os valores ficam alguns níveis abaixo do título
+        // e podem estar em qualquer célula do cartão. O limite de seis linhas
+        // evita capturar os números dos gráficos que começam logo depois.
+        for (let rr = r; rr <= Math.min(matrix.length - 1, r + 6) && values.length < targetCount; rr += 1) {
+          for (let cc = c; cc <= columnEnd && values.length < targetCount; cc += 1) {
+            const cell = matrix[rr]?.[cc];
+            const text = cellText(cell);
+            if (!text || /ATAS?|ITENS?/i.test(text)) continue;
+            addValue(integerValue(cell), rr - r);
+          }
+        }
+
+        if (values.length > 0 && nearestDistance <= bestDistance[kind]) {
+          setCard(kind, values);
+          bestDistance[kind] = nearestDistance;
+          found = true;
+        }
+      }
+    }
+  }
+
+  if (found) addFound(payload, "kpis-leitura");
+}
+
 /* -------------------------- valores e saving ---------------------- */
 
 function extractAreaValues(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
@@ -2011,6 +2122,10 @@ export function extractSnapshotPayload(
   extractContratosFornecedores(payload, sheets);
   extractAtasConcluidas(payload, sheets);
   extractStatusAtas(payload, sheets);
+  // Os cartões visuais da aba de controle são a fonte mais específica do
+  // resumo atual e devem prevalecer sobre o fallback calculado das linhas
+  // operacionais quando a planilha não traz a tabela LEITURA DOS GRÁFICOS.
+  extractSummaryCards(payload, sheets);
 
   // Sem o card geral, “em andamento” é a soma das três áreas da evolução —
   // somente quando as três existem, para não exibir uma soma parcial como total.
