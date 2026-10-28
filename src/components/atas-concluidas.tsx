@@ -7,8 +7,8 @@ import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 
 /**
  * Lista compacta das atas que passaram a FINALIZADO desde a importação
- * anterior (uma linha por ata). O fornecedor vem da aba de controle de
- * contratos, cruzado pelo nº do contrato.
+ * anterior (uma linha por ata). O fornecedor prioriza a coluna FORNECEDOR
+ * do GIRO 02 e usa a aba de controle de contratos como fallback.
  */
 export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasResult; referencia: string | null }) {
   const { novas, primeiraLeitura, comparadoComReferencia, comparadoComImportadoEm, totalFinalizadas } = dados;
@@ -69,7 +69,7 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
       )}
       {(semFornecedor > 0 || semContrato > 0) && (
         <p className="border-t border-line px-5 py-2 text-[11.5px] text-ink-soft">
-          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: o contrato não consta na aba “Base - Controle de Contratos” importada. `}
+          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: não foi encontrado fornecedor no GIRO 02 nem na aba “Base - Controle de Contratos” importada. `}
           {semContrato > 0 && `${fmtInt(semContrato)} ${semContrato === 1 ? "ata sem nº de contrato" : "atas sem nº de contrato"} na base de andamento.`}
         </p>
       )}

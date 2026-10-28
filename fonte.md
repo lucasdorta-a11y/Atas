@@ -343,7 +343,7 @@ export default defineConfig([
 ````typescript
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
-import "./.next/dev/types/routes.d.ts";
+import "./.next/types/routes.d.ts";
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -8401,7 +8401,7 @@ export default function PanoramaPage() {
       <section aria-labelledby="atas-concluidas-recentes" className="space-y-4">
         <div>
           <h2 id="atas-concluidas-recentes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Atas Concluídas desde a Última Atualização</h2>
-          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. O fornecedor vem da aba “Base - Controle de Contratos”, pelo nº do contrato.</p>
+          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. Quando disponível, o fornecedor é lido diretamente da coluna FORNECEDOR do GIRO 02; o cruzamento pela aba “Base - Controle de Contratos” permanece como fallback pelo nº do contrato.</p>
         </div>
         {ausente("atas-concluidas") ? (
           <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
@@ -9049,8 +9049,8 @@ import { fmtDate, fmtDateTime, fmtInt } from "@/lib/format";
 
 /**
  * Lista compacta das atas que passaram a FINALIZADO desde a importação
- * anterior (uma linha por ata). O fornecedor vem da aba de controle de
- * contratos, cruzado pelo nº do contrato.
+ * anterior (uma linha por ata). O fornecedor prioriza a coluna FORNECEDOR
+ * do GIRO 02 e usa a aba de controle de contratos como fallback.
  */
 export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasResult; referencia: string | null }) {
   const { novas, primeiraLeitura, comparadoComReferencia, comparadoComImportadoEm, totalFinalizadas } = dados;
@@ -9111,7 +9111,7 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
       )}
       {(semFornecedor > 0 || semContrato > 0) && (
         <p className="border-t border-line px-5 py-2 text-[11.5px] text-ink-soft">
-          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: o contrato não consta na aba “Base - Controle de Contratos” importada. `}
+          {semFornecedor > 0 && `${fmtInt(semFornecedor)} ${semFornecedor === 1 ? "ata sem fornecedor" : "atas sem fornecedor"}: não foi encontrado fornecedor no GIRO 02 nem na aba “Base - Controle de Contratos” importada. `}
           {semContrato > 0 && `${fmtInt(semContrato)} ${semContrato === 1 ? "ata sem nº de contrato" : "atas sem nº de contrato"} na base de andamento.`}
         </p>
       )}
@@ -14764,6 +14764,7 @@ function extractGiro02Concluidas(payload: DashboardSnapshotPayload, sheets: Snap
       const header = matrix[headerRow] ?? [];
       const descCol = columnIndex(header, (value) => value === "ATA / PROCESSO" || value === "ATA/PROCESSO");
       const contratoCol = columnIndex(header, (value) => value === "CONTRATO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
       const itensCol = columnIndex(header, (value) => value === "QTD. ITENS" || value === "QTD ITENS");
       const compradorCol = columnIndex(header, (value) => value === "COMPRADOR(A)" || value === "COMPRADOR");
       const areaCol = columnIndex(header, (value) => value === "AREA");
@@ -14792,7 +14793,7 @@ function extractGiro02Concluidas(payload: DashboardSnapshotPayload, sheets: Snap
           key,
           descricao,
           contrato: contratoDisplay,
-          fornecedor: null,
+          fornecedor: fornecedorCol >= 0 ? stripCode(cellText(row[fornecedorCol])) || null : null,
           itens: integerValue(row[itensCol]),
           comprador,
           area,

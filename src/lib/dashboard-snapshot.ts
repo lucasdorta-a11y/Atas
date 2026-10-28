@@ -2158,6 +2158,7 @@ function extractGiro02Concluidas(payload: DashboardSnapshotPayload, sheets: Snap
       const header = matrix[headerRow] ?? [];
       const descCol = columnIndex(header, (value) => value === "ATA / PROCESSO" || value === "ATA/PROCESSO");
       const contratoCol = columnIndex(header, (value) => value === "CONTRATO");
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
       const itensCol = columnIndex(header, (value) => value === "QTD. ITENS" || value === "QTD ITENS");
       const compradorCol = columnIndex(header, (value) => value === "COMPRADOR(A)" || value === "COMPRADOR");
       const areaCol = columnIndex(header, (value) => value === "AREA");
@@ -2186,7 +2187,7 @@ function extractGiro02Concluidas(payload: DashboardSnapshotPayload, sheets: Snap
           key,
           descricao,
           contrato: contratoDisplay,
-          fornecedor: null,
+          fornecedor: fornecedorCol >= 0 ? stripCode(cellText(row[fornecedorCol])) || null : null,
           itens: integerValue(row[itensCol]),
           comprador,
           area,

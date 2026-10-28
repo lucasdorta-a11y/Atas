@@ -288,7 +288,7 @@ export default function PanoramaPage() {
       <section aria-labelledby="atas-concluidas-recentes" className="space-y-4">
         <div>
           <h2 id="atas-concluidas-recentes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">Atas Concluídas desde a Última Atualização</h2>
-          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. O fornecedor vem da aba “Base - Controle de Contratos”, pelo nº do contrato.</p>
+          <p className="mt-1 text-[12.5px] text-ink-soft">Atas com ETAPA ATUAL = FINALIZADO na aba “Base - Atas Em andamento” que não estavam finalizadas na importação anterior. Quando disponível, o fornecedor é lido diretamente da coluna FORNECEDOR do GIRO 02; o cruzamento pela aba “Base - Controle de Contratos” permanece como fallback pelo nº do contrato.</p>
         </div>
         {ausente("atas-concluidas") ? (
           <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
