@@ -14645,8 +14645,18 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
         const compradorCol = row.findIndex((value, index) => index > contratoCol && isBuyerHeader(exact(value)));
         const situacaoCol = row.findIndex((value, index) => index > contratoCol && (exact(value) === "SITUACAO" || exact(value) === "STATUS"));
         prioridadesHeader = r;
+        let blankRun = 0;
         for (let dr = r + 1; dr < Math.min(end, r + 80); dr += 1) {
           const dataRow = matrix[dr] ?? [];
+          if (isBlank(dataRow)) {
+            blankRun += 1;
+            // As planilhas exportadas pelo Excel costumam deixar uma ou mais
+            // linhas formatadas entre o cabeçalho e o primeiro vencimento.
+            // Só encerramos depois de uma faixa realmente vazia.
+            if ((block.prioridades.length > 0 && blankRun >= 3) || blankRun >= 8) break;
+            continue;
+          }
+          blankRun = 0;
           const rowText = exact(dataRow.map(cellText).filter(Boolean).join(" | "));
           if (rowText.includes("RENOVACAO EM ANDAMENTO")) break;
           const rawContrato = cellText(dataRow[contratoCol]);
