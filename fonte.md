@@ -175,10 +175,9 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
 - lê automaticamente todas as abas com dados e consolida as linhas;
 - trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
-- inicia o mapeamento operacional com todos os campos como `não importar`, permitindo selecionar apenas o que será usado;
-- valida identificadores, objetos, datas, quantidades, valores, duplicidades e links;
-- alimenta o panorama, a busca, filtros, paginação e exportação CSV com os dados confirmados;
-- preserva colunas não mapeadas nos detalhes dos registros;
+- reconhece automaticamente os blocos consolidados das abas `GIRO 01–07`, sem mapeamento manual de colunas operacionais;
+- mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
+- alimenta o panorama com o snapshot confirmado e mantém a consulta de processos, filtros, paginação e exportação CSV para registros operacionais já salvos;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -254,15 +253,15 @@ https://lucasdorta-a11y.github.io/Atas/
 1. Abra **Importar**.
 2. Selecione ou arraste até dois arquivos.
 3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
-4. Escolha a área, a natureza da base e a data de referência.
-5. Revise o mapeamento; os campos operacionais começam como `não importar` e os campos essenciais são validados funcionalmente, sem marcadores visuais de “obrigatório”.
-6. Confira o resumo e as ocorrências.
+4. Na etapa **Tipo de base**, escolha somente **Substituir** ou **Combinar** e informe a data de referência.
+5. Confira o **Resumo automático**: os blocos reconhecidos são apresentados visualmente e os ausentes permanecem explicitamente ausentes.
+6. Revise a importação do snapshot, sem mapeamento operacional e sem criação de processos por inferência.
 7. Baixe o relatório de validação, se necessário, e confirme a importação.
-8. Escolha **Substituir** para arquivar a base ativa daquela área ou **Combinar** para manter bases diferentes ativas.
+8. **Substituir** arquiva a leitura ativa no histórico; **Combinar** mantém as bases locais ativas.
 
-A origem, a data de referência, as linhas válidas, ignoradas, duplicadas e os avisos ficam visíveis na auditoria das bases.
+A origem, a data de referência, os blocos reconhecidos/ausentes e os avisos ficam visíveis na auditoria das bases.
 
-## Mapeamento exato do painel consolidado
+## Leitura exata do painel consolidado
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
 
@@ -278,7 +277,7 @@ Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situa�
 
 O extrator também aceita o layout visual atual da aba `CONTROLE ATAS CONCLUÍDAS`, em que os valores calculados aparecem em cartões separados: `ATA CONCLUÍDAS (VÁLIDAS)`, `ATAS EM ANDAMENTO`, `ITENS COM SALDO (VÁLIDOS)`, `ITENS SEM SALDO (VÁLIDOS)`, `ATAS VENCIDAS` e `ATAS A VENCER`. Ele procura os valores abaixo dos rótulos mesmo quando existem linhas formatadas ou células mescladas entre o título e os números. Quando a aba nomeada `GIRO 01 - Panorama` está presente, somente o bloco `Status Atual` é lido; o bloco da semana anterior não é importado, pois a comparação anterior é controlada pelo histórico local do site. O card `ATAS EM ANDAMENTO (GERAL)` também pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esses quadros, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 13/10, com 62/915 concluídas, 70/5.000 em andamento, 862 itens com saldo, 100 consumidos, 59/1.441 a vencer e 49/371 vencidas; novas importações passam a formar o histórico real. A seção de comparação também identifica a base atual e a anterior pela data de referência e pelo nome do arquivo; quando a anterior é a referência fixa fornecida nas capturas, isso fica explícito e ela é indicada como sem arquivo importado.
 
-Quando existem as abas consolidadas `GIRO 01 - Panorama`, `GIRO 02 - Concluídas`, `GIRO 03 - Resumo`, `GIRO 04 - Evolução`, `GIRO 05 - Renovações`, `GIRO 06 - Faixas` e `GIRO 07 - Mensal`, elas têm prioridade sobre os blocos genéricos antigos. A interface não muda: apenas a origem de leitura passa a seguir as abas nomeadas. O fallback anterior continua disponível para bases sem as abas `GIRO`.
+Quando existem as abas consolidadas `GIRO 01 - Panorama`, `GIRO 02 - Concluídas`, `GIRO 03 - Resumo`, `GIRO 04 - Evolução`, `GIRO 05 - Renovações`, `GIRO 06 - Faixas` e `GIRO 07 - Mensal`, elas têm prioridade sobre os blocos genéricos antigos. A etapa seguinte ao tipo de base exibe um resumo automático dos blocos encontrados; não há mapeamento de campos operacionais. O fallback anterior continua disponível para bases sem as abas `GIRO`.
 
 ### Atas concluídas desde a última atualização
 
@@ -308,7 +307,7 @@ O bloco de status/renovações lê a aba dedicada atualizada junto com o resumo 
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 
-A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de mapeamento, os campos operacionais começam como **não importar**; os blocos específicos do panorama são detectados automaticamente e não precisam ser associados manualmente.
+A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de **Resumo automático**, os blocos específicos do panorama são detectados pelos nomes exatos e não precisam ser associados manualmente.
 
 ## Snapshots no GitHub Pages
 
@@ -323,7 +322,7 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 ## Decisões de dados
 
-O painel não inventa números nem corrige divergências silenciosamente. Datas e números ambíguos geram avisos, linhas sem identificador ou objeto são ignoradas com justificativa e colunas extras permanecem acessíveis nos detalhes.
+O painel não inventa números nem corrige divergências silenciosamente. Blocos ausentes permanecem ausentes, a leitura usa os nomes exatos do layout e o histórico local preserva cada snapshot importado.
 ````
 
 ## `eslint.config.mjs`
@@ -344,7 +343,7 @@ export default defineConfig([
 ````typescript
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
-import "./.next/types/routes.d.ts";
+import "./.next/dev/types/routes.d.ts";
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -377,12 +376,12 @@ export default nextConfig;
 
 ````json
 {
-  "name": "nextjs-postgresql-template",
+  "name": "giro-de-atas-pages",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
-      "name": "nextjs-postgresql-template",
+      "name": "giro-de-atas-pages",
       "dependencies": {
         "clsx": "^2.1.1",
         "lucide-react": "^1.52.0",
@@ -9923,24 +9922,75 @@ interface SupplierRow {
 export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRow[] }) {
   const total = fornecedores.find((row) => /^(TOTAL|TOTAL GERAL)$/i.test(row.fornecedor));
   const outros = fornecedores.find((row) => row.fornecedor.toUpperCase() === "OUTROS FORNECEDORES");
-  const principais = fornecedores.filter((row) => !/^(TOTAL|TOTAL GERAL)$/i.test(row.fornecedor) && row.fornecedor.toUpperCase() !== "OUTROS FORNECEDORES");
+  const principais = fornecedores.filter(
+    (row) => !/^(TOTAL|TOTAL GERAL)$/i.test(row.fornecedor)
+      && row.fornecedor.toUpperCase() !== "OUTROS FORNECEDORES",
+  );
   const primeiro = principais[0];
-  const concentration = principais.reduce((sum, row) => sum + (row.concentracao || 0), 0);
+  const topFour = principais.slice(0, 4);
+  const concentration = topFour.reduce((sum, row) => sum + (row.concentracao || 0), 0);
 
   return (
-    <aside className="mt-4 rounded-xl border border-accent-200 bg-accent-50 px-4 py-4" aria-label="Análise automática de fornecedores">
-      <h4 className="text-[13px] font-bold uppercase tracking-[0.07em] text-accent-700">Análise automática</h4>
-      <ul className="mt-2 grid gap-2 text-[12.5px] leading-relaxed text-ink sm:grid-cols-3">
-        <li>
-          {primeiro ? <><strong>{primeiro.fornecedor}</strong> concentra {fmtNum(primeiro.concentracao)}% dos itens entre os principais fornecedores ({fmtInt(primeiro.itens)} itens).</> : "Não há fornecedor principal reconhecido para analisar."}
-        </li>
-        <li>
-          {total ? <>A tabela soma <strong>{fmtInt(total.atas)} atas</strong> e <strong>{fmtInt(total.itens)} itens</strong>; os quatro principais representam {fmtNum(concentration)}% da concentração informada.</> : "A linha TOTAL não foi localizada na tabela de fornecedores."}
-        </li>
-        <li>
-          {outros ? <>OUTROS FORNECEDORES reúne {fmtInt(outros.atas)} atas e {fmtInt(outros.itens)} itens ({fmtNum(outros.concentracao)}%).</> : "A linha OUTROS FORNECEDORES não foi localizada."}
-        </li>
-      </ul>
+    <aside
+      className="mt-4 overflow-hidden rounded-2xl border border-accent-200 bg-accent-50"
+      aria-label="Análise automática de fornecedores"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-accent-200 px-4 py-3">
+        <div>
+          <h4 className="text-[13px] font-bold uppercase tracking-[0.07em] text-accent-700">Análise automática</h4>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">
+            Leitura resumida da tabela FORNECEDORES GERAL, sem substituir os valores da fonte.
+          </p>
+        </div>
+        {total && (
+          <div className="rounded-lg bg-white/70 px-3 py-2 text-right">
+            <p className="tnum text-[15px] font-bold text-navy-900">{fmtInt(total.itens)} itens</p>
+            <p className="tnum text-[11.5px] text-ink-soft">{fmtInt(total.atas)} atas no total</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 p-4 sm:grid-cols-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Maior concentração</p>
+          {primeiro ? (
+            <>
+              <p className="mt-1 truncate text-[13px] font-bold text-navy-950" title={primeiro.fornecedor}>{primeiro.fornecedor}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink">
+                {fmtNum(primeiro.concentracao)}% · {fmtInt(primeiro.itens)} itens
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">Nenhum fornecedor principal reconhecido.</p>
+          )}
+        </article>
+
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Quatro principais</p>
+          {topFour.length > 0 ? (
+            <p className="mt-1 text-[13px] font-bold text-navy-950">{fmtNum(concentration)}% dos itens</p>
+          ) : (
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">Concentração não disponível.</p>
+          )}
+          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-soft">
+            Soma das linhas principais disponíveis na fonte.
+          </p>
+        </article>
+
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Outros fornecedores</p>
+          {outros ? (
+            <>
+              <p className="mt-1 text-[13px] font-bold text-navy-950">{fmtNum(outros.concentracao)}% dos itens</p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-soft">
+                {fmtInt(outros.itens)} itens · {fmtInt(outros.atas)} atas
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">Linha não localizada na fonte.</p>
+          )}
+        </article>
+      </div>
     </aside>
   );
 }
@@ -9954,18 +10004,32 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, ArrowRight, CircleAlert, CircleCheckBig, Download, FileSpreadsheet,
-  FileUp, Loader2, ShieldCheck, TriangleAlert,
+  ArrowLeft,
+  ArrowRight,
+  CircleAlert,
+  CircleCheckBig,
+  Download,
+  FileSpreadsheet,
+  FileUp,
+  Loader2,
+  ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import clsx from "clsx";
 import { PageHeader, SectionTitle } from "@/components/ui";
 import {
-  parseMultipleFiles, ParseError, MAX_FILE_MB, type SheetTable, type SourceSheet
+  parseMultipleFiles,
+  ParseError,
+  MAX_FILE_MB,
+  type SheetTable,
+  type SourceSheet,
 } from "@/lib/client-parse";
-import { suggestMapping, type Suggestion } from "@/lib/mapping";
 import {
-  CANONICAL_FIELDS, KIND_LABEL, transformAndValidate,
-  type DatasetKind, type DatasetNatureza, type ImportMode, type Issue, type Mapping, type ValidationResult,
+  type DatasetKind,
+  type DatasetNatureza,
+  type ImportMode,
+  type Issue,
+  type ValidationResult,
 } from "@/lib/domain";
 import { buildCsv } from "@/lib/csv";
 import { fmtCurrency, fmtInt, todayISO } from "@/lib/format";
@@ -9974,6 +10038,9 @@ import { saveDataset } from "@/lib/static-store";
 import {
   extractSnapshotPayload,
   hasSnapshotPayloadMeaningfulData,
+  SNAPSHOT_BLOCK_KEYS,
+  SNAPSHOT_BLOCKS,
+  snapshotBlockLabel,
   type DashboardSnapshotPayload,
 } from "@/lib/dashboard-snapshot";
 
@@ -9982,7 +10049,7 @@ import {
 const STEPS = [
   { n: 1, label: "Arquivo" },
   { n: 2, label: "Tipo de base" },
-  { n: 3, label: "Colunas" },
+  { n: 3, label: "Resumo automático" },
   { n: 4, label: "Revisão" },
   { n: 5, label: "Concluído" },
 ];
@@ -10007,10 +10074,81 @@ interface ValidateResponse {
   datasetId?: number;
 }
 
+function metricPair(atas: number | null, itens: number | null): string | null {
+  const parts = [
+    atas === null ? null : `${fmtInt(atas)} atas`,
+    itens === null ? null : `${fmtInt(itens)} itens`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function snapshotBlockDetail(payload: DashboardSnapshotPayload, key: string): string | null {
+  switch (key) {
+    case "kpis-leitura":
+      return metricPair(payload.kpis.concluidasAtas, payload.kpis.concluidasItens)
+        ?? metricPair(payload.kpis.andamentoAtas, payload.kpis.andamentoItens);
+    case "valores-por-area": {
+      const count = Object.values(payload.valueAreas).filter((area) => area.valor !== null).length;
+      return count ? `${fmtInt(count)} áreas com valor reconhecido` : null;
+    }
+    case "saving": {
+      const value = payload.savingTotal.valorSaving ?? payload.savingTotal.savingHist ?? payload.savingTotal.savingProp;
+      return value === null ? null : `Saving ${fmtCurrency(value)}`;
+    }
+    case "top-compradores": {
+      const count = Object.values(payload.topCompradores).reduce((sum, area) => sum + area.buyers.length, 0);
+      return count ? `${fmtInt(count)} compradores listados` : null;
+    }
+    case "fornecedores": {
+      const count = payload.fornecedoresGeral.length
+        || Object.values(payload.fornecedores).reduce((sum, area) => sum + area.length, 0);
+      return count ? `${fmtInt(count)} fornecedores listados` : null;
+    }
+    case "evolucao": {
+      const count = Object.values(payload.evolucao).filter((area) =>
+        Object.values(area).some((value) => value !== null),
+      ).length;
+      return count ? `${fmtInt(count)} áreas reconhecidas` : null;
+    }
+    case "previsao-faixas": {
+      const count = Object.values(payload.previsoes).reduce(
+        (sum, band) => sum + Object.values(band).filter((area) => area.atas !== null || area.itens !== null).length,
+        0,
+      );
+      return count ? `${fmtInt(count)} faixas com dados` : null;
+    }
+    case "previsao-meses": {
+      const count = Object.values(payload.previsaoMeses).reduce((sum, area) => sum + area.rows.length, 0);
+      return count ? `${fmtInt(count)} linhas mensais` : null;
+    }
+    case "previsoes-cruzadas": {
+      const count = Object.values(payload.previsoes).reduce(
+        (sum, band) => sum + Object.values(band).reduce((areaSum, area) => areaSum + area.buyers.length, 0),
+        0,
+      );
+      return count ? `${fmtInt(count)} compradores com previsão` : null;
+    }
+    case "atas-concluidas":
+      return payload.atasConcluidas.length ? `${fmtInt(payload.atasConcluidas.length)} atas finalizadas` : null;
+    case "contratos-fornecedores": {
+      const count = Object.keys(payload.fornecedoresPorContrato).length;
+      return count ? `${fmtInt(count)} contratos relacionados` : null;
+    }
+    case "status-atas": {
+      const count = Object.values(payload.statusAtas).filter(Boolean).length;
+      return count ? `${fmtInt(count)} áreas reconhecidas` : null;
+    }
+    default:
+      return null;
+  }
+}
+
 export function ImportWizard() {
   const [step, setStep] = useState(1);
-  
-  // Agora armazenamos a tabela combinada de TODOS os arquivos/abas selecionados
+
+  // A tabela combinada é mantida apenas para metadados e para preservar o
+  // tamanho original da leitura. Os dados do Giro são extraídos pelas abas
+  // nomeadas, sem mapeamento manual de colunas operacionais.
   const [combinedInfo, setCombinedInfo] = useState<{
     names: string[];
     filesCount: number;
@@ -10018,18 +10156,17 @@ export function ImportWizard() {
     combinedTable: SheetTable;
     sourceSheets: SourceSheet[];
   } | null>(null);
-  
+
   const [parseErro, setParseErro] = useState<{ msg: string; code: string } | null>(null);
   const [lendo, setLendo] = useState(false);
   const [dragAtivo, setDragAtivo] = useState(false);
 
-  const [kind, setKind] = useState<DatasetKind>("indiretos");
-  const [natureza, setNatureza] = useState<DatasetNatureza>("operacional");
+  // Mantidos como metadados compatíveis com o IndexedDB. Não são decisões
+  // expostas ao usuário: a leitura consolidada é sempre um snapshot automático.
+  const kind: DatasetKind = "outro";
+  const natureza: DatasetNatureza = "snapshot";
   const [importMode, setImportMode] = useState<ImportMode>("replace");
   const [referenceDate, setReferenceDate] = useState(todayISO());
-
-  const [mapping, setMapping] = useState<Mapping>({});
-  const [mappingTocado, setMappingTocado] = useState(false);
 
   const [validacao, setValidacao] = useState<ValidateResponse | null>(null);
   const [resultadoValidacao, setResultadoValidacao] = useState<ValidationResult | null>(null);
@@ -10037,13 +10174,11 @@ export function ImportWizard() {
   const [validando, setValidando] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [erroEtapa, setErroEtapa] = useState<string | null>(null);
-  const [avisoEstrutura, setAvisoEstrutura] = useState<string | null>(null);
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const inputFileRef = useRef<HTMLInputElement>(null);
   const liveRef = useRef<HTMLDivElement>(null);
 
-  // Foco no título a cada troca de etapa (orientação por teclado/leitor de tela)
   useEffect(() => {
     headingRef.current?.focus();
   }, [step]);
@@ -10068,14 +10203,13 @@ export function ImportWizard() {
       setLendo(true);
       setParseErro(null);
       setValidacao(null);
+      setResultadoValidacao(null);
+      setResultadoSnapshot(null);
       setErroEtapa(null);
       try {
         const info = await parseMultipleFiles(files);
         setCombinedInfo(info);
-        setMappingTocado(false);
-        announce(
-          `${info.filesCount} arquivos lidos com sucesso. ${info.sheetsCount} abas processadas.`,
-        );
+        announce(`${info.filesCount} arquivos lidos com sucesso. ${info.sheetsCount} abas processadas.`);
       } catch (e) {
         setCombinedInfo(null);
         const pe = e instanceof ParseError ? e : null;
@@ -10095,30 +10229,10 @@ export function ImportWizard() {
     if (files.length > 0) processarArquivos(files);
   }
 
-  /* ---------------- Tabela combinada ---------------- */
-
   const table: SheetTable | null = combinedInfo?.combinedTable ?? null;
 
-  const suggestion: Suggestion | null = useMemo(
-    () => (table ? suggestMapping(table.headers) : null),
-    [table],
-  );
+  /* ---------------- Snapshot automático ---------------- */
 
-  // Os blocos do panorama são automáticos e não dependem deste formulário.
-  // Deixe o mapeamento operacional limpo por padrão; o usuário escolhe apenas
-  // os campos que deseja gravar na busca de processos.
-  useEffect(() => {
-    if (!suggestion || mappingTocado) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMapping({});
-    setAvisoEstrutura(null);
-  }, [suggestion, mappingTocado]);
-
-  const camposEssenciaisOk = Boolean(mapping.numero && mapping.objeto);
-
-  /* ---------------- Validação local (GitHub Pages) ---------------- */
-
-  const defaultArea = kind === "indiretos" ? "Indiretos" : kind === "diretos" ? "Diretos" : kind === "capex" ? "CAPEX" : null;
   const snapshotPreview = useMemo(
     () => combinedInfo
       ? extractSnapshotPayload(combinedInfo.sourceSheets, {
@@ -10129,7 +10243,9 @@ export function ImportWizard() {
     [combinedInfo, referenceDate],
   );
   const snapshotMeaningful = hasSnapshotPayloadMeaningfulData(snapshotPreview);
-  const canValidate = camposEssenciaisOk || snapshotMeaningful;
+  const canValidate = Boolean(snapshotMeaningful);
+  const recognizedBlocks = snapshotPreview?.coverage.found ?? [];
+  const missingBlocks = snapshotPreview?.coverage.missing ?? [];
 
   function resumoDaValidacao(result: ValidationResult) {
     return {
@@ -10155,13 +10271,13 @@ export function ImportWizard() {
         fileNames: combinedInfo.names,
         referenceDate: referenceDate || null,
       });
-      const result: ValidationResult = camposEssenciaisOk
-        ? transformAndValidate(table.rows, mapping, { defaultArea })
-        : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
       const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
-      if (result.records.length === 0 && !meaningful) {
-        throw new Error("Nenhum registro operacional ou bloco específico do painel foi reconhecido. Revise os nomes exatos das colunas e o mapeamento.");
+      if (!meaningful) {
+        throw new Error("Nenhum bloco consolidado das abas GIRO 01–07 foi reconhecido. Confira se a planilha contém os nomes exatos das abas e do layout esperado.");
       }
+      // A importação consolidada não cria registros operacionais por inferência.
+      // Linhas de processos permanecem zero quando a fonte traz somente o snapshot.
+      const result: ValidationResult = { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
       setResultadoValidacao(result);
       setResultadoSnapshot(snapshot);
       const resumo = resumoDaValidacao(result);
@@ -10172,9 +10288,7 @@ export function ImportWizard() {
         snapshotMeaningful: meaningful,
       });
       setStep(4);
-      announce(
-        `Validação concluída: ${resumo.validos.toLocaleString("pt-BR")} linhas operacionais e ${snapshot.coverage.found.length.toLocaleString("pt-BR")} blocos específicos reconhecidos.`,
-      );
+      announce(`Validação concluída: ${snapshot.coverage.found.length.toLocaleString("pt-BR")} blocos específicos reconhecidos.`);
     } catch (e) {
       setErroEtapa(e instanceof Error ? e.message : "Falha ao validar os dados.");
       announce("Falha na validação.");
@@ -10186,7 +10300,7 @@ export function ImportWizard() {
   async function confirmar() {
     if (!combinedInfo || !table || !resultadoValidacao) return;
     const meaningfulSnapshot = hasSnapshotPayloadMeaningfulData(resultadoSnapshot);
-    if (resultadoValidacao.records.length === 0 && !meaningfulSnapshot) return;
+    if (!meaningfulSnapshot) return;
     setConfirmando(true);
     setErroEtapa(null);
     try {
@@ -10199,12 +10313,12 @@ export function ImportWizard() {
         importMode,
         rowCount: table.totalRows,
         result: resultadoValidacao,
-        snapshot: meaningfulSnapshot ? resultadoSnapshot : null,
+        snapshot: resultadoSnapshot,
       });
       setValidacao((current) => current ? { ...current, datasetId: dataset.id } : current);
       setStep(5);
       notifyBaseUpdated();
-      announce(`Importação concluída. ${resultadoValidacao.records.length.toLocaleString("pt-BR")} linhas operacionais e ${meaningfulSnapshot ? "leitura do painel" : "nenhum snapshot"} salvos neste navegador.`);
+      announce(`Importação concluída. ${meaningfulSnapshot ? "Leitura automática do painel" : "Nenhum snapshot"} salva neste navegador.`);
     } catch (e) {
       setErroEtapa(e instanceof Error ? e.message : "Falha ao salvar a importação neste navegador.");
       announce("Falha na importação.");
@@ -10215,10 +10329,7 @@ export function ImportWizard() {
 
   function baixarRelatorio() {
     if (!table) return;
-    // Mesma validação do preview — aqui para gerar o relatório integral.
-    const result = resultadoValidacao ?? (camposEssenciaisOk
-      ? transformAndValidate(table.rows, mapping, { defaultArea })
-      : { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 });
+    const result = resultadoValidacao ?? { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
     const csv = buildCsv(
       ["Linha na planilha", "Coluna", "Tipo", "Ocorrência"],
       result.issues.map((i) => [i.row, i.column, i.severity === "error" ? "linha ignorada" : "aviso", i.message]),
@@ -10227,7 +10338,7 @@ export function ImportWizard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `relatorio-importacao.csv`;
+    a.download = "relatorio-importacao.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -10240,9 +10351,8 @@ export function ImportWizard() {
     setResultadoValidacao(null);
     setResultadoSnapshot(null);
     setErroEtapa(null);
-    setAvisoEstrutura(null);
-    setMapping({});
-    setMappingTocado(false);
+    setImportMode("replace");
+    setReferenceDate(todayISO());
     if (inputFileRef.current) inputFileRef.current.value = "";
   }
 
@@ -10253,12 +10363,11 @@ export function ImportWizard() {
       <PageHeader
         overline="Dados"
         title="Importar planilha"
-        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura, a validação e o armazenamento acontecem no seu navegador — os dados ficam neste navegador após a sua confirmação.`}
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura das abas GIRO é automática e o arquivo permanece no seu navegador após a confirmação.`}
       />
 
       <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
 
-      {/* Passo a passo */}
       <nav aria-label="Etapas da importação" className="mb-6" data-no-print>
         <ol className="flex flex-wrap items-center gap-y-2">
           {STEPS.map((s, i) => {
@@ -10320,7 +10429,7 @@ export function ImportWizard() {
               {lendo ? "Lendo arquivos…" : "Arraste as planilhas para cá (até 2)"}
             </p>
             <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
-              Todas as abas com dados serão lidas e combinadas automaticamente.
+              Todas as abas nomeadas do Giro serão lidas e resumidas automaticamente.
               Formatos aceitos: <strong>.xlsx</strong>, <strong>.xls</strong> e <strong>.csv</strong>.
             </p>
             <button
@@ -10364,10 +10473,8 @@ export function ImportWizard() {
                     <FileSpreadsheet size={20} />
                   </span>
                   <div>
-                    <p className="text-[15px] font-bold text-navy-950">{combinedInfo.filesCount} {combinedInfo.filesCount === 1 ? 'arquivo selecionado' : 'arquivos selecionados'}</p>
-                    <p className="mt-0.5 text-[12.5px] text-ink-soft">
-                      {combinedInfo.names.join(", ")}
-                    </p>
+                    <p className="text-[15px] font-bold text-navy-950">{combinedInfo.filesCount} {combinedInfo.filesCount === 1 ? "arquivo selecionado" : "arquivos selecionados"}</p>
+                    <p className="mt-0.5 text-[12.5px] text-ink-soft">{combinedInfo.names.join(", ")}</p>
                     <p className="mt-1 text-[12.5px] font-medium text-navy-600">
                       {fmtInt(combinedInfo.combinedTable.totalRows)} linhas identificadas em {combinedInfo.sheetsCount} abas válidas.
                     </p>
@@ -10400,87 +10507,39 @@ export function ImportWizard() {
       {/* =============== ETAPA 2: TIPO DE BASE =============== */}
       {step === 2 && combinedInfo && (
         <section aria-label="Tipo de base" className="space-y-5">
-          <fieldset className="card p-5">
-            <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
-              A qual área esta base pertence?
-            </legend>
-            <p className="mt-1 text-[13px] text-ink-soft">
-              Se a planilha tiver uma coluna de área, ela poderá ser mapeada na próxima etapa e prevalece linha a linha.
+          <div className="card border-navy-200 bg-navy-50/60 p-5">
+            <p className="text-[14px] font-bold text-navy-950">Snapshot consolidado do Giro</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">
+              A leitura das abas consolidadas é automática. Área, natureza e campos operacionais não são escolhidos nesta importação.
             </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {(Object.keys(KIND_LABEL) as DatasetKind[]).map((k) => (
-                <RadioCard
-                  key={k}
-                  name="kind"
-                  checked={kind === k}
-                  onChange={() => setKind(k)}
-                  title={KIND_LABEL[k]}
-                  desc={
-                    k === "indiretos" ? "Materiais e serviços indiretos (administrativo, TI, facilities…)"
-                    : k === "diretos" ? "Materiais e insumos ligados à produção e pesquisa"
-                    : k === "capex" ? "Investimentos: equipamentos, obras e infraestrutura"
-                    : "Base geral, sem distinção de área"
-                  }
-                />
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="card p-5">
-            <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
-              Qual a natureza desta base?
-            </legend>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <RadioCard
-                name="natureza"
-                checked={natureza === "operacional"}
-                onChange={() => setNatureza("operacional")}
-                title="Base operacional detalhada"
-                desc="Planilha de trabalho do dia a dia, com todos os campos de acompanhamento."
-              />
-              <RadioCard
-                name="natureza"
-                checked={natureza === "snapshot"}
-                onChange={() => setNatureza("snapshot")}
-                title="Snapshot semanal"
-                desc="Fotografia consolidada de uma data (ex.: relatório semanal). Escopo e campos podem diferir da base operacional."
-              />
-            </div>
-            {natureza === "snapshot" && (
-              <p className="mt-3 flex items-start gap-2 rounded-xl bg-warn-100/60 px-4 py-3 text-[12.5px] leading-relaxed text-warn-700">
-                <TriangleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                Snapshots não são misturados silenciosamente: o painel sinaliza quando bases de naturezas
-                diferentes estiverem ativas ao mesmo tempo.
-              </p>
-            )}
-          </fieldset>
+          </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
             <fieldset className="card p-5">
               <legend className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
-                Como tratar a base atual?
+                Como tratar a base
               </legend>
               <div className="mt-3 space-y-2">
                 <RadioCard
                   name="modo"
                   checked={importMode === "replace"}
                   onChange={() => setImportMode("replace")}
-                  title="Substituir a base ativa desta área"
-                  desc="A base anterior fica arquivada como “substituída” (auditoria e comparação de variação) e sai dos indicadores."
+                  title="Substituir"
+                  desc="Usa esta leitura como a base atual e mantém a anterior no histórico local."
                 />
                 <RadioCard
                   name="modo"
                   checked={importMode === "combine"}
                   onChange={() => setImportMode("combine")}
-                  title="Combinar com as bases ativas"
-                  desc="Soma os registros às bases existentes. Use apenas se os arquivos cobrirem recortes diferentes."
+                  title="Combinar"
+                  desc="Mantém a leitura ativa e adiciona esta importação como outra base local."
                 />
               </div>
             </fieldset>
 
             <div className="card p-5">
               <label htmlFor="ref-date" className="text-[12.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">
-                Data de referência da base
+                Data de referência
               </label>
               <input
                 id="ref-date"
@@ -10491,8 +10550,7 @@ export function ImportWizard() {
                 aria-describedby="ref-hint"
               />
               <p id="ref-hint" className="mt-2 text-[12.5px] leading-relaxed text-ink-soft">
-                Data em que a planilha foi gerada na origem (ex.: data do snapshot). Ela identifica a base no painel e
-                nas comparações. O cálculo de vencidos/a vencer usa sempre a data de hoje.
+                Identifica a leitura no panorama e no histórico local. O cálculo de vencidos e a vencer usa a data atual do sistema.
               </p>
             </div>
           </div>
@@ -10500,104 +10558,85 @@ export function ImportWizard() {
           <WizardNav
             onBack={() => setStep(1)}
             onNext={() => setStep(3)}
-            nextLabel="Mapear colunas"
+            nextLabel="Ver resumo automático"
           />
         </section>
       )}
 
-      {/* =============== ETAPA 3: MAPEAMENTO =============== */}
-      {step === 3 && combinedInfo && table && suggestion && (
-        <section aria-label="Mapeamento de colunas" className="space-y-4">
+      {/* =============== ETAPA 3: RESUMO AUTOMÁTICO =============== */}
+      {step === 3 && combinedInfo && snapshotPreview && (
+        <section aria-label="Resumo automático do snapshot" className="space-y-4">
           <div className="card p-5">
-            <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-[14.5px] font-bold text-navy-950">
-                  Mapeamento de Colunas Unificado
-                </h3>
-                <p className="mt-0.5 text-[12.5px] text-ink-soft">
-                  As colunas de todas as abas foram combinadas. Aponte cada informação para a sua respectiva coluna nas planilhas.
+                <p className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-accent-700">Leitura automática</p>
+                <h3 className="mt-1 text-[18px] font-bold text-navy-950">Resumo do snapshot reconhecido</h3>
+                <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-ink-soft">
+                  Os blocos abaixo foram procurados pelos nomes exatos das abas e tabelas. Nenhuma coluna operacional precisa ser associada manualmente.
                 </p>
               </div>
+              <div className="rounded-xl bg-navy-50 px-4 py-3 text-right">
+                <p className="tnum text-[23px] font-bold text-navy-900">{fmtInt(recognizedBlocks.length)}</p>
+                <p className="text-[11.5px] font-semibold text-ink-soft">blocos reconhecidos</p>
+              </div>
             </div>
-            <p className="mt-3 text-[12.5px] text-ink-soft">
-              {fmtInt(table.totalRows)} linhas unidas · {table.headers.length} colunas únicas.
-              Colunas não associadas ficarão salvas nos detalhes de cada registro (não serão perdidas).
-            </p>
           </div>
 
-          <div className="card border-navy-200 bg-navy-50/70 p-5" aria-label="Mapeamento específico das tabelas do dashboard">
-            <h3 className="text-[14.5px] font-bold text-navy-950">Leitura específica do painel</h3>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-ink-soft">
-              Além do mapeamento operacional abaixo, o Giro de Atas procura somente os nomes exatos da planilha para montar o snapshot semanal. Nenhuma coluna parecida é usada por inferência.
-            </p>
-            <ul className="mt-3 grid gap-2 text-[12px] leading-relaxed text-ink sm:grid-cols-2">
-              <li><strong>Leitura dos gráficos:</strong> <code>Gráfico</code>, <code>Situação apresentada</code>, <code>ATAS</code>, <code>ITENS</code>.</li>
-              <li><strong>Valores:</strong> <code>VALOR DIRETOS</code>, <code>VALOR INDIRETOS</code>, <code>VALOR CAPEX</code>.</li>
-              <li><strong>Saving:</strong> <code>Rótulos de Linha</code> (CAPEX/DIRETOS/INDIRETOS/TOTAL), <code>VALOR CONTRATADO R$</code>, <code>SAVING HISTÓRICO R$</code>, <code>SAVING PROPOSTA INICIAL R$</code>, reduções.</li>
-              <li><strong>Compradores:</strong> <code>TOP COMP INDIRETOS</code>, <code>TOP COMP DIRETOS</code>, <code>TOP COMP CAPEX</code>, <code>ITENS</code>, <code>ATAS</code>.</li>
-              <li><strong>Fornecedores:</strong> <code>FORNECEDOR</code>, <code>QTD ATAS</code>, <code>QTD ITENS</code>, <code>% CONCENTRAÇÃO DE ITENS</code>, <code>ANÁLISE</code>.</li>
-              <li><strong>Evolução:</strong> <code>ATA INDIRETOS</code>, <code>ATA DIRETOS</code>, <code>ATA CAPEX</code>, <code>ITEM SALDO V ...</code>, <code>ITEM S/SALDO ...</code>, <code>VENCIDAS ...</code>, <code>A VENCER ...</code>.</li>
-              <li><strong>Previsões:</strong> em outra planilha, <code>COMPRADOR</code>, <code>AREA</code>, <code>PRAZO CONCLUSÃO</code>.</li>
-            </ul>
-            {snapshotPreview && (
-              <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-[12px] font-semibold text-navy-700" role="status">
-                Blocos reconhecidos nesta leitura: {snapshotPreview.coverage.found.length ? snapshotPreview.coverage.found.join(", ") : "nenhum ainda"}.
-              </p>
-            )}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Referência" value={referenceDate ? referenceDate.split("-").reverse().join("/") : "—"} tone="navy" />
+            <Stat label="Abas processadas" value={fmtInt(combinedInfo.sheetsCount)} tone="neutral" />
+            <Stat label="Linhas lidas" value={fmtInt(combinedInfo.combinedTable.totalRows)} tone="neutral" />
+            <Stat label="Fonte" value="Snapshot" tone="ok" />
           </div>
 
-          {avisoEstrutura && (
-            <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/50 p-4 text-[13px] leading-relaxed text-warn-700" role="status">
-              <TriangleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              {avisoEstrutura}
+          {snapshotMeaningful && (
+            <div className="card p-5">
+              <SectionTitle title="Indicadores identificados" />
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Concluídas", metricPair(snapshotPreview.kpis.concluidasAtas, snapshotPreview.kpis.concluidasItens)],
+                  ["Em andamento", metricPair(snapshotPreview.kpis.andamentoAtas, snapshotPreview.kpis.andamentoItens)],
+                  ["A vencer", metricPair(snapshotPreview.kpis.aVencerAtas, snapshotPreview.kpis.aVencerItens)],
+                  ["Vencidas", metricPair(snapshotPreview.kpis.vencidasAtas, snapshotPreview.kpis.vencidasItens)],
+                ].map(([label, value]) => value ? (
+                  <div key={label} className="rounded-xl border border-line bg-surface px-3.5 py-3">
+                    <p className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-ink-soft">{label}</p>
+                    <p className="mt-1 text-[13.5px] font-semibold text-navy-900">{value}</p>
+                  </div>
+                ) : null)}
+              </div>
             </div>
           )}
 
           <div className="card overflow-hidden">
-            <ul className="divide-y divide-line/70">
-              {CANONICAL_FIELDS.map((f) => {
-                const selecionada = mapping[f.key] ?? "";
-                const confianca = suggestion.confidence[f.key];
-                const amostras = selecionada
-                  ? [...new Set(table.rows.slice(0, 60).map((r) => r[selecionada]).filter((v) => v !== null && v !== undefined && String(v).trim() !== "").map((v) => (v instanceof Date ? v.toLocaleDateString("pt-BR") : String(v))))].slice(0, 3)
-                  : [];
+            <div className="border-b border-line px-5 py-4">
+              <SectionTitle title="Blocos da leitura" />
+              <p className="mt-1 text-[12.5px] text-ink-soft">
+                Reconhecidos: {fmtInt(recognizedBlocks.length)} de {fmtInt(SNAPSHOT_BLOCK_KEYS.length)} blocos esperados.
+              </p>
+            </div>
+            <ul className="grid gap-2 p-4 sm:grid-cols-2">
+              {SNAPSHOT_BLOCK_KEYS.map((key) => {
+                const found = recognizedBlocks.includes(key);
+                const detail = found ? snapshotBlockDetail(snapshotPreview, key) : null;
                 return (
-                  <li key={f.key} className="grid gap-2 px-5 py-4 md:grid-cols-[240px_1fr] md:items-center md:gap-5">
-                    <div>
-                      <p className="text-[13.5px] font-bold text-ink">{f.label}</p>
-                      <p className="mt-0.5 text-[12px] text-ink-soft">{f.hint}</p>
-                      {confianca === "partial" && selecionada && (
-                        <p className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-semibold text-warn-700">
-                          <TriangleAlert size={12} aria-hidden="true" />
-                          Sugestão aproximada — confira
+                  <li
+                    key={key}
+                    className={clsx(
+                      "rounded-xl border px-3.5 py-3",
+                      found ? "border-ok-600/25 bg-ok-100/50" : "border-line bg-neutral-50/70",
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className={clsx("mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold", found ? "bg-ok-600 text-white" : "bg-neutral-200 text-neutral-600")} aria-hidden="true">
+                        {found ? "✓" : "—"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={clsx("text-[13px] font-bold", found ? "text-ok-700" : "text-ink-soft")}>{snapshotBlockLabel(key)}</p>
+                        <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-soft">
+                          {found ? (detail ?? "Bloco reconhecido; sem métrica resumida disponível.") : SNAPSHOT_BLOCKS[key].esperado}
                         </p>
-                      )}
-                    </div>
-                    <div>
-                      <label htmlFor={`map-${f.key}`} className="sr-only">
-                        Coluna da planilha para {f.label}
-                      </label>
-                      <select
-                        id={`map-${f.key}`}
-                        value={selecionada}
-                        onChange={(e) => {
-                          setMappingTocado(true);
-                          setMapping((m) => ({ ...m, [f.key]: e.target.value || null }));
-                        }}
-                        className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[13.5px] font-medium text-ink"
-                      >
-                        <option value="">— não importar este campo —</option>
-                        {table.headers.map((h) => (
-                          <option key={h} value={h}>
-                            {h}
-                          </option>
-                        ))}
-                      </select>
-                      {amostras.length > 0 && (
-                        <p className="mt-1.5 truncate text-[12px] text-ink-soft" title={amostras.join(" · ")}>
-                          <span className="font-semibold">Exemplos:</span> {amostras.join(" · ")}
-                        </p>
-                      )}
+                      </div>
                     </div>
                   </li>
                 );
@@ -10605,23 +10644,26 @@ export function ImportWizard() {
             </ul>
           </div>
 
+          {missingBlocks.length > 0 && (
+            <div className="card flex items-start gap-2.5 border-warn-600/30 bg-warn-100/50 p-4 text-[13px] leading-relaxed text-warn-700" role="status">
+              <TriangleAlert size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <p>
+                {fmtInt(missingBlocks.length)} bloco(s) não foram encontrado(s). Eles permanecem ausentes, sem preenchimento artificial; os blocos reconhecidos serão importados normalmente.
+              </p>
+            </div>
+          )}
+
           {!canValidate && (
             <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
               <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Para continuar, associe os campos essenciais de uma base operacional ou forneça uma planilha com os blocos específicos e nomes exatos do painel.
-            </div>
-          )}
-          {canValidate && !camposEssenciaisOk && snapshotMeaningful && (
-            <div className="card flex items-start gap-2.5 border-ok-600/30 bg-ok-100/60 p-4 text-[13px] leading-relaxed text-ok-700" role="status">
-              <ShieldCheck size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Blocos do dashboard reconhecidos. O mapeamento operacional é opcional para uma importação somente de métricas; os registros de processos não serão criados.
+              Nenhum bloco reconhecido. Volte ao arquivo e confirme as abas GIRO 01–07 e os nomes exatos do layout.
             </div>
           )}
 
           <WizardNav
             onBack={() => setStep(2)}
             onNext={validar}
-            nextLabel={validando ? "Validando…" : "Validar dados"}
+            nextLabel={validando ? "Validando…" : "Validar snapshot"}
             nextDisabled={!canValidate || validando}
             nextBusy={validando}
           />
@@ -10636,144 +10678,128 @@ export function ImportWizard() {
       {/* =============== ETAPA 4: REVISÃO =============== */}
       {step === 4 && combinedInfo && validacao?.resumo && (
         <section aria-label="Revisão da importação" className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Linhas válidas" value={fmtInt(validacao.resumo.validos)} tone="ok" />
-            <Stat label="Ignoradas (campos essenciais/duplic.)" value={fmtInt(validacao.resumo.ignoradas)} tone={validacao.resumo.ignoradas > 0 ? "warn" : "neutral"} />
-            <Stat label="Duplicadas removidas" value={fmtInt(validacao.resumo.duplicadas)} tone={validacao.resumo.duplicadas > 0 ? "warn" : "neutral"} />
-            <Stat label="Avisos de interpretação" value={fmtInt(validacao.resumo.avisos)} tone={validacao.resumo.avisos > 0 ? "navy" : "neutral"} />
-          </div>
-
-          <div className="card p-5">
-            <SectionTitle title="Resumo do que será importado" />
-            <dl className="grid gap-x-8 gap-y-3 text-[13.5px] sm:grid-cols-2">
-              <ResumoItem label="Arquivos">{combinedInfo.names.join(", ")} ({combinedInfo.sheetsCount} abas)</ResumoItem>
-              <ResumoItem label="Base">{KIND_LABEL[kind]} · {natureza === "snapshot" ? "snapshot semanal" : "base operacional"}</ResumoItem>
-              <ResumoItem label="Modo">{importMode === "replace" ? `Substituir a base ativa de ${KIND_LABEL[kind]} (a atual vai para o histórico)` : "Combinar com as bases ativas"}</ResumoItem>
-              <ResumoItem label="Data de referência">{referenceDate ? referenceDate.split("-").reverse().join("/") : "—"}</ResumoItem>
-              <ResumoItem label="Valor estimado total">
-                {fmtCurrency(validacao.resumo.valorTotal)}{" "}
-                <span className="text-ink-soft">(presente em {fmtInt(validacao.resumo.valorCobertura)} linhas)</span>
-              </ResumoItem>
-              <ResumoItem label="Itens">
-                {fmtInt(validacao.resumo.itensTotal)}{" "}
-                <span className="text-ink-soft">(presente em {fmtInt(validacao.resumo.itensCobertura)} linhas)</span>
-              </ResumoItem>
-              <ResumoItem label="Blocos específicos do dashboard">
-                {validacao.snapshotCoverage?.found.length ?? 0} reconhecidos
-                {validacao.snapshotCoverage?.found.length ? <span className="text-ink-soft"> · {validacao.snapshotCoverage.found.join(", ")}</span> : null}
-              </ResumoItem>
-            </dl>
-          </div>
-
-          {validacao.resumo.issuesTotal > 0 ? (
-            <div className="card overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
-                <div>
-                  <h3 className="text-[14.5px] font-bold text-navy-950">Ocorrências encontradas na validação</h3>
-                  <p className="mt-0.5 text-[12.5px] text-ink-soft">
-                    Mostrando {fmtInt(Math.min(validacao.resumo.issuesAmostra.length, 60))} de{" "}
-                    {fmtInt(validacao.resumo.issuesTotal)}. Baixe o relatório para ver todas — nada é ocultado.
-                  </p>
+          {(() => {
+            const snapshotOnly = Boolean(validacao.snapshotMeaningful && validacao.resumo.validos === 0);
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <Stat label="Blocos reconhecidos" value={fmtInt(validacao.snapshotCoverage?.found.length ?? 0)} tone="ok" />
+                  <Stat label="Linhas operacionais" value={fmtInt(validacao.resumo.validos)} tone="neutral" />
+                  <Stat label="Linhas ignoradas" value={fmtInt(validacao.resumo.ignoradas)} tone={validacao.resumo.ignoradas > 0 ? "warn" : "neutral"} />
+                  <Stat label="Avisos" value={fmtInt(validacao.resumo.avisos)} tone={validacao.resumo.avisos > 0 ? "navy" : "neutral"} />
                 </div>
-                <button
-                  type="button"
-                  onClick={baixarRelatorio}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-                >
-                  <Download size={15} aria-hidden="true" />
-                  Relatório completo (CSV)
-                </button>
-              </div>
-              <div className="max-h-[380px] overflow-y-auto">
-                <table className="w-full text-[13px]">
-                  <caption className="sr-only">Ocorrências de validação (amostra)</caption>
-                  <thead className="sticky top-0 bg-navy-50">
-                    <tr className="border-b border-line text-left">
-                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Linha</th>
-                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Tipo</th>
-                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Coluna</th>
-                      <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Ocorrência</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {validacao.resumo.issuesAmostra.slice(0, 60).map((i, idx) => (
-                      <tr key={idx} className="border-b border-line/60 last:border-0">
-                        <td className="tnum px-4 py-2.5 font-semibold text-ink">{fmtInt(i.row)}</td>
-                        <td className="px-4 py-2.5">
-                          {i.severity === "error" ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-danger-100 px-2.5 py-1 text-[11.5px] font-semibold text-danger-700">
-                              <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-danger-600" />
-                              linha ignorada
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-warn-100 px-2.5 py-1 text-[11.5px] font-semibold text-warn-700">
-                              <span aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-warn-600" />
-                              aviso — linha mantida
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 font-medium text-ink">{i.column}</td>
-                        <td className="px-4 py-2.5 leading-snug text-ink">{i.message}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            <div className="card flex items-start gap-3 border-ok-600/30 bg-ok-100/60 p-5" role="status">
-              <ShieldCheck size={20} className="mt-0.5 shrink-0 text-ok-700" aria-hidden="true" />
-              <p className="text-[13.5px] leading-relaxed text-ok-700">
-                {validacao.resumo.validos === 0 && validacao.snapshotMeaningful
-                  ? "Nenhuma linha operacional foi criada; a validação reconheceu somente os blocos específicos do snapshot."
-                  : "Nenhuma ocorrência: os campos essenciais estão preenchidos, sem duplicidades e sem avisos de interpretação."}
-              </p>
-            </div>
-          )}
 
-          {validacao.resumo.validos === 0 && !validacao.snapshotMeaningful && (
-            <div className="card border-danger-600/30 bg-danger-100/40 p-5 text-[13.5px] font-semibold text-danger-700" role="alert">
-              Nenhuma linha válida para importar. Volte e ajuste o mapeamento ou corrija a planilha na origem.
-            </div>
-          )}
-          {validacao.resumo.validos === 0 && validacao.snapshotMeaningful && (
-            <div className="card border-ok-600/30 bg-ok-100/60 p-5 text-[13.5px] font-semibold text-ok-700" role="status">
-              Esta importação contém somente métricas/tabelas do dashboard. Os blocos reconhecidos serão salvos como snapshot e não exigem identificador de processo.
-            </div>
-          )}
+                <div className="card p-5">
+                  <SectionTitle title="Resumo do que será importado" />
+                  <dl className="grid gap-x-8 gap-y-3 text-[13.5px] sm:grid-cols-2">
+                    <ResumoItem label="Arquivos">{combinedInfo.names.join(", ")} ({combinedInfo.sheetsCount} abas)</ResumoItem>
+                    <ResumoItem label="Tipo de leitura">Snapshot consolidado · leitura automática</ResumoItem>
+                    <ResumoItem label="Modo">{importMode === "replace" ? "Substituir a leitura ativa (a anterior vai para o histórico)" : "Combinar com as bases ativas"}</ResumoItem>
+                    <ResumoItem label="Data de referência">{referenceDate ? referenceDate.split("-").reverse().join("/") : "—"}</ResumoItem>
+                    <ResumoItem label="Blocos específicos">
+                      {fmtInt(validacao.snapshotCoverage?.found.length ?? 0)} reconhecidos
+                      {validacao.snapshotCoverage?.found.length ? <span className="text-ink-soft"> · {validacao.snapshotCoverage.found.map(snapshotBlockLabel).join(", ")}</span> : null}
+                    </ResumoItem>
+                    <ResumoItem label="Linhas operacionais">
+                      {snapshotOnly ? "Nenhuma — a fonte contém somente o snapshot automático" : fmtInt(validacao.resumo.validos)}
+                    </ResumoItem>
+                    <ResumoItem label="Histórico local">Preservado no IndexedDB deste navegador</ResumoItem>
+                  </dl>
+                </div>
 
-          {erroEtapa && (
-            <p className="card border-danger-600/30 bg-danger-100/40 p-4 text-[13px] font-semibold text-danger-700" role="alert">
-              {erroEtapa}
-            </p>
-          )}
+                {validacao.resumo.issuesTotal > 0 ? (
+                  <div className="card overflow-hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+                      <div>
+                        <h3 className="text-[14.5px] font-bold text-navy-950">Ocorrências encontradas na validação</h3>
+                        <p className="mt-0.5 text-[12.5px] text-ink-soft">
+                          Mostrando {fmtInt(Math.min(validacao.resumo.issuesAmostra.length, 60))} de {fmtInt(validacao.resumo.issuesTotal)}. Baixe o relatório para ver todas.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={baixarRelatorio}
+                        className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                      >
+                        <Download size={15} aria-hidden="true" />
+                        Relatório completo (CSV)
+                      </button>
+                    </div>
+                    <div className="max-h-[380px] overflow-y-auto">
+                      <table className="w-full text-[13px]">
+                        <caption className="sr-only">Ocorrências de validação (amostra)</caption>
+                        <thead className="sticky top-0 bg-navy-50">
+                          <tr className="border-b border-line text-left">
+                            <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Linha</th>
+                            <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Tipo</th>
+                            <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Coluna</th>
+                            <th scope="col" className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">Ocorrência</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {validacao.resumo.issuesAmostra.slice(0, 60).map((issue, index) => (
+                            <tr key={index} className="border-b border-line/60 last:border-0">
+                              <td className="tnum px-4 py-2.5 font-semibold text-ink">{fmtInt(issue.row)}</td>
+                              <td className="px-4 py-2.5">
+                                <span className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold", issue.severity === "error" ? "bg-danger-100 text-danger-700" : "bg-warn-100 text-warn-700")}>
+                                  <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-full", issue.severity === "error" ? "bg-danger-600" : "bg-warn-600")} />
+                                  {issue.severity === "error" ? "linha ignorada" : "aviso — linha mantida"}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 font-medium text-ink">{issue.column}</td>
+                              <td className="px-4 py-2.5 leading-snug text-ink">{issue.message}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card flex items-start gap-3 border-ok-600/30 bg-ok-100/60 p-5" role="status">
+                    <ShieldCheck size={20} className="mt-0.5 shrink-0 text-ok-700" aria-hidden="true" />
+                    <p className="text-[13.5px] leading-relaxed text-ok-700">
+                      {snapshotOnly
+                        ? "Nenhuma linha operacional foi criada: esta leitura será salva somente como snapshot, sem inventar processos ou rateios."
+                        : "Nenhuma ocorrência na validação."}
+                    </p>
+                  </div>
+                )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-            >
-              <ArrowLeft size={16} aria-hidden="true" />
-              Voltar ao mapeamento
-            </button>
-            <button
-              type="button"
-              onClick={confirmar}
-              disabled={confirmando || (validacao.resumo.validos === 0 && !validacao.snapshotMeaningful)}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-accent-600 px-6 text-[14.5px] font-bold text-white transition-colors hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-describedby="confirm-hint"
-            >
-              {confirmando ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}
-              {confirmando ? "Importando…" : `Confirmar importação${validacao.resumo.validos > 0 ? ` de ${fmtInt(validacao.resumo.validos)} linhas` : " do snapshot"}`}
-            </button>
-          </div>
-          <p id="confirm-hint" className="text-right text-[12px] text-ink-soft">
-            {importMode === "replace"
-              ? `A base ativa de ${KIND_LABEL[kind]} será substituída (mantida no histórico).`
-              : "As linhas serão somadas às bases ativas."}{" "}
-            A gravação local é atômica: ou o dataset é salvo completo, ou nada é alterado.
-          </p>
+                {erroEtapa && (
+                  <p className="card border-danger-600/30 bg-danger-100/40 p-4 text-[13px] font-semibold text-danger-700" role="alert">
+                    {erroEtapa}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
+                  >
+                    <ArrowLeft size={16} aria-hidden="true" />
+                    Voltar ao resumo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmar}
+                    disabled={confirmando || !validacao.snapshotMeaningful}
+                    className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-accent-600 px-6 text-[14.5px] font-bold text-white transition-colors hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-describedby="confirm-hint"
+                  >
+                    {confirmando ? <Loader2 size={17} className="animate-spin" aria-hidden="true" /> : <ShieldCheck size={17} aria-hidden="true" />}
+                    {confirmando ? "Importando…" : "Confirmar importação do snapshot"}
+                  </button>
+                </div>
+                <p id="confirm-hint" className="text-right text-[12px] text-ink-soft">
+                  {importMode === "replace"
+                    ? "A leitura ativa será substituída e a anterior continuará disponível no histórico."
+                    : "A nova leitura será combinada com as bases locais ativas."}{" "}
+                  A gravação local é atômica: ou o dataset é salvo completo, ou nada é alterado.
+                </p>
+              </>
+            );
+          })()}
         </section>
       )}
 
@@ -10786,16 +10812,11 @@ export function ImportWizard() {
             </span>
             <h2 className="font-display text-[22px] font-bold text-navy-950">Importação concluída</h2>
             <p className="max-w-lg text-[14px] leading-relaxed text-ink-soft">
-              <strong className="tnum text-ink">{fmtInt(validacao.resumo.validos)}</strong> registros operacionais foram
-              processados e agora alimentam os indicadores e a busca.
-              {validacao.snapshotMeaningful && (
-                <> Os blocos específicos do dashboard também foram salvos como snapshot local.</>
-              )}
+              O snapshot automático de <strong className="tnum text-ink">{fmtInt(validacao.snapshotCoverage?.found.length ?? 0)}</strong> blocos foi salvo localmente.
+              Nenhuma linha operacional foi criada por inferência; dados ausentes continuam ausentes.
               {validacao.resumo.ignoradas > 0 && (
                 <>
-                  {" "}
-                  <strong className="tnum text-ink">{fmtInt(validacao.resumo.ignoradas)}</strong> linhas foram ignoradas
-                  e estão listadas no relatório — corrija na origem e reimporte se necessário.
+                  {" "}<strong className="tnum text-ink">{fmtInt(validacao.resumo.ignoradas)}</strong> linhas foram ignoradas e estão listadas no relatório.
                 </>
               )}
             </p>
@@ -10979,6 +11000,7 @@ interface Row {
 interface Facets {
   areas: { area: string; total: number }[];
   etapas: { etapa: string; total: number }[];
+  naturezas: { natureza: string; total: number }[];
 }
 
 const SORTS = [
@@ -11011,6 +11033,7 @@ export function ProcessosBrowser() {
   const [q, setQ] = useState(sp.get("q") ?? "");
   const [qDebounced, setQDebounced] = useState(q);
   const [area, setArea] = useState(sp.get("area") ?? "todas");
+  const [natureza, setNatureza] = useState(sp.get("natureza") ?? "todas");
   const [situacao, setSituacao] = useState(sp.get("situacao") ?? "todas");
   const [etapa, setEtapa] = useState(sp.get("etapa") ?? "todas");
   const [sort, setSort] = useState(sp.get("sort") ?? "data_fim");
@@ -11037,14 +11060,17 @@ export function ProcessosBrowser() {
       setAllRows(data);
       const areaCount = new Map<string, number>();
       const etapaCount = new Map<string, number>();
+      const naturezaCount = new Map<string, number>();
       for (const row of data) {
         const rowArea = row.area ?? "Não informado";
         areaCount.set(rowArea, (areaCount.get(rowArea) ?? 0) + 1);
         if (row.etapa) etapaCount.set(row.etapa, (etapaCount.get(row.etapa) ?? 0) + 1);
+        if (row.natureza) naturezaCount.set(row.natureza, (naturezaCount.get(row.natureza) ?? 0) + 1);
       }
       setFacets({
         areas: [...areaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([area, total]) => ({ area, total })),
         etapas: [...etapaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([etapa, total]) => ({ etapa, total })),
+        naturezas: [...naturezaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([natureza, total]) => ({ natureza, total })),
       });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao carregar processos locais.");
@@ -11075,6 +11101,7 @@ export function ProcessosBrowser() {
         if (!searchable.includes(query)) return false;
       }
       if (area !== "todas" && (row.area ?? "Não informado") !== area) return false;
+      if (natureza !== "todas" && row.natureza !== natureza) return false;
       if (situacao !== "todas" && row.situacao !== situacao) return false;
       if (etapa !== "todas" && row.etapa !== etapa) return false;
       return true;
@@ -11096,7 +11123,7 @@ export function ProcessosBrowser() {
       return dir === "asc" ? comparison : -comparison;
     });
     return filtered;
-  }, [allRows, qDebounced, area, situacao, etapa, sort, dir]);
+  }, [allRows, qDebounced, area, natureza, situacao, etapa, sort, dir]);
 
   const total = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -11107,6 +11134,7 @@ export function ProcessosBrowser() {
     const params = new URLSearchParams();
     if (qDebounced) params.set("q", qDebounced);
     if (area !== "todas") params.set("area", area);
+    if (natureza !== "todas") params.set("natureza", natureza);
     if (situacao !== "todas") params.set("situacao", situacao);
     if (etapa !== "todas") params.set("etapa", etapa);
     if (sort !== "data_fim") params.set("sort", sort);
@@ -11115,15 +11143,16 @@ export function ProcessosBrowser() {
     const prefix = window.location.pathname.includes("/processos") ? window.location.pathname.split("/processos")[0] : "";
     const qs = params.toString();
     window.history.replaceState(null, "", `${prefix}/processos/${qs ? `?${qs}` : ""}`);
-  }, [qDebounced, area, situacao, etapa, sort, dir, page]);
+  }, [qDebounced, area, natureza, situacao, etapa, sort, dir, page]);
 
   const filtrosAtivos =
-    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
+    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (natureza !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
   const semBase = !loading && allRows !== null && total === 0 && filtrosAtivos === 0;
 
   function limparFiltros() {
     setQ("");
     setArea("todas");
+    setNatureza("todas");
     setSituacao("todas");
     setEtapa("todas");
     setPage(1);
@@ -11197,7 +11226,7 @@ export function ProcessosBrowser() {
 
       {/* Barra de filtros */}
       <section aria-label="Filtros" className="card mb-4 p-4" data-no-print>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_190px_190px_190px]">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_170px_170px_190px_170px]">
           <div className="relative">
             <label htmlFor="f-busca" className="sr-only">
               Pesquisar processos
@@ -11239,6 +11268,25 @@ export function ProcessosBrowser() {
                 { key: "Indiretos", label: "Indiretos" },
                 { key: "Diretos", label: "Diretos" },
                 { key: "CAPEX", label: "CAPEX" },
+              ]),
+            ]}
+          />
+          <SelectFiltro
+            id="f-natureza"
+            label="Natureza"
+            value={natureza}
+            onChange={(v) => {
+              setNatureza(v);
+              setPage(1);
+            }}
+            options={[
+              { key: "todas", label: "Todas as naturezas" },
+              ...(facets?.naturezas.map((item) => ({
+                key: item.natureza,
+                label: `${item.natureza === "snapshot" ? "Snapshot" : "Operacional"} (${item.total})`,
+              })) ?? [
+                { key: "operacional", label: "Operacional" },
+                { key: "snapshot", label: "Snapshot" },
               ]),
             ]}
           />
@@ -16550,9 +16598,10 @@ export async function saveDataset(input: SaveDatasetInput): Promise<StoredDatase
           .filter((item) => item.status === "active" && item.kind === input.kind)
           .map((item) => ({ ...item, status: "superseded" as const }))
       : []),
-    // Snapshot é uma série única do painel: ao importar uma nova leitura,
-    // a leitura anterior continua no histórico e deixa de ser a ativa.
-    ...(input.snapshot
+    // Em “Substituir”, a leitura anterior continua no histórico e deixa de
+    // ser ativa. Em “Combinar”, as leituras locais permanecem ativas para que
+    // o histórico/série do snapshot possa ser consultado sem apagar a base.
+    ...(input.snapshot && input.importMode === "replace"
       ? existing
           .filter((item) => item.status === "active" && item.snapshot)
           .filter((item) => !existing.some((candidate) => candidate.id === item.id && candidate.status === "superseded"))

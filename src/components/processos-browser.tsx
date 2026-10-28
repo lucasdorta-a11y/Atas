@@ -52,6 +52,7 @@ interface Row {
 interface Facets {
   areas: { area: string; total: number }[];
   etapas: { etapa: string; total: number }[];
+  naturezas: { natureza: string; total: number }[];
 }
 
 const SORTS = [
@@ -84,6 +85,7 @@ export function ProcessosBrowser() {
   const [q, setQ] = useState(sp.get("q") ?? "");
   const [qDebounced, setQDebounced] = useState(q);
   const [area, setArea] = useState(sp.get("area") ?? "todas");
+  const [natureza, setNatureza] = useState(sp.get("natureza") ?? "todas");
   const [situacao, setSituacao] = useState(sp.get("situacao") ?? "todas");
   const [etapa, setEtapa] = useState(sp.get("etapa") ?? "todas");
   const [sort, setSort] = useState(sp.get("sort") ?? "data_fim");
@@ -110,14 +112,17 @@ export function ProcessosBrowser() {
       setAllRows(data);
       const areaCount = new Map<string, number>();
       const etapaCount = new Map<string, number>();
+      const naturezaCount = new Map<string, number>();
       for (const row of data) {
         const rowArea = row.area ?? "Não informado";
         areaCount.set(rowArea, (areaCount.get(rowArea) ?? 0) + 1);
         if (row.etapa) etapaCount.set(row.etapa, (etapaCount.get(row.etapa) ?? 0) + 1);
+        if (row.natureza) naturezaCount.set(row.natureza, (naturezaCount.get(row.natureza) ?? 0) + 1);
       }
       setFacets({
         areas: [...areaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([area, total]) => ({ area, total })),
         etapas: [...etapaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([etapa, total]) => ({ etapa, total })),
+        naturezas: [...naturezaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([natureza, total]) => ({ natureza, total })),
       });
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro ao carregar processos locais.");
@@ -148,6 +153,7 @@ export function ProcessosBrowser() {
         if (!searchable.includes(query)) return false;
       }
       if (area !== "todas" && (row.area ?? "Não informado") !== area) return false;
+      if (natureza !== "todas" && row.natureza !== natureza) return false;
       if (situacao !== "todas" && row.situacao !== situacao) return false;
       if (etapa !== "todas" && row.etapa !== etapa) return false;
       return true;
@@ -169,7 +175,7 @@ export function ProcessosBrowser() {
       return dir === "asc" ? comparison : -comparison;
     });
     return filtered;
-  }, [allRows, qDebounced, area, situacao, etapa, sort, dir]);
+  }, [allRows, qDebounced, area, natureza, situacao, etapa, sort, dir]);
 
   const total = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -180,6 +186,7 @@ export function ProcessosBrowser() {
     const params = new URLSearchParams();
     if (qDebounced) params.set("q", qDebounced);
     if (area !== "todas") params.set("area", area);
+    if (natureza !== "todas") params.set("natureza", natureza);
     if (situacao !== "todas") params.set("situacao", situacao);
     if (etapa !== "todas") params.set("etapa", etapa);
     if (sort !== "data_fim") params.set("sort", sort);
@@ -188,15 +195,16 @@ export function ProcessosBrowser() {
     const prefix = window.location.pathname.includes("/processos") ? window.location.pathname.split("/processos")[0] : "";
     const qs = params.toString();
     window.history.replaceState(null, "", `${prefix}/processos/${qs ? `?${qs}` : ""}`);
-  }, [qDebounced, area, situacao, etapa, sort, dir, page]);
+  }, [qDebounced, area, natureza, situacao, etapa, sort, dir, page]);
 
   const filtrosAtivos =
-    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
+    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (natureza !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
   const semBase = !loading && allRows !== null && total === 0 && filtrosAtivos === 0;
 
   function limparFiltros() {
     setQ("");
     setArea("todas");
+    setNatureza("todas");
     setSituacao("todas");
     setEtapa("todas");
     setPage(1);
@@ -270,7 +278,7 @@ export function ProcessosBrowser() {
 
       {/* Barra de filtros */}
       <section aria-label="Filtros" className="card mb-4 p-4" data-no-print>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_190px_190px_190px]">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_170px_170px_190px_170px]">
           <div className="relative">
             <label htmlFor="f-busca" className="sr-only">
               Pesquisar processos
@@ -312,6 +320,25 @@ export function ProcessosBrowser() {
                 { key: "Indiretos", label: "Indiretos" },
                 { key: "Diretos", label: "Diretos" },
                 { key: "CAPEX", label: "CAPEX" },
+              ]),
+            ]}
+          />
+          <SelectFiltro
+            id="f-natureza"
+            label="Natureza"
+            value={natureza}
+            onChange={(v) => {
+              setNatureza(v);
+              setPage(1);
+            }}
+            options={[
+              { key: "todas", label: "Todas as naturezas" },
+              ...(facets?.naturezas.map((item) => ({
+                key: item.natureza,
+                label: `${item.natureza === "snapshot" ? "Snapshot" : "Operacional"} (${item.total})`,
+              })) ?? [
+                { key: "operacional", label: "Operacional" },
+                { key: "snapshot", label: "Snapshot" },
               ]),
             ]}
           />

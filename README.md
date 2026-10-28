@@ -7,10 +7,9 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
 - lê automaticamente todas as abas com dados e consolida as linhas;
 - trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
-- inicia o mapeamento operacional com todos os campos como `não importar`, permitindo selecionar apenas o que será usado;
-- valida identificadores, objetos, datas, quantidades, valores, duplicidades e links;
-- alimenta o panorama, a busca, filtros, paginação e exportação CSV com os dados confirmados;
-- preserva colunas não mapeadas nos detalhes dos registros;
+- reconhece automaticamente os blocos consolidados das abas `GIRO 01–07`, sem mapeamento manual de colunas operacionais;
+- mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
+- alimenta o panorama com o snapshot confirmado e mantém a consulta de processos, filtros, paginação e exportação CSV para registros operacionais já salvos;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -86,15 +85,15 @@ https://lucasdorta-a11y.github.io/Atas/
 1. Abra **Importar**.
 2. Selecione ou arraste até dois arquivos.
 3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
-4. Escolha a área, a natureza da base e a data de referência.
-5. Revise o mapeamento; os campos operacionais começam como `não importar` e os campos essenciais são validados funcionalmente, sem marcadores visuais de “obrigatório”.
-6. Confira o resumo e as ocorrências.
+4. Na etapa **Tipo de base**, escolha somente **Substituir** ou **Combinar** e informe a data de referência.
+5. Confira o **Resumo automático**: os blocos reconhecidos são apresentados visualmente e os ausentes permanecem explicitamente ausentes.
+6. Revise a importação do snapshot, sem mapeamento operacional e sem criação de processos por inferência.
 7. Baixe o relatório de validação, se necessário, e confirme a importação.
-8. Escolha **Substituir** para arquivar a base ativa daquela área ou **Combinar** para manter bases diferentes ativas.
+8. **Substituir** arquiva a leitura ativa no histórico; **Combinar** mantém as bases locais ativas.
 
-A origem, a data de referência, as linhas válidas, ignoradas, duplicadas e os avisos ficam visíveis na auditoria das bases.
+A origem, a data de referência, os blocos reconhecidos/ausentes e os avisos ficam visíveis na auditoria das bases.
 
-## Mapeamento exato do painel consolidado
+## Leitura exata do painel consolidado
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
 
@@ -110,7 +109,7 @@ Na tabela `LEITURA DOS GRÁFICOS`, use exatamente as colunas `Gráfico`, `Situa�
 
 O extrator também aceita o layout visual atual da aba `CONTROLE ATAS CONCLUÍDAS`, em que os valores calculados aparecem em cartões separados: `ATA CONCLUÍDAS (VÁLIDAS)`, `ATAS EM ANDAMENTO`, `ITENS COM SALDO (VÁLIDOS)`, `ITENS SEM SALDO (VÁLIDOS)`, `ATAS VENCIDAS` e `ATAS A VENCER`. Ele procura os valores abaixo dos rótulos mesmo quando existem linhas formatadas ou células mescladas entre o título e os números. Quando a aba nomeada `GIRO 01 - Panorama` está presente, somente o bloco `Status Atual` é lido; o bloco da semana anterior não é importado, pois a comparação anterior é controlada pelo histórico local do site. O card `ATAS EM ANDAMENTO (GERAL)` também pode vir do resumo com `QTD ATAS`/`QTD ITENS`, dois números na mesma linha ou célula composta. Sem esses quadros, o extrator soma as três áreas da tabela `EVOLUÇÃO POR ÁREA (EM ANDAMENTO)` somente quando as três existem. O painel mostra seis cards para a semana anterior e seis para a atual: concluídas, em andamento, itens com saldo, itens sem saldo, vencidas e a vencer. A referência inicial é 13/10, com 62/915 concluídas, 70/5.000 em andamento, 862 itens com saldo, 100 consumidos, 59/1.441 a vencer e 49/371 vencidas; novas importações passam a formar o histórico real. A seção de comparação também identifica a base atual e a anterior pela data de referência e pelo nome do arquivo; quando a anterior é a referência fixa fornecida nas capturas, isso fica explícito e ela é indicada como sem arquivo importado.
 
-Quando existem as abas consolidadas `GIRO 01 - Panorama`, `GIRO 02 - Concluídas`, `GIRO 03 - Resumo`, `GIRO 04 - Evolução`, `GIRO 05 - Renovações`, `GIRO 06 - Faixas` e `GIRO 07 - Mensal`, elas têm prioridade sobre os blocos genéricos antigos. A interface não muda: apenas a origem de leitura passa a seguir as abas nomeadas. O fallback anterior continua disponível para bases sem as abas `GIRO`.
+Quando existem as abas consolidadas `GIRO 01 - Panorama`, `GIRO 02 - Concluídas`, `GIRO 03 - Resumo`, `GIRO 04 - Evolução`, `GIRO 05 - Renovações`, `GIRO 06 - Faixas` e `GIRO 07 - Mensal`, elas têm prioridade sobre os blocos genéricos antigos. A etapa seguinte ao tipo de base exibe um resumo automático dos blocos encontrados; não há mapeamento de campos operacionais. O fallback anterior continua disponível para bases sem as abas `GIRO`.
 
 ### Atas concluídas desde a última atualização
 
@@ -140,7 +139,7 @@ O bloco de status/renovações lê a aba dedicada atualizada junto com o resumo 
 
 No panorama, o botão **Tela cheia** oculta a barra lateral, o cabeçalho e o contexto da base para uma visualização limpa dos indicadores. O botão **Sair da tela cheia** restaura a navegação.
 
-A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de mapeamento, os campos operacionais começam como **não importar**; os blocos específicos do panorama são detectados automaticamente e não precisam ser associados manualmente.
+A busca dos blocos do panorama percorre todas as linhas de todas as abas, preservando também os separadores entre pivôs. O botão **Atualizar panorama** reprocessa o armazenamento local sem backend. Na etapa de **Resumo automático**, os blocos específicos do panorama são detectados pelos nomes exatos e não precisam ser associados manualmente.
 
 ## Snapshots no GitHub Pages
 
@@ -155,4 +154,4 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 ## Decisões de dados
 
-O painel não inventa números nem corrige divergências silenciosamente. Datas e números ambíguos geram avisos, linhas sem identificador ou objeto são ignoradas com justificativa e colunas extras permanecem acessíveis nos detalhes.
+O painel não inventa números nem corrige divergências silenciosamente. Blocos ausentes permanecem ausentes, a leitura usa os nomes exatos do layout e o histórico local preserva cada snapshot importado.

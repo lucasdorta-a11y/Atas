@@ -207,9 +207,10 @@ export async function saveDataset(input: SaveDatasetInput): Promise<StoredDatase
           .filter((item) => item.status === "active" && item.kind === input.kind)
           .map((item) => ({ ...item, status: "superseded" as const }))
       : []),
-    // Snapshot é uma série única do painel: ao importar uma nova leitura,
-    // a leitura anterior continua no histórico e deixa de ser a ativa.
-    ...(input.snapshot
+    // Em “Substituir”, a leitura anterior continua no histórico e deixa de
+    // ser ativa. Em “Combinar”, as leituras locais permanecem ativas para que
+    // o histórico/série do snapshot possa ser consultado sem apagar a base.
+    ...(input.snapshot && input.importMode === "replace"
       ? existing
           .filter((item) => item.status === "active" && item.snapshot)
           .filter((item) => !existing.some((candidate) => candidate.id === item.id && candidate.status === "superseded"))
