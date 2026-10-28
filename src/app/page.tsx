@@ -602,7 +602,9 @@ function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaS
               {s.buyers.map((b: any, index: number) => (
                 <div key={`${b.name}-${index}`} className="border-b border-line/60 pb-2 leading-tight">
                   <div className="text-[11px] font-bold text-navy-900 uppercase truncate" title={b.name}>{b.name}</div>
-                  <div className="text-[10px] font-semibold text-ink-soft">{fmtInt(b.atas)} ATAS · {fmtInt(b.itens)} ITENS</div>
+                  {(b.atas !== null || b.itens !== null) && (
+                    <div className="text-[10px] font-semibold text-ink-soft">{fmtInt(b.atas)} ATAS · {fmtInt(b.itens)} ITENS</div>
+                  )}
                 </div>
               ))}
               {s.buyers.length === 0 && <p className="text-[11px] text-ink-soft">Nenhum comprador reconhecido nesta faixa.</p>}

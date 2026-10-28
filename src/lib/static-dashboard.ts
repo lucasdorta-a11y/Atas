@@ -452,8 +452,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
         const source = currentSnapshot.previsoes[band][area];
         const totalAtas = source.atas ?? 0;
         const totalItens = source.itens ?? 0;
-        const listedAtas = source.buyers.reduce((sum, buyer) => sum + buyer.atas, 0);
-        const listedItens = source.buyers.reduce((sum, buyer) => sum + buyer.itens, 0);
+        const listedAtas = source.buyers.reduce((sum, buyer) => sum + (buyer.atas ?? 0), 0);
+        const listedItens = source.buyers.reduce((sum, buyer) => sum + (buyer.itens ?? 0), 0);
         for (const buyer of source.buyers) {
           snapshotForecast.push({
             area: areaDisplay(area),
@@ -462,8 +462,8 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
             dias: buyer.prazoConclusao && /^\d{4}-\d{2}-\d{2}$/.test(buyer.prazoConclusao)
               ? daysUntil(buyer.prazoConclusao, currentSnapshot?.referenceDate ?? null)
               : forecastBandDays(band),
-            atas: buyer.atas,
-            itens: buyer.itens,
+            atas: buyer.atas ?? 0,
+            itens: buyer.itens ?? 0,
             band,
           });
         }

@@ -123,8 +123,9 @@ export interface SnapshotEvolution {
 
 export interface SnapshotForecastBuyer {
   name: string;
-  atas: number;
-  itens: number;
+  /** Pode ser nulo quando a aba traz apenas a lista de nomes, sem rateio individual. */
+  atas: number | null;
+  itens: number | null;
   prazoConclusao: string | null;
 }
 
@@ -384,6 +385,15 @@ function isArea(value: unknown): SnapshotArea | null {
   return null;
 }
 
+function giroSheets(sheets: SnapshotSourceSheet[], number: number, label: string): SnapshotSourceSheet[] {
+  const expectedNumber = String(number).padStart(2, "0");
+  const expectedLabel = exact(label);
+  return sheets.filter((sheet) => {
+    const source = exact(`${sheet.fileName} ${sheet.sheetName}`);
+    return source.includes(`GIRO ${expectedNumber}`) && source.includes(expectedLabel);
+  });
+}
+
 function numberValue(value: unknown, integer = false): number | null {
   const text = cellText(value);
   if (!text || /^[-–—]+$/.test(text)) return null;
@@ -591,9 +601,15 @@ function extractSummaryCards(payload: DashboardSnapshotPayload, sheets: Snapshot
     }
   };
 
-  for (const sheet of sheets) {
+  const preferredSheets = giroSheets(sheets, 1, "PANORAMA");
+  const sourceSheets = preferredSheets.length ? preferredSheets : sheets;
+  for (const sheet of sourceSheets) {
     const matrix = sheet.matrix;
-    for (let r = 0; r < matrix.length; r += 1) {
+    const currentMarker = preferredSheets.length
+      ? matrix.findIndex((row) => row.some((value) => exact(value).includes("STATUS ATUAL")))
+      : -1;
+    const firstRow = currentMarker >= 0 ? currentMarker : 0;
+    for (let r = firstRow; r < matrix.length; r += 1) {
       const row = matrix[r] ?? [];
       for (let c = 0; c < row.length; c += 1) {
         const kind = cardKind(row[c]);
@@ -1669,8 +1685,8 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
         const buyerKey = `${buyer}\u0000${iso ?? deadlineText}`;
         const existing = target.buyers.find((item) => `${item.name}\u0000${item.prazoConclusao ?? ""}` === buyerKey);
         if (existing) {
-          existing.atas += atas;
-          existing.itens += itens;
+          existing.atas = (existing.atas ?? 0) + atas;
+          existing.itens = (existing.itens ?? 0) + itens;
         } else {
           target.buyers.push({ name: buyer, atas, itens, prazoConclusao: iso ?? deadlineText });
         }
@@ -1686,7 +1702,7 @@ function extractForecastRows(payload: DashboardSnapshotPayload, sheets: Snapshot
   }
   for (const band of FORECAST_BANDS) {
     for (const area of SNAPSHOT_AREAS) {
-      payload.previsoes[band][area].buyers.sort((a, b) => b.itens - a.itens || b.atas - a.atas);
+      payload.previsoes[band][area].buyers.sort((a, b) => (b.itens ?? 0) - (a.itens ?? 0) || (b.atas ?? 0) - (a.atas ?? 0));
     }
   }
   if (found) addFound(payload, "previsoes-cruzadas");
@@ -2081,7 +2097,9 @@ function parseStatusBlock(matrix: unknown[][], area: SnapshotArea, start: number
 
 function extractStatusAtas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
   let found = false;
-  for (const sheet of sheets) {
+  const preferredSheets = giroSheets(sheets, 5, "RENOVACOES");
+  const sourceSheets = preferredSheets.length ? preferredSheets : sheets;
+  for (const sheet of sourceSheets) {
     const matrix = sheet.matrix;
     const bands: Array<{ area: SnapshotArea; row: number }> = [];
     matrix.forEach((row, index) => {
@@ -2101,6 +2119,370 @@ function extractStatusAtas(payload: DashboardSnapshotPayload, sheets: SnapshotSo
     }
   }
   if (found) addFound(payload, "status-atas");
+}
+
+/* -------------------- abas GIRO consolidadas ---------------------- */
+
+function rawCellLines(value: unknown): string[] {
+  return String(value ?? "")
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function unitInteger(value: unknown, unit: "ATAS" | "ITENS"): number | null {
+  const text = cellText(value);
+  const match = text.match(new RegExp(`(-?\\d[\\d.\\s]*(?:,\\d+)?)\\s*${unit}`, "i"));
+  return match ? integerValue(match[1]) : null;
+}
+
+function displayContract(value: unknown): string | null {
+  const text = cellText(value).replace(/\s*\/\s*/g, " / ").trim();
+  return text || null;
+}
+
+/** GIRO 02 — tabela já filtrada de atas concluídas. */
+function extractGiro02Concluidas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  const sources = giroSheets(sheets, 2, "CONCLUIDAS");
+  if (!sources.length) return;
+  let foundHeader = false;
+  const parsed: SnapshotAtaConcluida[] = [];
+
+  for (const sheet of sources) {
+    const matrix = sheet.matrix;
+    const headerRows = findHeaderRows(matrix, (row) =>
+      rowHas(row, ["ATA / PROCESSO", "CONTRATO", "QTD. ITENS", "COMPRADOR(A)", "ÁREA"]),
+    );
+    for (const headerRow of headerRows) {
+      const header = matrix[headerRow] ?? [];
+      const descCol = columnIndex(header, (value) => value === "ATA / PROCESSO" || value === "ATA/PROCESSO");
+      const contratoCol = columnIndex(header, (value) => value === "CONTRATO");
+      const itensCol = columnIndex(header, (value) => value === "QTD. ITENS" || value === "QTD ITENS");
+      const compradorCol = columnIndex(header, (value) => value === "COMPRADOR(A)" || value === "COMPRADOR");
+      const areaCol = columnIndex(header, (value) => value === "AREA");
+      if (descCol < 0 || contratoCol < 0 || itensCol < 0 || compradorCol < 0 || areaCol < 0) continue;
+      foundHeader = true;
+
+      let blankRun = 0;
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        const rowText = exact(row.map(cellText).filter(Boolean).join(" | "));
+        if (rowText.includes("ATA CONCLUIDA MAIS RECENTE")) break;
+        if (isBlank(row)) {
+          blankRun += 1;
+          if (blankRun >= 2) break;
+          continue;
+        }
+        blankRun = 0;
+        const descricao = cellText(row[descCol]);
+        const contratoDisplay = displayContract(row[contratoCol]);
+        if (!descricao || !contratoDisplay) continue;
+        const comprador = stripCode(cellText(row[compradorCol])) || null;
+        const area = isArea(row[areaCol]);
+        const key = contractKey(row[contratoCol]) ?? `${exact(descricao)}|${exact(comprador ?? "")}|${area ?? ""}`;
+        if (parsed.some((item) => item.key === key)) continue;
+        parsed.push({
+          key,
+          descricao,
+          contrato: contratoDisplay,
+          fornecedor: null,
+          itens: integerValue(row[itensCol]),
+          comprador,
+          area,
+          etapa: "FINALIZADO",
+          valor: null,
+        });
+      }
+    }
+  }
+
+  if (foundHeader) {
+    payload.atasConcluidas = parsed;
+    addFound(payload, "atas-concluidas");
+  }
+}
+
+/** GIRO 03 — valores contratados, saving e compradores do resumo. */
+function extractGiro03Resumo(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  const sources = giroSheets(sheets, 3, "RESUMO");
+  if (!sources.length) return;
+  let valuesFound = false;
+  let savingFound = false;
+  let buyersFound = false;
+
+  for (const sheet of sources) {
+    const matrix = sheet.matrix;
+    const headerRow = matrix.findIndex((row) => row.some((value) => exact(value) === "AREAS") && row.some((value) => exact(value) === "VALOR CONTRATADO R$"));
+    if (headerRow >= 0) {
+      const header = matrix[headerRow] ?? [];
+      const areaCol = columnIndex(header, (value) => value === "AREAS" || value === "AREA");
+      const contractedCols = header
+        .map((value, index) => ({ value: exact(value), index }))
+        .filter((item) => item.value === "VALOR CONTRATADO R$")
+        .map((item) => item.index);
+      const histCol = header.findIndex((value) => exact(value).includes("SAVING HISTORICO"));
+      const propCol = header.findIndex((value) => exact(value).includes("SAVING SOB PROPOSTA"));
+      for (let r = headerRow + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        const areaText = exact(row[areaCol]);
+        const area = isArea(row[areaCol]);
+        const isTotal = areaText === "TOTAL";
+        if (!area && !isTotal) continue;
+        const target = isTotal ? payload.savingTotal : payload.valueAreas[area!];
+        const valor = contractedCols[0] === undefined ? null : numberValue(row[contractedCols[0]]);
+        const valorSaving = contractedCols[1] === undefined ? null : numberValue(row[contractedCols[1]]);
+        if (!isTotal && valor !== null) {
+          target.valor = valor;
+          target.valorSaving = valorSaving ?? valor;
+          valuesFound = true;
+        }
+        if (valorSaving !== null || valor !== null) {
+          target.valorSaving = valorSaving ?? target.valorSaving ?? valor;
+          savingFound = true;
+        }
+        if (histCol >= 0) {
+          const hist = row[histCol];
+          const histValue = savingNumber(hist);
+          const histPct = savingPercent(hist);
+          if (histValue !== null) target.savingHist = histValue;
+          if (histPct !== null) target.reducaoHistPct = histPct;
+        }
+        if (propCol >= 0) {
+          const prop = row[propCol];
+          const propValue = savingNumber(prop);
+          const propPct = savingPercent(prop);
+          if (propValue !== null) target.savingProp = propValue;
+          if (propPct !== null) target.reducaoPropPct = propPct;
+        }
+      }
+    }
+
+    const distributionRows = matrix.filter((row) => row.some((value) => {
+      const label = exact(value);
+      return (label.includes("INDIRETOS") || label.includes("DIRETOS") || label.includes("CAPEX")) && label.includes("ATAS");
+    }));
+    const totalAtasArea: Record<SnapshotArea, number | null> = { INDIRETOS: null, DIRETOS: null, CAPEX: null };
+    for (const row of distributionRows) {
+      for (const cell of row) {
+        const text = cellText(cell);
+        const area = SNAPSHOT_AREAS.find((candidate) => exact(text).includes(candidate));
+        const match = text.match(/(\d[\d.]*)\s+ATAS/i);
+        if (area && match) totalAtasArea[area] = integerValue(match[1]);
+      }
+    }
+
+    const titleRow = matrix.findIndex((row) => row.some((value) => exact(value).includes("TOP") && exact(value).includes("COMPRADORES")));
+    if (titleRow >= 0) {
+      const titleCols = (matrix[titleRow] ?? [])
+        .map((value, index) => ({ value: exact(value), index }))
+        .filter((item) => item.value.includes("TOP") && item.value.includes("COMPRADORES"));
+      titleCols.forEach((title, position) => {
+        const area = SNAPSHOT_AREAS[position];
+        if (!area) return;
+        const buyers: SnapshotBuyer[] = [];
+        for (let r = titleRow + 1; r < Math.min(matrix.length, titleRow + 10); r += 1) {
+          const text = cellText(matrix[r]?.[title.index]);
+          const match = text.match(/^(.+?)\s+([\d.]+)\s+ITENS\s*\|\s*([\d.]+)\s+ATAS$/i);
+          if (!match) continue;
+          buyers.push({
+            name: match[1].trim(),
+            itens: integerValue(match[2]) ?? 0,
+            atas: integerValue(match[3]) ?? 0,
+            totalAtasArea: totalAtasArea[area],
+          });
+        }
+        if (buyers.length > 0) {
+          payload.topCompradores[area] = {
+            area,
+            totalAtasArea: totalAtasArea[area],
+            topAtas: buyers.length,
+            buyers,
+          };
+          buyersFound = true;
+        }
+      });
+    }
+  }
+
+  if (valuesFound) addFound(payload, "valores-por-area");
+  if (savingFound) addFound(payload, "saving");
+  if (buyersFound) addFound(payload, "top-compradores");
+}
+
+/** GIRO 04 — fornecedores e evolução por área. */
+function extractGiro04Evolucao(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  const sources = giroSheets(sheets, 4, "EVOLUCAO");
+  if (!sources.length) return;
+  let suppliersFound = false;
+  let evolutionFound = false;
+
+  for (const sheet of sources) {
+    const matrix = sheet.matrix;
+    const supplierHeader = matrix.findIndex((row) => rowHas(row, ["FORNECEDOR", "QTD ATAS", "QTD ITENS"]));
+    if (supplierHeader >= 0) {
+      const header = matrix[supplierHeader] ?? [];
+      const fornecedorCol = columnIndex(header, (value) => value === "FORNECEDOR");
+      const atasCol = columnIndex(header, (value) => value === "QTD ATAS");
+      const itensCol = columnIndex(header, (value) => value === "QTD ITENS");
+      const concentrationCol = header.findIndex((value) => exact(value).includes("CONCENTRACAO"));
+      const analysisCol = columnIndex(header, (value) => value === "ANALISE");
+      const suppliers: SnapshotSupplierGeneral[] = [];
+      for (let r = supplierHeader + 1; r < matrix.length; r += 1) {
+        const row = matrix[r] ?? [];
+        if (row.some((value) => exact(value).includes("EVOLUCAO POR AREA"))) break;
+        const fornecedor = cellText(row[fornecedorCol]);
+        if (!fornecedor) continue;
+        suppliers.push({
+          area: "GERAL",
+          fornecedor,
+          qtdAtas: integerValue(row[atasCol]),
+          qtdItens: integerValue(row[itensCol]),
+          concentracaoPct: concentrationCol >= 0 ? percentValue(row[concentrationCol]) : null,
+          analise: analysisCol >= 0 ? cellText(row[analysisCol]) || null : null,
+        });
+      }
+      if (suppliers.length) {
+        payload.fornecedoresGeral = suppliers;
+        suppliersFound = true;
+      }
+    }
+
+    const evolutionTitle = matrix.findIndex((row) => row.some((value) => exact(value).includes("EVOLUCAO POR AREA")));
+    if (evolutionTitle >= 0) {
+      const headerRow = matrix.findIndex((row, index) => index > evolutionTitle && row.some((value) => exact(value) === "AREAS") && row.some((value) => exact(value).includes("VENCIDAS")));
+      if (headerRow >= 0) {
+        const header = matrix[headerRow] ?? [];
+        const areaCol = columnIndex(header, (value) => value === "AREAS" || value === "AREA");
+        const concludedCol = header.findIndex((value) => exact(value).includes("CONCLUID") && exact(value).includes("ATAS"));
+        const andamentoCol = header.findIndex((value) => exact(value).includes("ANDAMENTO"));
+        const saldoCol = header.findIndex((value) => exact(value).includes("ITENS COM") && exact(value).includes("SALDO"));
+        const semSaldoCol = header.findIndex((value) => exact(value).includes("ITENS SEM") && exact(value).includes("SALDO"));
+        const vencidasCol = header.findIndex((value) => exact(value) === "VENCIDAS");
+        const aVencerCol = header.findIndex((value) => exact(value) === "A VENCER");
+        for (let r = headerRow + 1; r < Math.min(matrix.length, headerRow + 8); r += 1) {
+          const row = matrix[r] ?? [];
+          const area = isArea(row[areaCol]);
+          if (!area) continue;
+          const target = payload.evolucao[area];
+          const concluded = evolutionPairFromCell(row[concludedCol]);
+          const andamento = evolutionPairFromCell(row[andamentoCol]);
+          const vencidas = evolutionPairFromCell(row[vencidasCol]);
+          const aVencer = evolutionPairFromCell(row[aVencerCol]);
+          target.concluidasAtas = concluded.atas;
+          target.concluidasItens = concluded.itens;
+          target.andamentoAtas = andamento.atas;
+          target.andamentoItens = andamento.itens;
+          target.saldoItens = integerValue(row[saldoCol]);
+          target.semSaldoItens = integerValue(row[semSaldoCol]);
+          target.vencidasAtas = vencidas.atas;
+          target.vencidasItens = vencidas.itens;
+          target.aVencerAtas = aVencer.atas;
+          target.aVencerItens = aVencer.itens;
+          evolutionFound = true;
+        }
+      }
+    }
+  }
+
+  if (suppliersFound) addFound(payload, "fornecedores");
+  if (evolutionFound) addFound(payload, "evolucao");
+}
+
+function giroForecastBand(value: unknown): ForecastBand | null {
+  const label = exact(value);
+  if (label.includes("PROXIMOS 15")) return "ate_15";
+  if (label.includes("ATE 30")) return "ate_30";
+  if (label.includes("ATE 60")) return "ate_60";
+  if (label.includes("PREVISOES VENCIDAS")) return "vencidas";
+  return null;
+}
+
+/** GIRO 06 — totais por faixa; os nomes são lidos somente quando houver uma contagem explícita. */
+function extractGiro06Faixas(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  const sources = giroSheets(sheets, 6, "FAIXAS");
+  if (!sources.length) return;
+  let found = false;
+  for (const band of FORECAST_BANDS) {
+    for (const area of SNAPSHOT_AREAS) payload.previsoes[band][area] = emptyForecast();
+  }
+  for (const sheet of sources) {
+    const matrix = sheet.matrix;
+    for (let r = 0; r < matrix.length; r += 1) {
+      const band = giroForecastBand(matrix[r]?.find((value) => giroForecastBand(value) !== null));
+      if (!band) continue;
+      const headerRow = matrix.slice(r + 1, Math.min(matrix.length, r + 8)).findIndex((row) => SNAPSHOT_AREAS.filter((area) => row.some((value) => isArea(value) === area)).length >= 2);
+      if (headerRow < 0) continue;
+      const actualHeader = r + 1 + headerRow;
+      const header = matrix[actualHeader] ?? [];
+      const areaColumns = SNAPSHOT_AREAS.map((area) => ({ area, column: header.findIndex((value) => isArea(value) === area) })).filter((item) => item.column >= 0);
+      for (const { area, column } of areaColumns) {
+        let atas: number | null = null;
+        let itens: number | null = null;
+        for (let rr = actualHeader + 1; rr < Math.min(matrix.length, actualHeader + 8); rr += 1) {
+          atas ??= unitInteger(matrix[rr]?.[column], "ATAS");
+          itens ??= unitInteger(matrix[rr]?.[column], "ITENS");
+        }
+        if (atas !== null || itens !== null) {
+          const target = payload.previsoes[band][area];
+          target.atas = atas;
+          target.itens = itens;
+          const namesRow = matrix.slice(actualHeader + 1, Math.min(matrix.length, actualHeader + 12)).find((row) => {
+            const value = row[column];
+            const text = cellText(value);
+            return Boolean(text)
+              && unitInteger(value, "ATAS") === null
+              && unitInteger(value, "ITENS") === null
+              && !exact(text).includes("PREVISTAS")
+              && !exact(text).includes("INDIRETOS")
+              && !exact(text).includes("DIRETOS")
+              && !exact(text).includes("CAPEX");
+          });
+          const names = rawCellLines(namesRow?.[column]).filter((name) => !exact(name).includes("SEM COMPRADORES"));
+          target.buyers = names.map((name) => ({ name, atas: null, itens: null, prazoConclusao: null }));
+          found = true;
+        }
+      }
+    }
+  }
+  if (found) addFound(payload, "previsao-faixas");
+}
+
+/** GIRO 07 — quatro cartões mensais por área. */
+function extractGiro07Mensal(payload: DashboardSnapshotPayload, sheets: SnapshotSourceSheet[]) {
+  const sources = giroSheets(sheets, 7, "MENSAL");
+  if (!sources.length) return;
+  let found = false;
+  for (const sheet of sources) {
+    const matrix = sheet.matrix;
+    for (let r = 0; r < matrix.length; r += 1) {
+      const area = isArea(matrix[r]?.find((value) => isArea(value) !== null));
+      if (!area) continue;
+      const areaColumn = (matrix[r] ?? []).findIndex((value) => isArea(value) === area);
+      const countRow = matrix.slice(r + 1, Math.min(matrix.length, r + 10)).find((row) => row.some((value) => unitInteger(value, "ATAS") !== null));
+      const itemRow = matrix.slice(r + 1, Math.min(matrix.length, r + 12)).find((row) => row.some((value) => unitInteger(value, "ITENS") !== null));
+      const labelRow = matrix.slice(r + 1, Math.min(matrix.length, r + 16)).find((row) => row.filter((value) => monthlyLabel(value, payload.referenceDate)).length >= 3);
+      if (!countRow || !itemRow || !labelRow) continue;
+      const rows: SnapshotMonthlyForecastRow[] = [];
+      for (let c = 0; c < labelRow.length; c += 1) {
+        const parsedLabel = monthlyLabel(labelRow[c], payload.referenceDate);
+        if (!parsedLabel) continue;
+        rows.push({
+          label: parsedLabel.label,
+          month: parsedLabel.month,
+          year: parsedLabel.year,
+          atas: unitInteger(countRow[c], "ATAS"),
+          itens: unitInteger(itemRow[c], "ITENS"),
+        });
+      }
+      if (rows.length) {
+        payload.previsaoMeses[area] = { rows };
+        found = true;
+      }
+      void areaColumn;
+    }
+  }
+  if (found) addFound(payload, "previsao-meses");
 }
 
 /* ---------------------------- API pública ------------------------- */
@@ -2125,6 +2507,13 @@ export function extractSnapshotPayload(
   extractContratosFornecedores(payload, sheets);
   extractAtasConcluidas(payload, sheets);
   extractStatusAtas(payload, sheets);
+  // As abas GIRO consolidadas são a fonte principal quando presentes. O
+  // extrator antigo permanece acima como fallback para bases legadas.
+  extractGiro02Concluidas(payload, sheets);
+  extractGiro03Resumo(payload, sheets);
+  extractGiro04Evolucao(payload, sheets);
+  extractGiro06Faixas(payload, sheets);
+  extractGiro07Mensal(payload, sheets);
   // Os cartões visuais da aba de controle são a fonte mais específica do
   // resumo atual e devem prevalecer sobre o fallback calculado das linhas
   // operacionais quando a planilha não traz a tabela LEITURA DOS GRÁFICOS.
