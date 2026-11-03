@@ -24,7 +24,25 @@ GitHub Pages serve apenas arquivos estáticos. Os dados importados ficam no **In
 - limpar os dados do site ou trocar de navegador pode remover as bases locais;
 - documentos e bases não são enviados para um serviço externo pelo painel.
 
-Para uma base compartilhada e multiusuário, use a versão `main` original com Next.js, API e PostgreSQL em Vercel, Railway, Render ou outro ambiente com servidor. Esta branch prioriza a publicação direta no GitHub Pages.
+Para uma base compartilhada e multiusuário, esta versão agora possui um contrato preparado para um endpoint protegido pelo Microsoft Entra ID. A publicação segura deve ser feita no Azure Static Web Apps/Azure Functions (ou serviço corporativo equivalente), não como JSON público no GitHub Pages. O GitHub Pages continua funcionando no modo local enquanto `NEXT_PUBLIC_GIRO_API_URL` não estiver configurada.
+
+## Snapshot compartilhado protegido
+
+O extrator existente pode gerar um documento JSON consolidado sem publicar os arquivos Excel/CSV de origem:
+
+```bash
+npm run giro:json -- \
+  "GIRO 01 - Panorama.csv" \
+  "GIRO 02 - Concluídas.csv" \
+  "GIRO 03 - Resumo.csv" \
+  "GIRO 04 - Evolução.csv" \
+  "GIRO 05 - Renovações.csv" \
+  "GIRO 06 - Faixas.csv" \
+  "GIRO 07 - Mensal.csv" \
+  --ref=2026-10-28 --out=/tmp/giro-current.json
+```
+
+O documento segue o contrato `giro-snapshot` e contém o mesmo `DashboardSnapshotPayload` usado pelo panorama. Para ligar o frontend a uma API protegida, configure `NEXT_PUBLIC_GIRO_API_URL=/api/giro/current` no Azure. Sem essa variável, nada é buscado na rede: o sistema permanece usando IndexedDB local. O endpoint deve exigir autenticação Microsoft Entra ID; não coloque o JSON restrito em `public/` ou em um repositório/Pages público. O arquivo `staticwebapp.config.json` já deixa preparada a proteção das rotas no Azure Static Web Apps, incluindo o papel `giro-admin` para endpoints administrativos. A Function/API que fornecerá `/api/giro/current` deve ser ligada na etapa de infraestrutura Azure.
 
 ## Desenvolvimento local
 

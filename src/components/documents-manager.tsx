@@ -323,7 +323,7 @@ function NovoDocumento({ onCreated }: { onCreated: (d: DocItem) => void }) {
       <button
         type="submit"
         disabled={salvando}
-        className="min-h-11 w-full rounded-xl bg-navy-900 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:opacity-60"
+        className="btn-brand min-h-11 w-full rounded-xl text-[14px] font-semibold transition-colors disabled:opacity-60"
       >
         {salvando ? "Salvando…" : "Salvar documento"}
       </button>

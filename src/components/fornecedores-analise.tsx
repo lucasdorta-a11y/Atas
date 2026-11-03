@@ -32,7 +32,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           </p>
         </div>
         {total && (
-          <div className="rounded-lg bg-white/70 px-3 py-2 text-right">
+          <div className="rounded-lg bg-surface/85 px-3 py-2 text-right">
             <p className="tnum text-[15px] font-bold text-navy-900">{fmtInt(total.itens)} itens</p>
             <p className="tnum text-[11.5px] text-ink-soft">{fmtInt(total.atas)} atas no total</p>
           </div>
@@ -40,7 +40,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
       </div>
 
       <div className="grid gap-3 p-4 sm:grid-cols-3">
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Maior concentração</p>
           {primeiro ? (
             <>
@@ -54,7 +54,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           )}
         </article>
 
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Quatro principais</p>
           {topFour.length > 0 ? (
             <p className="mt-1 text-[13px] font-bold text-navy-950">{fmtNum(concentration)}% dos itens</p>
@@ -66,7 +66,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           </p>
         </article>
 
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Outros fornecedores</p>
           {outros ? (
             <>

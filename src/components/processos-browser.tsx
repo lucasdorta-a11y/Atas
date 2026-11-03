@@ -428,7 +428,7 @@ export function ProcessosBrowser() {
           <button
             type="button"
             onClick={carregar}
-            className="min-h-10 rounded-xl bg-navy-800 px-4 text-[13.5px] font-semibold text-white hover:bg-navy-700"
+            className="btn-brand min-h-10 rounded-xl px-4 text-[13.5px] font-semibold transition-colors"
           >
             Tentar novamente
           </button>

@@ -36,7 +36,7 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
         <div className="max-h-[460px] overflow-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-navy-950 text-[11px] font-bold uppercase text-white">
+              <tr className="tbl-head text-[11px] font-bold uppercase">
                 <th className="px-4 py-2">Ata</th>
                 <th className="px-3 py-2">Contrato</th>
                 <th className="px-3 py-2">Fornecedor</th>
@@ -45,9 +45,9 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
                 <th className="px-3 py-2">Área</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="tbl-body-themed divide-y divide-line">
               {novas.map((ata) => (
-                <tr key={ata.key} className="odd:bg-white even:bg-navy-50/40">
+                <tr key={ata.key}>
                   <td className="px-4 py-2 font-semibold uppercase text-navy-950">
                     <span className="text-ink-soft">ATA: </span>
                     {ata.descricao}

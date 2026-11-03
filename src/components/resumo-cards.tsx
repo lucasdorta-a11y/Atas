@@ -67,7 +67,7 @@ export function ResumoCards({
               key={card.titulo}
               className={clsx(
                 "flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
-                anterior ? "border-[#f0b4b4] bg-[#f8d7d7]" : "border-[#d0d0d0] bg-[#e4e4e4]",
+                anterior ? "resumo-card-prev" : "resumo-card-curr",
               )}
             >
               <p className="text-[11px] font-bold uppercase leading-tight text-navy-950">{card.titulo}</p>

@@ -6,6 +6,7 @@ import {
   formatStoredDataset,
   type ProcessRow,
 } from "@/lib/static-store";
+import { loadPublishedSnapshot } from "@/lib/published-snapshot";
 import {
   defaultPreviousSnapshot,
   type DashboardSnapshotPayload,
@@ -47,6 +48,8 @@ export type PanoramaBlockSource = "snapshot" | "registros" | "ausente";
 export interface StaticDashboardData {
   geradoEm: string;
   hasData: boolean;
+  /** Fonte do snapshot atualmente exibido no panorama. */
+  dataSource: "shared" | "local" | "none";
   currentSnapshot: DashboardSnapshotPayload | null;
   previousSnapshot: DashboardSnapshotPayload | null;
   blocos: Record<PanoramaBlock, PanoramaBlockSource>;
@@ -244,11 +247,31 @@ function buildAtasConcluidas(
 }
 
 export async function getStaticDashboardData(): Promise<StaticDashboardData> {
-  const [rows, allDatasets, snapshotDatasets] = await Promise.all([
+  const [rows, allDatasets, localSnapshotDatasets, publishedSnapshot] = await Promise.all([
     listActiveProcessRows(),
     listDatasets(),
     listSnapshotDatasets(),
+    loadPublishedSnapshot(),
   ]);
+
+  // Uma importação local continua sendo um override explícito deste navegador.
+  // Quando não existe snapshot local, todos os usuários autorizados podem ver
+  // a mesma leitura entregue pela API protegida do Azure/Entra.
+  const publishedDataset = publishedSnapshot ? {
+    id: -1,
+    fileName: publishedSnapshot.sourceFiles.join(", ") || "Snapshot compartilhado",
+    sheetName: "Snapshot publicado",
+    referenceDate: publishedSnapshot.referenceDate,
+    importedAt: publishedSnapshot.capturedAt,
+    status: "active" as const,
+    snapshot: publishedSnapshot,
+  } : null;
+  const snapshotDatasets = localSnapshotDatasets.length > 0
+    ? localSnapshotDatasets
+    : publishedDataset ? [publishedDataset] : [];
+  const dataSource: StaticDashboardData["dataSource"] = localSnapshotDatasets.length > 0
+    ? "local"
+    : publishedSnapshot ? "shared" : "none";
 
   const currentSnapshot = snapshotDatasets[0]?.snapshot ?? null;
   // Antes de uma segunda importação, a referência fornecida para 13/10 mantém
@@ -528,6 +551,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   return {
     geradoEm: new Date().toISOString(),
     hasData,
+    dataSource,
     currentSnapshot,
     previousSnapshot,
     blocos,
@@ -551,8 +575,9 @@ export async function getStaticBaseSummary() {
   const references = active.map((d) => d.referenceDate).filter(Boolean) as string[];
   return {
     hasData: data.hasData,
+    dataSource: data.dataSource,
     referenceDate: references.sort().reverse()[0] ?? data.currentSnapshot?.referenceDate ?? null,
-    activeCount: active.length,
+    activeCount: Math.max(active.length, data.dataSource === "shared" ? 1 : 0),
     processCount: data.kpis.processos,
   };
 }

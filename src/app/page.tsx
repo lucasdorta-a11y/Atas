@@ -96,7 +96,7 @@ export default function PanoramaPage() {
               type="button"
               onClick={carregar}
               disabled={atualizando}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
               aria-label="Atualizar e reprocessar o panorama com os dados locais"
             >
               <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
@@ -216,7 +216,7 @@ export default function PanoramaPage() {
             type="button"
             onClick={carregar}
             disabled={atualizando}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
             aria-label="Atualizar e reprocessar o panorama com os dados locais"
           >
             <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
@@ -237,12 +237,12 @@ export default function PanoramaPage() {
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2" aria-label="Bases da comparação semanal">
-          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+          <div className="rounded-xl border border-line bg-surface p-4 text-[12.5px]">
             <h3 className="font-semibold text-navy-900">Base atual</h3>
             <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(currentSnapshot?.referenceDate)}</p>
             <p className="mt-1 break-words text-ink-soft">Arquivo: {currentSnapshot ? (data.snapshotHistory[0]?.fileName || "Nome do arquivo não disponível") : "Sem snapshot importado; indicadores disponíveis vêm dos registros operacionais."}</p>
           </div>
-          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+          <div className="rounded-xl border border-line bg-surface p-4 text-[12.5px]">
             <h3 className="font-semibold text-navy-900">Base anterior</h3>
             <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(previousSnapshot?.referenceDate)}</p>
             <p className="mt-1 break-words text-ink-soft">Arquivo: {data.snapshotHistory[1] ? (data.snapshotHistory[1].fileName || "Nome do arquivo não disponível") : previousSnapshot ? "Não se aplica — referência fixa, sem arquivo importado" : "Sem base anterior"}</p>
@@ -307,19 +307,19 @@ export default function PanoramaPage() {
             ) : (
             <table className="w-full flex-1 text-left">
               <thead>
-                <tr className="bg-navy-950 text-white font-bold">
+                <tr className="tbl-head font-bold">
                   <th className="px-5 py-3">ÁREAS</th>
                   <th className="px-5 py-3 text-right">VALOR CONTRATADO R$</th>
                 </tr>
               </thead>
-              <tbody className="h-full divide-y divide-white border-b-4 border-white">
+              <tbody className="h-full divide-y divide-line">
                 {porAreaVisual.map((a) => (
-                  <tr key={a.area} className={clsx("font-bold text-white", areaStyle(a.area).band)}>
+                  <tr key={a.area} className={clsx("font-bold", areaStyle(a.area).band)}>
                     <td className="px-5 py-3 uppercase">{a.area}</td>
                     <td className="px-5 py-3 text-right">{fmtCurrency(a.valor)}</td>
                   </tr>
                 ))}
-                <tr className="bg-[#2A4D14] text-white font-bold">
+                <tr className="tbl-total-row font-bold">
                   <td className="px-5 py-3">TOTAL</td>
                   <td className="px-5 py-3 text-right">{fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.valor, 0))}</td>
                 </tr>
@@ -334,35 +334,35 @@ export default function PanoramaPage() {
             ) : (
             <table className="w-full flex-1 text-left">
               <thead>
-                <tr className="bg-navy-950 text-white font-bold text-[11px] text-center">
+                <tr className="tbl-head font-bold text-[11px] text-center">
                   <th className="px-2 py-3">VALOR CONTRATADO R$</th>
-                  <th className="px-2 py-3 border-l border-white/20">SAVING HISTÓRICO R$ / %</th>
-                  <th className="px-2 py-3 border-l border-white/20">SAVING SOB PROPOSTA R$ / %</th>
+                  <th className="px-2 py-3 border-l border-line">SAVING HISTÓRICO R$ / %</th>
+                  <th className="px-2 py-3 border-l border-line">SAVING SOB PROPOSTA R$ / %</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white border-b-4 border-white text-center font-medium bg-[#E6E6E6]">
+              <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
                 {porAreaVisual.map((a: any) => (
                   <tr key={a.area}>
                     <td className="px-2 py-3">{fmtCurrency(a.valorSaving ?? a.valor)}</td>
-                    <td className="px-2 py-3 border-l border-white">
+                    <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_hist)}<br/>
-                      <span className="text-[11px] font-normal">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
                     </td>
-                    <td className="px-2 py-3 border-l border-white">
+                    <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_prop)}<br/>
-                      <span className="text-[11px] font-normal">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
                     </td>
                   </tr>
                 ))}
-                <tr className="bg-[#b3d482] font-bold">
+                <tr className="tbl-total-row font-bold border-t border-line">
                   <td className="px-2 py-3">{fmtCurrency(savingTotal?.valorSaving ?? (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))}</td>
-                  <td className="px-2 py-3 border-l border-white">
+                  <td className="px-2 py-3 border-l border-line">
                     {fmtCurrency(savingTotal?.saving_hist ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
                     <span className="text-[11px] font-normal">{savingTotal?.reducao_hist_pct !== null && savingTotal?.reducao_hist_pct !== undefined
                       ? `${fmtNum(savingTotal.reducao_hist_pct)}%`
                       : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
                   </td>
-                  <td className="px-2 py-3 border-l border-white">
+                  <td className="px-2 py-3 border-l border-line">
                     {fmtCurrency(savingTotal?.saving_prop ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
                     <span className="text-[11px] font-normal">{savingTotal?.reducao_prop_pct !== null && savingTotal?.reducao_prop_pct !== undefined
                       ? `${fmtNum(savingTotal.reducao_prop_pct)}%`
@@ -391,18 +391,18 @@ export default function PanoramaPage() {
               
               return (
                 <div key={area} className="card overflow-hidden">
-                  <div className={clsx("text-center py-3 text-white", areaStyle(area).band)}>
+                  <div className={clsx("text-center py-3", areaStyle(area).band)}>
                     <div className="font-bold">{area}</div>
                     <div className="text-[13px]">{fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))} ATAS (TOP 5) — {fmtNum(percent)}% DO TOTAL</div>
-                    <div className="text-[10px] text-white/75">Área: {fmtInt(areaStats.processos)} ATAS</div>
+                    <div className="text-[10px] opacity-80">Área: {fmtInt(areaStats.processos)} ATAS</div>
                   </div>
-                  <div className="p-4 bg-neutral-100">
+                  <div className="p-4 bg-surface">
                     <div className="text-center font-bold text-[12px] uppercase text-navy-900 mb-3 underline underline-offset-4">TOP 5 COMPRADORES · ATAS SOMADAS: {fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))}</div>
-                    <ul className="space-y-1 text-[11px]">
+                    <ul className="space-y-1.5 text-[11px] divide-y divide-line/60">
                       {tCompradores.map(c => (
-                        <li key={c.responsavel} className="flex justify-between items-center text-navy-800">
-                          <span className="font-bold text-navy-500 uppercase truncate pr-2">{c.responsavel}</span>
-                          <span className="shrink-0 text-navy-950 font-medium">{c.itens} ITENS | {c.atas} ATAS</span>
+                        <li key={c.responsavel} className="flex justify-between items-center pt-1.5 first:pt-0 text-navy-800">
+                          <span className="font-bold text-navy-700 uppercase truncate pr-2">{c.responsavel}</span>
+                          <span className="shrink-0 text-navy-950 font-semibold">{c.itens} ITENS | {c.atas} ATAS</span>
                         </li>
                       ))}
                     </ul>
@@ -420,10 +420,10 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="fornecedores" referencia={referencia} />
           ) : (
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
-            <h3 className="bg-[#111c75] px-3 py-3 text-center font-bold text-white">FORNECEDORES GERAL</h3>
+            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">FORNECEDORES GERAL</h3>
             <table className="w-full min-w-[720px] text-left">
               <thead>
-                <tr className="bg-navy-950 text-white text-center font-bold">
+                <tr className="tbl-head text-center font-bold">
                   <th className="px-2 py-2">FORNECEDOR</th>
                   <th className="px-2 py-2">QTD ATAS</th>
                   <th className="px-2 py-2">QTD ITENS</th>
@@ -431,19 +431,19 @@ export default function PanoramaPage() {
                   <th className="px-2 py-2">ANÁLISE</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-center font-medium">
+              <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
                 {(fornecedores as any[]).length === 0 ? (
                   <tr><td colSpan={5} className="px-3 py-5 text-ink-soft">Nenhuma linha específica reconhecida.</td></tr>
                 ) : (fornecedores as any[]).map((f: any, index: number) => {
                   const analysis = f.analise || (f.concentracao >= 15 ? "Alta Concentração" : f.concentracao >= 5 ? "Volume Médio" : "Pulverizado");
-                  const analysisTone = analysis.toUpperCase().includes("ALTA") ? "bg-[#f3baba]" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "bg-[#fdf0a6]" : "bg-[#f2e6b1]";
+                  const analysisTone = analysis.toUpperCase().includes("ALTA") ? "tone-alta" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "tone-media" : "tone-pulv";
                   return (
                     <tr key={`${f.fornecedor}-${index}`}>
-                      <td className="px-2 py-2 text-left uppercase text-navy-950">{f.fornecedor}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.atas)}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.itens)}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtNum(f.concentracao)}%</td>
-                      <td className={clsx("px-2 py-2 border-l border-white text-left", analysisTone)}>{analysis}</td>
+                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">{f.fornecedor}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtInt(f.atas)}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtInt(f.itens)}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtNum(f.concentracao)}%</td>
+                      <td className={clsx("px-2 py-2 border-l border-line text-left font-semibold", analysisTone)}>{analysis}</td>
                     </tr>
                   );
                 })}
@@ -464,28 +464,28 @@ export default function PanoramaPage() {
         <div className="card overflow-x-auto text-[12px]">
           <table className="w-full text-center">
             <thead>
-              <tr className="bg-navy-950 text-white font-bold leading-tight">
-                <th className="px-3 py-3 w-32 border-r border-white/20">ÁREAS</th>
-                <th className="px-3 py-3 border-r border-white/20">ATAS | ITENS<br/>Concluídas<br/>(Válidas)</th>
-                <th className="px-3 py-3 border-r border-white/20">EM<br/>ANDAMENTO</th>
-                <th className="px-3 py-3 border-r border-white/20">ITENS COM<br/>SALDO<br/>(Válidos)</th>
-                <th className="px-3 py-3 border-r border-white/20">ITENS SEM<br/>SALDO<br/>(Válidos)</th>
-                <th className="px-3 py-3 border-r border-white/20">VENCIDAS</th>
+              <tr className="tbl-head font-bold leading-tight">
+                <th className="px-3 py-3 w-32 border-r border-line">ÁREAS</th>
+                <th className="px-3 py-3 border-r border-line">ATAS | ITENS<br/>Concluídas<br/>(Válidas)</th>
+                <th className="px-3 py-3 border-r border-line">EM<br/>ANDAMENTO</th>
+                <th className="px-3 py-3 border-r border-line">ITENS COM<br/>SALDO<br/>(Válidos)</th>
+                <th className="px-3 py-3 border-r border-line">ITENS SEM<br/>SALDO<br/>(Válidos)</th>
+                <th className="px-3 py-3 border-r border-line">VENCIDAS</th>
                 <th className="px-3 py-3">A VENCER</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-navy-900 font-medium">
+            <tbody className="tbl-body-themed divide-y divide-line font-medium">
               {evolucaoVisual.map((e: any) => (
                 <tr key={e.area}>
-                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", areaStyle(e.area).band)}>
+                  <td className={clsx("px-3 py-3 font-bold uppercase", areaStyle(e.area).band)}>
                     {e.area}
                   </td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.andamento_atas)} ATAS<br/>{fmtInt(e.andamento_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.saldo_itens)}</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.semsaldo_itens)}</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.vencidas_atas)} ATAS<br/>{fmtInt(e.vencidas_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.a_vencer_atas)} ATAS<br/>{fmtInt(e.a_vencer_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.andamento_atas)} ATAS<br/>{fmtInt(e.andamento_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.saldo_itens)}</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.semsaldo_itens)}</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.vencidas_atas)} ATAS<br/>{fmtInt(e.vencidas_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.a_vencer_atas)} ATAS<br/>{fmtInt(e.a_vencer_itens)} ITENS</td>
                 </tr>
               ))}
             </tbody>
@@ -586,15 +586,15 @@ function formatShortDate(value: string | null | undefined): string {
   return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
 }
 
-function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
+function FaixaPrevisao({ title, titleClass = "band-faixa-ok", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
   return (
     <div>
-      <div className={clsx("border border-line py-2 text-center font-bold mb-4", titleClass)}>{title}</div>
+      <div className={clsx("rounded-lg border py-2 text-center font-bold mb-4", titleClass)}>{title}</div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {areaStats.map(s => (
           <div key={s.area}>
-            <div className={clsx("py-1 text-center text-white text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
-            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-[#0d952e]">
+            <div className={clsx("rounded-md py-1 text-center text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
+            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-ok-700">
               <div className="text-[18px] font-bold">{String(s.atas).padStart(2, '0')} ATAS</div>
               <div className="text-[18px] font-bold">{String(s.itens).padStart(2, '0')} ITENS</div>
             </div>
@@ -617,7 +617,7 @@ function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaS
 }
 
 function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; buckets: Array<{ label: string; atas: number; itens: number }> }> }) {
-  const bucketColors = ["bg-[#e2e2e2]", "bg-[#f9dfa8]", "bg-[#edf8df]", "bg-[#f7e7e7]"];
+  const bucketColors = ["bucket-0", "bucket-1", "bucket-2", "bucket-3"];
   return (
     <section className="space-y-6 border-t border-line pt-2" aria-labelledby="previsao-por-mes">
       <h3 id="previsao-por-mes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">
@@ -626,13 +626,13 @@ function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; bu
       <div className="space-y-7">
         {areas.map(({ area, bg, buckets }) => (
           <div key={area}>
-            <div className={clsx("mb-3 border border-navy-900 py-2 text-center text-[16px] font-bold text-white", bg)}>{area}</div>
+            <div className={clsx("mb-3 rounded-md border border-line py-2 text-center text-[16px] font-bold", bg)}>{area}</div>
             <div className="grid grid-cols-4 gap-2 sm:gap-3">
               {buckets.map((bucket, index) => (
                 <div key={`${area}-${bucket.label}`} className="relative min-w-0">
-                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index])}>
-                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.atas).padStart(2, "0")} ATAS</span>
-                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.itens).padStart(2, "0")} ITENS</span>
+                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center rounded-lg border border-line px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index % 4])}>
+                    <span className="tnum text-[13px] font-semibold">{String(bucket.atas).padStart(2, "0")} ATAS</span>
+                    <span className="tnum text-[13px] font-semibold">{String(bucket.itens).padStart(2, "0")} ITENS</span>
                   </div>
                   <div className="mt-2 flex min-h-7 items-start justify-center text-center text-[11px] font-sans leading-tight tracking-normal text-ink-soft">
                     <span>{bucket.label}</span>

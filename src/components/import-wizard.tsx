@@ -377,7 +377,7 @@ export function ImportWizard() {
                   aria-current={estado === "atual" ? "step" : undefined}
                   className={clsx(
                     "flex items-center gap-2 rounded-full px-3 py-1.5 text-[12.5px] font-semibold",
-                    estado === "atual" && "bg-navy-900 text-white",
+                    estado === "atual" && "btn-brand",
                     estado === "concluido" && "bg-ok-100 text-ok-700",
                     estado === "futuro" && "text-neutral-500",
                   )}
@@ -492,7 +492,7 @@ export function ImportWizard() {
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+                  className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors"
                 >
                   Continuar
                   <ArrowRight size={16} aria-hidden="true" />
@@ -822,7 +822,7 @@ export function ImportWizard() {
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5">
               <Link
                 href="/"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+                className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors"
               >
                 Ver panorama atualizado
                 <ArrowRight size={16} aria-hidden="true" />
@@ -878,7 +878,7 @@ function WizardNav({
         type="button"
         onClick={onNext}
         disabled={nextDisabled}
-        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
       >
         {nextBusy && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
         {nextLabel}

@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  /* Azul-marinho institucional */
-  --color-navy-950: #07182b;
-  --color-navy-900: #0c2338;
-  --color-navy-850: #102a42;
-  --color-navy-800: #143550;
-  --color-navy-700: #1b4568;
-  --color-navy-600: #235781;
-  --color-navy-500: #2f6ba0;
-  --color-navy-400: #5b8fbc;
-  --color-navy-300: #97bcd9;
-  --color-navy-200: #cbdeee;
-  --color-navy-100: #e5eff7;
+  /* Azul institucional (inspirado no Hub SharePoint Governança de Compras) */
+  --color-navy-950: #063963;
+  --color-navy-900: #064678;
+  --color-navy-850: #0b5389;
+  --color-navy-800: #125d96;
+  --color-navy-700: #1676ad;
+  --color-navy-600: #2384bc;
+  --color-navy-500: #2f8ec4;
+  --color-navy-400: #5ba6d3;
+  --color-navy-300: #93c4e3;
+  --color-navy-200: #c8dceb;
+  --color-navy-100: #e6f0f7;
   --color-navy-50: #f3f8fc;
 
   /* Laranja — cor de ação/destaque */
@@ -25,7 +25,7 @@
   --color-accent-100: #fdeadd;
   --color-accent-50: #fff6ef;
 
-  /* Cores das áreas — a mesma codificação visual institucional do painel. */
+  /* Cores das áreas */
   --color-indiretos-700: #075958;
   --color-indiretos-600: #0a6e6d;
   --color-indiretos-500: #0b7c7b;
@@ -42,7 +42,7 @@
   --color-capex-500: #fca500;
   --color-capex-100: #fff0d1;
 
-  /* Semânticas (tons escuros p/ texto AA, tons claros p/ fundo) */
+  /* Semânticas */
   --color-danger-700: #b42318;
   --color-danger-600: #d92d20;
   --color-danger-100: #fee4e2;
@@ -54,22 +54,121 @@
   --color-ok-100: #d1fadf;
   --color-neutral-700: #475467;
   --color-neutral-500: #667085;
-  --color-neutral-100: #eaecf0;
+  --color-neutral-100: #edf4f8;
 
-  --color-canvas: #f4f6f8;
+  --color-canvas: #f3f7fa;
   --color-surface: #ffffff;
-  --color-ink: #101828;
-  --color-ink-soft: #475467;
-  --color-line: #e3e7ec;
+  --color-ink: #1e293b;
+  --color-ink-soft: #4e5e6e;
+  --color-line: #d9e5ec;
 
-  /* Fontes locais/sistema: o site estático não depende de CDN nem de rede para renderizar. */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* A tipografia de títulos não usa Arial Narrow: em alguns navegadores ela
-     comprime/estica os caracteres e prejudica a leitura do panorama. */
   --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-pop: 0 12px 32px -8px rgba(7, 24, 43, 0.18);
+  --shadow-card: 0 1px 3px rgba(6, 70, 120, 0.06);
+  --shadow-pop: 0 12px 32px -8px rgba(6, 70, 120, 0.16);
+}
+
+/* ---------- Tema Claro (Padrão) com bloqueio contra inversão automática do Chrome ---------- */
+:root,
+html[data-theme="light"] {
+  color-scheme: only light;
+  --tbl-th-bg: #e6f0f7;
+  --tbl-th-ink: #064678;
+  --tbl-th-border: #c8dceb;
+  --tbl-subhead-bg: #dcebf5;
+  --tbl-subhead-ink: #064678;
+  --tbl-row-bg: #ffffff;
+  --tbl-row-alt: #f7fafd;
+  --tbl-total-bg: #e6f4ea;
+  --tbl-total-ink: #14532d;
+  --card-prev-bg: #fff2f1;
+  --card-prev-border: #f5c2c0;
+  --card-curr-bg: #ffffff;
+  --card-curr-border: #d4e2ec;
+  --band-green-bg: #e8f5e9;
+  --band-green-ink: #14532d;
+  --bucket-oct: #eef3f7;
+  --bucket-nov: #fff4db;
+  --bucket-dec: #ebf7ee;
+  --bucket-exp: #fdeceb;
+  --tone-high: #fde2e1;
+  --tone-med: #fff6cc;
+  --tone-low: #f7eed2;
+}
+
+/* ---------- Tema Escuro (Alternável pelo botão no topo) ---------- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #0b1220;
+  --color-surface: #111c2e;
+  --color-ink: #f1f5f9;
+  --color-ink-soft: #94a3b8;
+  --color-line: #22324a;
+
+  --color-navy-950: #f8fafc;
+  --color-navy-900: #e2e8f0;
+  --color-navy-850: #cbd5e1;
+  --color-navy-800: #cbd5e1;
+  --color-navy-700: #93c5fd;
+  --color-navy-600: #60a5fa;
+  --color-navy-500: #60a5fa;
+  --color-navy-200: #293d5c;
+  --color-navy-100: #182740;
+  --color-navy-50: #152238;
+
+  --color-neutral-700: #cbd5e1;
+  --color-neutral-600: #b8cae0;
+  --color-neutral-500: #94a3b8;
+  --color-neutral-400: #7a8fa8;
+  --color-neutral-200: #253856;
+  --color-neutral-100: #152238;
+  --color-neutral-50: #111c2e;
+
+  --color-accent-700: #fbbf24;
+  --color-accent-200: #5c3a1a;
+  --color-accent-100: #382312;
+  --color-accent-50: #22170f;
+
+  --color-indiretos-700: #5eead4;
+  --color-indiretos-100: #113235;
+  --color-diretos-700: #93c5fd;
+  --color-diretos-100: #142a47;
+  --color-capex-700: #fcd34d;
+  --color-capex-100: #382810;
+
+  --color-danger-700: #f87171;
+  --color-danger-100: #3b181e;
+  --color-warn-700: #fbbf24;
+  --color-warn-100: #382810;
+  --color-ok-700: #4ade80;
+  --color-ok-100: #123125;
+
+  --tbl-th-bg: #182740;
+  --tbl-th-ink: #e2e8f0;
+  --tbl-th-border: #293d5c;
+  --tbl-subhead-bg: #1e3150;
+  --tbl-subhead-ink: #93c5fd;
+  --tbl-row-bg: #111c2e;
+  --tbl-row-alt: #152238;
+  --tbl-total-bg: #163626;
+  --tbl-total-ink: #bbf7d0;
+  --card-prev-bg: #2a161b;
+  --card-prev-border: #5c2831;
+  --card-curr-bg: #152238;
+  --card-curr-border: #293d5c;
+  --band-green-bg: #163626;
+  --band-green-ink: #bbf7d0;
+  --bucket-oct: #1b283d;
+  --bucket-nov: #362a14;
+  --bucket-dec: #153224;
+  --bucket-exp: #381a1f;
+  --tone-high: #471d22;
+  --tone-med: #3d3112;
+  --tone-low: #362c16;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
 }
 
 html {
@@ -82,6 +181,7 @@ body {
   color: var(--color-ink);
   font-feature-settings: "cv11", "ss01";
   text-rendering: optimizeLegibility;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .font-display {
@@ -91,7 +191,7 @@ body {
 
 ::selection {
   background: var(--color-accent-200);
-  color: var(--color-navy-950);
+  color: #063963;
 }
 
 /* ---------- Foco visível (WCAG 2.2 AA) ---------- */
@@ -110,7 +210,7 @@ body {
   top: -100px;
   left: 16px;
   z-index: 100;
-  background: var(--color-navy-900);
+  background: #064678;
   color: #fff;
   padding: 10px 18px;
   border-radius: 10px;
@@ -124,24 +224,96 @@ body {
   outline-color: var(--color-accent-400);
 }
 
-/* ---------- Tabelas ---------- */
+/* ---------- Tabelas e Superfícies Temáticas ---------- */
 .tnum {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
 
+.tbl-head {
+  background-color: var(--tbl-th-bg);
+  color: var(--tbl-th-ink);
+  border-bottom: 1px solid var(--tbl-th-border);
+}
+
+.tbl-subhead {
+  background-color: var(--tbl-subhead-bg);
+  color: var(--tbl-subhead-ink);
+  border-bottom: 1px solid var(--tbl-th-border);
+}
+
+.tbl-body-themed {
+  background-color: var(--tbl-row-bg);
+  color: var(--color-ink);
+}
+.tbl-body-themed > tr:nth-child(even) {
+  background-color: var(--tbl-row-alt);
+}
+
+.tbl-total-row {
+  background-color: var(--tbl-total-bg);
+  color: var(--tbl-total-ink);
+}
+
+.resumo-card-prev {
+  background-color: var(--card-prev-bg);
+  border-color: var(--card-prev-border);
+}
+
+.resumo-card-curr {
+  background-color: var(--card-curr-bg);
+  border-color: var(--card-curr-border);
+  box-shadow: var(--shadow-card);
+}
+
+.band-faixa-ok {
+  background-color: var(--band-green-bg);
+  color: var(--band-green-ink);
+  border-color: var(--color-line);
+}
+
+.bucket-0 { background-color: var(--bucket-oct); color: var(--color-ink); }
+.bucket-1 { background-color: var(--bucket-nov); color: var(--color-ink); }
+.bucket-2 { background-color: var(--bucket-dec); color: var(--color-ink); }
+.bucket-3 { background-color: var(--bucket-exp); color: var(--color-ink); }
+
+.tone-alta { background-color: var(--tone-high); color: var(--color-ink); }
+.tone-media { background-color: var(--tone-med); color: var(--color-ink); }
+.tone-pulv { background-color: var(--tone-low); color: var(--color-ink); }
+
+.btn-brand {
+  background-color: #064678;
+  color: #ffffff;
+}
+.btn-brand:hover {
+  background-color: #1676ad;
+}
+html[data-theme="dark"] .btn-brand {
+  background-color: #1676ad;
+  color: #ffffff;
+}
+html[data-theme="dark"] .btn-brand:hover {
+  background-color: #258bc4;
+}
+
 /* Barras de rolagem discretas */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #c3ccd6 transparent;
+  scrollbar-color: #b7c8d6 transparent;
+}
+html[data-theme="dark"] * {
+  scrollbar-color: #334868 transparent;
 }
 *::-webkit-scrollbar {
   height: 8px;
   width: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #c3ccd6;
+  background: #b7c8d6;
   border-radius: 8px;
+}
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: #334868;
 }
 
 /* ---------- Dialog ---------- */
@@ -158,52 +330,45 @@ dialog::backdrop {
   box-shadow: var(--shadow-card);
 }
 
-.overline {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-ink-soft);
-}
-
-.text-balance {
-  text-wrap: balance;
-}
-
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Animação discreta de entrada */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .anim-fade-up {
-  animation: fade-up 0.35s ease-out both;
+  animation: fadeUp 0.22s ease-out;
 }
-
-@keyframes shimmer {
-  0% { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-.skeleton {
-  background: linear-gradient(90deg, #eef1f4 25%, #f7f9fb 40%, #eef1f4 55%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s infinite linear;
-  border-radius: 8px;
-}
-
-/* ---------- Movimento reduzido ---------- */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+  .anim-fade-up {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
   }
 }
 
-/* ---------- Impressão ---------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-line) 50%, var(--color-neutral-100) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @media print {
-  [data-no-print] { display: none !important; }
-  body { background: #fff; }
-  main { padding: 0 !important; margin: 0 !important; }
-  .card { border: 1px solid #d0d5dd; box-shadow: none; break-inside: avoid; }
-  a { color: #101828; text-decoration: none; }
+  [data-no-print] {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
 }

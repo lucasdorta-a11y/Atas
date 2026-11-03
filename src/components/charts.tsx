@@ -97,7 +97,7 @@ export function Donut({ segments, total }: { segments: Segment[]; total: number 
   return (
     <div className="mt-3 flex flex-col items-center gap-5 sm:flex-row sm:gap-8">
       <svg viewBox="0 0 140 140" className="h-[150px] w-[150px] shrink-0" aria-hidden="true">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#eef1f4" strokeWidth="20" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-line)" strokeWidth="20" />
         {arcs}
         <text x="70" y="66" textAnchor="middle" className="fill-navy-950" fontSize="24" fontWeight="700" fontFamily="var(--font-display)">
           {fmtInt(total)}
@@ -151,7 +151,7 @@ export function HBars({
               {maxLabel && <span className="sr-only"> {maxLabel}</span>}
             </span>
           </div>
-          <div className="h-[9px] overflow-hidden rounded-full bg-[#eef1f4]" aria-hidden="true">
+          <div className="h-[9px] overflow-hidden rounded-full bg-navy-100" aria-hidden="true">
             <div
               className="h-full rounded-full transition-[width] duration-500"
               style={{ width: `${(item.value / max) * 100}%`, backgroundColor: barColor(i, item) }}
@@ -182,7 +182,7 @@ export function StackedRow({
         <span className="font-medium text-ink">{label}</span>
         <span className="tnum font-semibold text-navy-950">{fmtInt(total)}</span>
       </div>
-      <div className="flex h-[10px] overflow-hidden rounded-full bg-[#eef1f4]" aria-hidden="true">
+      <div className="flex h-[10px] overflow-hidden rounded-full bg-navy-100" aria-hidden="true">
         {parts
           .filter((p) => p.value > 0)
           .map((p) => (

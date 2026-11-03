@@ -6,6 +6,7 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 
 ## Sumário
 
+- [.env.example](#envexample)
 - [.github/workflows/deploy.yml](#githubworkflowsdeployyml)
 - [.gitignore](#gitignore)
 - [README.md](#readmemd)
@@ -23,6 +24,7 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [scripts/dev/register.mjs](#scriptsdevregistermjs)
 - [scripts/dev/stubs/static-store.mts](#scriptsdevstubsstaticstoremts)
 - [scripts/gerar-codigo-fonte.mjs](#scriptsgerarcodigofontemjs)
+- [scripts/gerar-giro-json.mts](#scriptsgerargirojsonmts)
 - [src/app/documentos/page.tsx](#srcappdocumentospagetsx)
 - [src/app/globals.css](#srcappglobalscss)
 - [src/app/importar/page.tsx](#srcappimportarpagetsx)
@@ -46,11 +48,21 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [src/lib/domain.ts](#srclibdomaints)
 - [src/lib/format.ts](#srclibformatts)
 - [src/lib/mapping.ts](#srclibmappingts)
+- [src/lib/published-snapshot.ts](#srclibpublishedsnapshotts)
 - [src/lib/static-dashboard.ts](#srclibstaticdashboardts)
 - [src/lib/static-store.ts](#srclibstaticstorets)
+- [staticwebapp.config.json](#staticwebappconfigjson)
 - [tsconfig.json](#tsconfigjson)
 
 ---
+
+## `.env.example`
+
+````text
+# Endpoint protegido pelo Microsoft Entra ID/Azure Static Web Apps.
+# Sem esta variável, o site usa apenas IndexedDB/local.
+NEXT_PUBLIC_GIRO_API_URL=/api/giro/current
+````
 
 ## `.github/workflows/deploy.yml`
 
@@ -192,7 +204,25 @@ GitHub Pages serve apenas arquivos estáticos. Os dados importados ficam no **In
 - limpar os dados do site ou trocar de navegador pode remover as bases locais;
 - documentos e bases não são enviados para um serviço externo pelo painel.
 
-Para uma base compartilhada e multiusuário, use a versão `main` original com Next.js, API e PostgreSQL em Vercel, Railway, Render ou outro ambiente com servidor. Esta branch prioriza a publicação direta no GitHub Pages.
+Para uma base compartilhada e multiusuário, esta versão agora possui um contrato preparado para um endpoint protegido pelo Microsoft Entra ID. A publicação segura deve ser feita no Azure Static Web Apps/Azure Functions (ou serviço corporativo equivalente), não como JSON público no GitHub Pages. O GitHub Pages continua funcionando no modo local enquanto `NEXT_PUBLIC_GIRO_API_URL` não estiver configurada.
+
+## Snapshot compartilhado protegido
+
+O extrator existente pode gerar um documento JSON consolidado sem publicar os arquivos Excel/CSV de origem:
+
+```bash
+npm run giro:json -- \
+  "GIRO 01 - Panorama.csv" \
+  "GIRO 02 - Concluídas.csv" \
+  "GIRO 03 - Resumo.csv" \
+  "GIRO 04 - Evolução.csv" \
+  "GIRO 05 - Renovações.csv" \
+  "GIRO 06 - Faixas.csv" \
+  "GIRO 07 - Mensal.csv" \
+  --ref=2026-10-28 --out=/tmp/giro-current.json
+```
+
+O documento segue o contrato `giro-snapshot` e contém o mesmo `DashboardSnapshotPayload` usado pelo panorama. Para ligar o frontend a uma API protegida, configure `NEXT_PUBLIC_GIRO_API_URL=/api/giro/current` no Azure. Sem essa variável, nada é buscado na rede: o sistema permanece usando IndexedDB local. O endpoint deve exigir autenticação Microsoft Entra ID; não coloque o JSON restrito em `public/` ou em um repositório/Pages público. O arquivo `staticwebapp.config.json` já deixa preparada a proteção das rotas no Azure Static Web Apps, incluindo o papel `giro-admin` para endpoints administrativos. A Function/API que fornecerá `/api/giro/current` deve ser ligada na etapa de infraestrutura Azure.
 
 ## Desenvolvimento local
 
@@ -343,7 +373,7 @@ export default defineConfig([
 ````typescript
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
-import "./.next/types/routes.d.ts";
+import "./.next/dev/types/routes.d.ts";
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -7229,7 +7259,8 @@ export default nextConfig;
     "docs:fonte": "node scripts/gerar-codigo-fonte.mjs",
     "amostras": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/gerar-amostras.mts",
     "extrair": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/extrair-snapshot.mts",
-    "panorama:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/panorama-dry-run.mts"
+    "panorama:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/panorama-dry-run.mts",
+    "giro:json": "node --no-warnings --import ./scripts/dev/register.mjs scripts/gerar-giro-json.mts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -7835,6 +7866,110 @@ await writeFile(output, `${lines.join("\n").trimEnd()}\n`, "utf8");
 console.log(`Código-fonte gerado em ${path.relative(root, output)} (${files.length} arquivos).`);
 ````
 
+## `scripts/gerar-giro-json.mts`
+
+````typescript
+/**
+ * Gera o snapshot compartilhado do Giro a partir das abas/arquivos exportados.
+ *
+ * Uso:
+ *   npm run giro:json -- \
+ *     "GIRO 01 - Panorama.csv" ... "GIRO 07 - Mensal.csv" \
+ *     --ref=2026-10-28 --out=/tmp/giro-current.json
+ *
+ * O arquivo de saída contém somente o DashboardSnapshotPayload consolidado.
+ * Não publique os arquivos de origem quando eles tiverem dados restritos.
+ */
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import * as XLSX from "xlsx";
+import {
+  extractSnapshotPayload,
+  hasSnapshotPayloadMeaningfulData,
+  type SnapshotSourceSheet,
+} from "@/lib/dashboard-snapshot";
+import type { PublishedSnapshotDocument } from "@/lib/published-snapshot";
+
+const args = process.argv.slice(2);
+const files = args.filter((arg) => !arg.startsWith("--"));
+const referenceDate = args.find((arg) => arg.startsWith("--ref="))?.slice(6) ?? null;
+const outputArg = args.find((arg) => arg.startsWith("--out="))?.slice(6);
+
+if (files.length === 0 || !outputArg) {
+  console.error("Uso: npm run giro:json -- <arquivo.csv|xlsx> [...] --ref=AAAA-MM-DD --out=/caminho/giro-current.json");
+  process.exit(1);
+}
+
+function decodeCsv(buffer: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder("windows-1252").decode(buffer);
+  }
+}
+
+function delimiter(text: string): string {
+  const sample = text.split(/\r\n|\r|\n/).slice(0, 5).join("\n");
+  return [";", ",", "\t", "|"]
+    .sort((a, b) => (sample.split(b).length - 1) - (sample.split(a).length - 1))[0];
+}
+
+function readSheets(inputFiles: string[]): SnapshotSourceSheet[] {
+  const sheets: SnapshotSourceSheet[] = [];
+  for (const file of inputFiles) {
+    const buffer = readFileSync(file);
+    const ext = path.extname(file).toLowerCase();
+    const workbook = ext === ".csv"
+      ? (() => {
+          const text = decodeCsv(buffer);
+          return XLSX.read(text, { type: "string", FS: delimiter(text), raw: true });
+        })()
+      : XLSX.read(buffer, { type: "buffer", cellDates: true });
+
+    for (const sheetName of workbook.SheetNames) {
+      sheets.push({
+        fileName: path.basename(file),
+        sheetName,
+        matrix: XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+          header: 1,
+          raw: true,
+          defval: null,
+          blankrows: true,
+        }) as unknown[][],
+      });
+    }
+  }
+  return sheets;
+}
+
+const sourceFiles = files.map((file) => path.basename(file));
+const snapshot = extractSnapshotPayload(readSheets(files), {
+  fileNames: sourceFiles,
+  referenceDate,
+});
+
+if (!hasSnapshotPayloadMeaningfulData(snapshot)) {
+  console.error("Nenhum bloco consolidado foi reconhecido; o JSON não foi gerado.");
+  process.exit(2);
+}
+
+const document: PublishedSnapshotDocument = {
+  schemaVersion: 1,
+  kind: "giro-snapshot",
+  generatedAt: new Date().toISOString(),
+  snapshot,
+};
+
+const output = path.resolve(outputArg);
+mkdirSync(path.dirname(output), { recursive: true });
+writeFileSync(output, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+
+console.log(`Snapshot compartilhado gerado em ${output}`);
+console.log(`Referência: ${snapshot.referenceDate ?? "não informada"}`);
+console.log(`Blocos reconhecidos: ${snapshot.coverage.found.length}`);
+console.log(`Blocos ausentes: ${snapshot.coverage.missing.length}`);
+````
+
 ## `src/app/documentos/page.tsx`
 
 ````tsx
@@ -7853,18 +7988,18 @@ export default function DocumentosPage() {
 @import "tailwindcss";
 
 @theme {
-  /* Azul-marinho institucional */
-  --color-navy-950: #07182b;
-  --color-navy-900: #0c2338;
-  --color-navy-850: #102a42;
-  --color-navy-800: #143550;
-  --color-navy-700: #1b4568;
-  --color-navy-600: #235781;
-  --color-navy-500: #2f6ba0;
-  --color-navy-400: #5b8fbc;
-  --color-navy-300: #97bcd9;
-  --color-navy-200: #cbdeee;
-  --color-navy-100: #e5eff7;
+  /* Azul institucional (inspirado no Hub SharePoint Governança de Compras) */
+  --color-navy-950: #063963;
+  --color-navy-900: #064678;
+  --color-navy-850: #0b5389;
+  --color-navy-800: #125d96;
+  --color-navy-700: #1676ad;
+  --color-navy-600: #2384bc;
+  --color-navy-500: #2f8ec4;
+  --color-navy-400: #5ba6d3;
+  --color-navy-300: #93c4e3;
+  --color-navy-200: #c8dceb;
+  --color-navy-100: #e6f0f7;
   --color-navy-50: #f3f8fc;
 
   /* Laranja — cor de ação/destaque */
@@ -7877,7 +8012,7 @@ export default function DocumentosPage() {
   --color-accent-100: #fdeadd;
   --color-accent-50: #fff6ef;
 
-  /* Cores das áreas — a mesma codificação visual institucional do painel. */
+  /* Cores das áreas */
   --color-indiretos-700: #075958;
   --color-indiretos-600: #0a6e6d;
   --color-indiretos-500: #0b7c7b;
@@ -7894,7 +8029,7 @@ export default function DocumentosPage() {
   --color-capex-500: #fca500;
   --color-capex-100: #fff0d1;
 
-  /* Semânticas (tons escuros p/ texto AA, tons claros p/ fundo) */
+  /* Semânticas */
   --color-danger-700: #b42318;
   --color-danger-600: #d92d20;
   --color-danger-100: #fee4e2;
@@ -7906,22 +8041,121 @@ export default function DocumentosPage() {
   --color-ok-100: #d1fadf;
   --color-neutral-700: #475467;
   --color-neutral-500: #667085;
-  --color-neutral-100: #eaecf0;
+  --color-neutral-100: #edf4f8;
 
-  --color-canvas: #f4f6f8;
+  --color-canvas: #f3f7fa;
   --color-surface: #ffffff;
-  --color-ink: #101828;
-  --color-ink-soft: #475467;
-  --color-line: #e3e7ec;
+  --color-ink: #1e293b;
+  --color-ink-soft: #4e5e6e;
+  --color-line: #d9e5ec;
 
-  /* Fontes locais/sistema: o site estático não depende de CDN nem de rede para renderizar. */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  /* A tipografia de títulos não usa Arial Narrow: em alguns navegadores ela
-     comprime/estica os caracteres e prejudica a leitura do panorama. */
   --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-pop: 0 12px 32px -8px rgba(7, 24, 43, 0.18);
+  --shadow-card: 0 1px 3px rgba(6, 70, 120, 0.06);
+  --shadow-pop: 0 12px 32px -8px rgba(6, 70, 120, 0.16);
+}
+
+/* ---------- Tema Claro (Padrão) com bloqueio contra inversão automática do Chrome ---------- */
+:root,
+html[data-theme="light"] {
+  color-scheme: only light;
+  --tbl-th-bg: #e6f0f7;
+  --tbl-th-ink: #064678;
+  --tbl-th-border: #c8dceb;
+  --tbl-subhead-bg: #dcebf5;
+  --tbl-subhead-ink: #064678;
+  --tbl-row-bg: #ffffff;
+  --tbl-row-alt: #f7fafd;
+  --tbl-total-bg: #e6f4ea;
+  --tbl-total-ink: #14532d;
+  --card-prev-bg: #fff2f1;
+  --card-prev-border: #f5c2c0;
+  --card-curr-bg: #ffffff;
+  --card-curr-border: #d4e2ec;
+  --band-green-bg: #e8f5e9;
+  --band-green-ink: #14532d;
+  --bucket-oct: #eef3f7;
+  --bucket-nov: #fff4db;
+  --bucket-dec: #ebf7ee;
+  --bucket-exp: #fdeceb;
+  --tone-high: #fde2e1;
+  --tone-med: #fff6cc;
+  --tone-low: #f7eed2;
+}
+
+/* ---------- Tema Escuro (Alternável pelo botão no topo) ---------- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #0b1220;
+  --color-surface: #111c2e;
+  --color-ink: #f1f5f9;
+  --color-ink-soft: #94a3b8;
+  --color-line: #22324a;
+
+  --color-navy-950: #f8fafc;
+  --color-navy-900: #e2e8f0;
+  --color-navy-850: #cbd5e1;
+  --color-navy-800: #cbd5e1;
+  --color-navy-700: #93c5fd;
+  --color-navy-600: #60a5fa;
+  --color-navy-500: #60a5fa;
+  --color-navy-200: #293d5c;
+  --color-navy-100: #182740;
+  --color-navy-50: #152238;
+
+  --color-neutral-700: #cbd5e1;
+  --color-neutral-600: #b8cae0;
+  --color-neutral-500: #94a3b8;
+  --color-neutral-400: #7a8fa8;
+  --color-neutral-200: #253856;
+  --color-neutral-100: #152238;
+  --color-neutral-50: #111c2e;
+
+  --color-accent-700: #fbbf24;
+  --color-accent-200: #5c3a1a;
+  --color-accent-100: #382312;
+  --color-accent-50: #22170f;
+
+  --color-indiretos-700: #5eead4;
+  --color-indiretos-100: #113235;
+  --color-diretos-700: #93c5fd;
+  --color-diretos-100: #142a47;
+  --color-capex-700: #fcd34d;
+  --color-capex-100: #382810;
+
+  --color-danger-700: #f87171;
+  --color-danger-100: #3b181e;
+  --color-warn-700: #fbbf24;
+  --color-warn-100: #382810;
+  --color-ok-700: #4ade80;
+  --color-ok-100: #123125;
+
+  --tbl-th-bg: #182740;
+  --tbl-th-ink: #e2e8f0;
+  --tbl-th-border: #293d5c;
+  --tbl-subhead-bg: #1e3150;
+  --tbl-subhead-ink: #93c5fd;
+  --tbl-row-bg: #111c2e;
+  --tbl-row-alt: #152238;
+  --tbl-total-bg: #163626;
+  --tbl-total-ink: #bbf7d0;
+  --card-prev-bg: #2a161b;
+  --card-prev-border: #5c2831;
+  --card-curr-bg: #152238;
+  --card-curr-border: #293d5c;
+  --band-green-bg: #163626;
+  --band-green-ink: #bbf7d0;
+  --bucket-oct: #1b283d;
+  --bucket-nov: #362a14;
+  --bucket-dec: #153224;
+  --bucket-exp: #381a1f;
+  --tone-high: #471d22;
+  --tone-med: #3d3112;
+  --tone-low: #362c16;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
 }
 
 html {
@@ -7934,6 +8168,7 @@ body {
   color: var(--color-ink);
   font-feature-settings: "cv11", "ss01";
   text-rendering: optimizeLegibility;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .font-display {
@@ -7943,7 +8178,7 @@ body {
 
 ::selection {
   background: var(--color-accent-200);
-  color: var(--color-navy-950);
+  color: #063963;
 }
 
 /* ---------- Foco visível (WCAG 2.2 AA) ---------- */
@@ -7962,7 +8197,7 @@ body {
   top: -100px;
   left: 16px;
   z-index: 100;
-  background: var(--color-navy-900);
+  background: #064678;
   color: #fff;
   padding: 10px 18px;
   border-radius: 10px;
@@ -7976,24 +8211,96 @@ body {
   outline-color: var(--color-accent-400);
 }
 
-/* ---------- Tabelas ---------- */
+/* ---------- Tabelas e Superfícies Temáticas ---------- */
 .tnum {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
 
+.tbl-head {
+  background-color: var(--tbl-th-bg);
+  color: var(--tbl-th-ink);
+  border-bottom: 1px solid var(--tbl-th-border);
+}
+
+.tbl-subhead {
+  background-color: var(--tbl-subhead-bg);
+  color: var(--tbl-subhead-ink);
+  border-bottom: 1px solid var(--tbl-th-border);
+}
+
+.tbl-body-themed {
+  background-color: var(--tbl-row-bg);
+  color: var(--color-ink);
+}
+.tbl-body-themed > tr:nth-child(even) {
+  background-color: var(--tbl-row-alt);
+}
+
+.tbl-total-row {
+  background-color: var(--tbl-total-bg);
+  color: var(--tbl-total-ink);
+}
+
+.resumo-card-prev {
+  background-color: var(--card-prev-bg);
+  border-color: var(--card-prev-border);
+}
+
+.resumo-card-curr {
+  background-color: var(--card-curr-bg);
+  border-color: var(--card-curr-border);
+  box-shadow: var(--shadow-card);
+}
+
+.band-faixa-ok {
+  background-color: var(--band-green-bg);
+  color: var(--band-green-ink);
+  border-color: var(--color-line);
+}
+
+.bucket-0 { background-color: var(--bucket-oct); color: var(--color-ink); }
+.bucket-1 { background-color: var(--bucket-nov); color: var(--color-ink); }
+.bucket-2 { background-color: var(--bucket-dec); color: var(--color-ink); }
+.bucket-3 { background-color: var(--bucket-exp); color: var(--color-ink); }
+
+.tone-alta { background-color: var(--tone-high); color: var(--color-ink); }
+.tone-media { background-color: var(--tone-med); color: var(--color-ink); }
+.tone-pulv { background-color: var(--tone-low); color: var(--color-ink); }
+
+.btn-brand {
+  background-color: #064678;
+  color: #ffffff;
+}
+.btn-brand:hover {
+  background-color: #1676ad;
+}
+html[data-theme="dark"] .btn-brand {
+  background-color: #1676ad;
+  color: #ffffff;
+}
+html[data-theme="dark"] .btn-brand:hover {
+  background-color: #258bc4;
+}
+
 /* Barras de rolagem discretas */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #c3ccd6 transparent;
+  scrollbar-color: #b7c8d6 transparent;
+}
+html[data-theme="dark"] * {
+  scrollbar-color: #334868 transparent;
 }
 *::-webkit-scrollbar {
   height: 8px;
   width: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #c3ccd6;
+  background: #b7c8d6;
   border-radius: 8px;
+}
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: #334868;
 }
 
 /* ---------- Dialog ---------- */
@@ -8010,54 +8317,47 @@ dialog::backdrop {
   box-shadow: var(--shadow-card);
 }
 
-.overline {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-ink-soft);
-}
-
-.text-balance {
-  text-wrap: balance;
-}
-
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Animação discreta de entrada */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .anim-fade-up {
-  animation: fade-up 0.35s ease-out both;
+  animation: fadeUp 0.22s ease-out;
 }
-
-@keyframes shimmer {
-  0% { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
-}
-.skeleton {
-  background: linear-gradient(90deg, #eef1f4 25%, #f7f9fb 40%, #eef1f4 55%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s infinite linear;
-  border-radius: 8px;
-}
-
-/* ---------- Movimento reduzido ---------- */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+  .anim-fade-up {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
   }
 }
 
-/* ---------- Impressão ---------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-line) 50%, var(--color-neutral-100) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @media print {
-  [data-no-print] { display: none !important; }
-  body { background: #fff; }
-  main { padding: 0 !important; margin: 0 !important; }
-  .card { border: 1px solid #d0d5dd; box-shadow: none; break-inside: avoid; }
-  a { color: #101828; text-decoration: none; }
+  [data-no-print] {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
 }
 ````
 
@@ -8091,12 +8391,18 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07182b",
+  themeColor: "#f3f7fa",
 };
+
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem('giro-atas-theme');var t=(s==='dark')?'dark':'light';document.documentElement.setAttribute('data-theme',t);var m=document.querySelector('meta[name="color-scheme"]');if(m)m.setAttribute('content',t==='dark'?'dark':'only light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" data-theme="light" suppressHydrationWarning>
+      <head>
+        <meta name="color-scheme" content="only light" />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="antialiased font-sans">
         <a href="#conteudo" className="skip-link">
           Pular para o conteúdo
@@ -8209,7 +8515,7 @@ export default function PanoramaPage() {
               type="button"
               onClick={carregar}
               disabled={atualizando}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
               aria-label="Atualizar e reprocessar o panorama com os dados locais"
             >
               <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
@@ -8329,7 +8635,7 @@ export default function PanoramaPage() {
             type="button"
             onClick={carregar}
             disabled={atualizando}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-navy-200 bg-white px-4 text-[13px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50 disabled:cursor-wait disabled:opacity-70"
             aria-label="Atualizar e reprocessar o panorama com os dados locais"
           >
             <RefreshCw size={16} aria-hidden="true" className={atualizando ? "animate-spin" : undefined} />
@@ -8350,12 +8656,12 @@ export default function PanoramaPage() {
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2" aria-label="Bases da comparação semanal">
-          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+          <div className="rounded-xl border border-line bg-surface p-4 text-[12.5px]">
             <h3 className="font-semibold text-navy-900">Base atual</h3>
             <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(currentSnapshot?.referenceDate)}</p>
             <p className="mt-1 break-words text-ink-soft">Arquivo: {currentSnapshot ? (data.snapshotHistory[0]?.fileName || "Nome do arquivo não disponível") : "Sem snapshot importado; indicadores disponíveis vêm dos registros operacionais."}</p>
           </div>
-          <div className="rounded-xl border border-line bg-white p-4 text-[12.5px]">
+          <div className="rounded-xl border border-line bg-surface p-4 text-[12.5px]">
             <h3 className="font-semibold text-navy-900">Base anterior</h3>
             <p className="mt-1 text-ink-soft">Data de referência: {formatReferenceDate(previousSnapshot?.referenceDate)}</p>
             <p className="mt-1 break-words text-ink-soft">Arquivo: {data.snapshotHistory[1] ? (data.snapshotHistory[1].fileName || "Nome do arquivo não disponível") : previousSnapshot ? "Não se aplica — referência fixa, sem arquivo importado" : "Sem base anterior"}</p>
@@ -8420,19 +8726,19 @@ export default function PanoramaPage() {
             ) : (
             <table className="w-full flex-1 text-left">
               <thead>
-                <tr className="bg-navy-950 text-white font-bold">
+                <tr className="tbl-head font-bold">
                   <th className="px-5 py-3">ÁREAS</th>
                   <th className="px-5 py-3 text-right">VALOR CONTRATADO R$</th>
                 </tr>
               </thead>
-              <tbody className="h-full divide-y divide-white border-b-4 border-white">
+              <tbody className="h-full divide-y divide-line">
                 {porAreaVisual.map((a) => (
-                  <tr key={a.area} className={clsx("font-bold text-white", areaStyle(a.area).band)}>
+                  <tr key={a.area} className={clsx("font-bold", areaStyle(a.area).band)}>
                     <td className="px-5 py-3 uppercase">{a.area}</td>
                     <td className="px-5 py-3 text-right">{fmtCurrency(a.valor)}</td>
                   </tr>
                 ))}
-                <tr className="bg-[#2A4D14] text-white font-bold">
+                <tr className="tbl-total-row font-bold">
                   <td className="px-5 py-3">TOTAL</td>
                   <td className="px-5 py-3 text-right">{fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.valor, 0))}</td>
                 </tr>
@@ -8447,35 +8753,35 @@ export default function PanoramaPage() {
             ) : (
             <table className="w-full flex-1 text-left">
               <thead>
-                <tr className="bg-navy-950 text-white font-bold text-[11px] text-center">
+                <tr className="tbl-head font-bold text-[11px] text-center">
                   <th className="px-2 py-3">VALOR CONTRATADO R$</th>
-                  <th className="px-2 py-3 border-l border-white/20">SAVING HISTÓRICO R$ / %</th>
-                  <th className="px-2 py-3 border-l border-white/20">SAVING SOB PROPOSTA R$ / %</th>
+                  <th className="px-2 py-3 border-l border-line">SAVING HISTÓRICO R$ / %</th>
+                  <th className="px-2 py-3 border-l border-line">SAVING SOB PROPOSTA R$ / %</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white border-b-4 border-white text-center font-medium bg-[#E6E6E6]">
+              <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
                 {porAreaVisual.map((a: any) => (
                   <tr key={a.area}>
                     <td className="px-2 py-3">{fmtCurrency(a.valorSaving ?? a.valor)}</td>
-                    <td className="px-2 py-3 border-l border-white">
+                    <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_hist)}<br/>
-                      <span className="text-[11px] font-normal">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
                     </td>
-                    <td className="px-2 py-3 border-l border-white">
+                    <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_prop)}<br/>
-                      <span className="text-[11px] font-normal">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
                     </td>
                   </tr>
                 ))}
-                <tr className="bg-[#b3d482] font-bold">
+                <tr className="tbl-total-row font-bold border-t border-line">
                   <td className="px-2 py-3">{fmtCurrency(savingTotal?.valorSaving ?? (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))}</td>
-                  <td className="px-2 py-3 border-l border-white">
+                  <td className="px-2 py-3 border-l border-line">
                     {fmtCurrency(savingTotal?.saving_hist ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
                     <span className="text-[11px] font-normal">{savingTotal?.reducao_hist_pct !== null && savingTotal?.reducao_hist_pct !== undefined
                       ? `${fmtNum(savingTotal.reducao_hist_pct)}%`
                       : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
                   </td>
-                  <td className="px-2 py-3 border-l border-white">
+                  <td className="px-2 py-3 border-l border-line">
                     {fmtCurrency(savingTotal?.saving_prop ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
                     <span className="text-[11px] font-normal">{savingTotal?.reducao_prop_pct !== null && savingTotal?.reducao_prop_pct !== undefined
                       ? `${fmtNum(savingTotal.reducao_prop_pct)}%`
@@ -8504,18 +8810,18 @@ export default function PanoramaPage() {
               
               return (
                 <div key={area} className="card overflow-hidden">
-                  <div className={clsx("text-center py-3 text-white", areaStyle(area).band)}>
+                  <div className={clsx("text-center py-3", areaStyle(area).band)}>
                     <div className="font-bold">{area}</div>
                     <div className="text-[13px]">{fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))} ATAS (TOP 5) — {fmtNum(percent)}% DO TOTAL</div>
-                    <div className="text-[10px] text-white/75">Área: {fmtInt(areaStats.processos)} ATAS</div>
+                    <div className="text-[10px] opacity-80">Área: {fmtInt(areaStats.processos)} ATAS</div>
                   </div>
-                  <div className="p-4 bg-neutral-100">
+                  <div className="p-4 bg-surface">
                     <div className="text-center font-bold text-[12px] uppercase text-navy-900 mb-3 underline underline-offset-4">TOP 5 COMPRADORES · ATAS SOMADAS: {fmtInt(tCompradores.reduce((sum: number, item: any) => sum + item.atas, 0))}</div>
-                    <ul className="space-y-1 text-[11px]">
+                    <ul className="space-y-1.5 text-[11px] divide-y divide-line/60">
                       {tCompradores.map(c => (
-                        <li key={c.responsavel} className="flex justify-between items-center text-navy-800">
-                          <span className="font-bold text-navy-500 uppercase truncate pr-2">{c.responsavel}</span>
-                          <span className="shrink-0 text-navy-950 font-medium">{c.itens} ITENS | {c.atas} ATAS</span>
+                        <li key={c.responsavel} className="flex justify-between items-center pt-1.5 first:pt-0 text-navy-800">
+                          <span className="font-bold text-navy-700 uppercase truncate pr-2">{c.responsavel}</span>
+                          <span className="shrink-0 text-navy-950 font-semibold">{c.itens} ITENS | {c.atas} ATAS</span>
                         </li>
                       ))}
                     </ul>
@@ -8533,10 +8839,10 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="fornecedores" referencia={referencia} />
           ) : (
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
-            <h3 className="bg-[#111c75] px-3 py-3 text-center font-bold text-white">FORNECEDORES GERAL</h3>
+            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">FORNECEDORES GERAL</h3>
             <table className="w-full min-w-[720px] text-left">
               <thead>
-                <tr className="bg-navy-950 text-white text-center font-bold">
+                <tr className="tbl-head text-center font-bold">
                   <th className="px-2 py-2">FORNECEDOR</th>
                   <th className="px-2 py-2">QTD ATAS</th>
                   <th className="px-2 py-2">QTD ITENS</th>
@@ -8544,19 +8850,19 @@ export default function PanoramaPage() {
                   <th className="px-2 py-2">ANÁLISE</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-center font-medium">
+              <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
                 {(fornecedores as any[]).length === 0 ? (
                   <tr><td colSpan={5} className="px-3 py-5 text-ink-soft">Nenhuma linha específica reconhecida.</td></tr>
                 ) : (fornecedores as any[]).map((f: any, index: number) => {
                   const analysis = f.analise || (f.concentracao >= 15 ? "Alta Concentração" : f.concentracao >= 5 ? "Volume Médio" : "Pulverizado");
-                  const analysisTone = analysis.toUpperCase().includes("ALTA") ? "bg-[#f3baba]" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "bg-[#fdf0a6]" : "bg-[#f2e6b1]";
+                  const analysisTone = analysis.toUpperCase().includes("ALTA") ? "tone-alta" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "tone-media" : "tone-pulv";
                   return (
                     <tr key={`${f.fornecedor}-${index}`}>
-                      <td className="px-2 py-2 text-left uppercase text-navy-950">{f.fornecedor}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.atas)}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtInt(f.itens)}</td>
-                      <td className="px-2 py-2 border-l border-white">{fmtNum(f.concentracao)}%</td>
-                      <td className={clsx("px-2 py-2 border-l border-white text-left", analysisTone)}>{analysis}</td>
+                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">{f.fornecedor}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtInt(f.atas)}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtInt(f.itens)}</td>
+                      <td className="px-2 py-2 border-l border-line">{fmtNum(f.concentracao)}%</td>
+                      <td className={clsx("px-2 py-2 border-l border-line text-left font-semibold", analysisTone)}>{analysis}</td>
                     </tr>
                   );
                 })}
@@ -8577,28 +8883,28 @@ export default function PanoramaPage() {
         <div className="card overflow-x-auto text-[12px]">
           <table className="w-full text-center">
             <thead>
-              <tr className="bg-navy-950 text-white font-bold leading-tight">
-                <th className="px-3 py-3 w-32 border-r border-white/20">ÁREAS</th>
-                <th className="px-3 py-3 border-r border-white/20">ATAS | ITENS<br/>Concluídas<br/>(Válidas)</th>
-                <th className="px-3 py-3 border-r border-white/20">EM<br/>ANDAMENTO</th>
-                <th className="px-3 py-3 border-r border-white/20">ITENS COM<br/>SALDO<br/>(Válidos)</th>
-                <th className="px-3 py-3 border-r border-white/20">ITENS SEM<br/>SALDO<br/>(Válidos)</th>
-                <th className="px-3 py-3 border-r border-white/20">VENCIDAS</th>
+              <tr className="tbl-head font-bold leading-tight">
+                <th className="px-3 py-3 w-32 border-r border-line">ÁREAS</th>
+                <th className="px-3 py-3 border-r border-line">ATAS | ITENS<br/>Concluídas<br/>(Válidas)</th>
+                <th className="px-3 py-3 border-r border-line">EM<br/>ANDAMENTO</th>
+                <th className="px-3 py-3 border-r border-line">ITENS COM<br/>SALDO<br/>(Válidos)</th>
+                <th className="px-3 py-3 border-r border-line">ITENS SEM<br/>SALDO<br/>(Válidos)</th>
+                <th className="px-3 py-3 border-r border-line">VENCIDAS</th>
                 <th className="px-3 py-3">A VENCER</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white border-t-2 border-white bg-[#E6E6E6] text-navy-900 font-medium">
+            <tbody className="tbl-body-themed divide-y divide-line font-medium">
               {evolucaoVisual.map((e: any) => (
                 <tr key={e.area}>
-                  <td className={clsx("px-3 py-3 font-bold text-white uppercase", areaStyle(e.area).band)}>
+                  <td className={clsx("px-3 py-3 font-bold uppercase", areaStyle(e.area).band)}>
                     {e.area}
                   </td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.andamento_atas)} ATAS<br/>{fmtInt(e.andamento_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.saldo_itens)}</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.semsaldo_itens)}</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.vencidas_atas)} ATAS<br/>{fmtInt(e.vencidas_itens)} ITENS</td>
-                  <td className="px-3 py-3 border-l border-white">{fmtInt(e.a_vencer_atas)} ATAS<br/>{fmtInt(e.a_vencer_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.concluidas_atas)} ATAS<br/>{fmtInt(e.concluidas_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.andamento_atas)} ATAS<br/>{fmtInt(e.andamento_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.saldo_itens)}</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.semsaldo_itens)}</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.vencidas_atas)} ATAS<br/>{fmtInt(e.vencidas_itens)} ITENS</td>
+                  <td className="px-3 py-3 border-l border-line">{fmtInt(e.a_vencer_atas)} ATAS<br/>{fmtInt(e.a_vencer_itens)} ITENS</td>
                 </tr>
               ))}
             </tbody>
@@ -8699,15 +9005,15 @@ function formatShortDate(value: string | null | undefined): string {
   return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
 }
 
-function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
+function FaixaPrevisao({ title, titleClass = "band-faixa-ok", areaStats }: { title: string, titleClass?: string, areaStats: any[] }) {
   return (
     <div>
-      <div className={clsx("border border-line py-2 text-center font-bold mb-4", titleClass)}>{title}</div>
+      <div className={clsx("rounded-lg border py-2 text-center font-bold mb-4", titleClass)}>{title}</div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {areaStats.map(s => (
           <div key={s.area}>
-            <div className={clsx("py-1 text-center text-white text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
-            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-[#0d952e]">
+            <div className={clsx("rounded-md py-1 text-center text-[12px] font-bold mb-4", s.bg)}>{s.area}</div>
+            <div className="tnum mb-6 font-sans leading-tight tracking-normal text-ok-700">
               <div className="text-[18px] font-bold">{String(s.atas).padStart(2, '0')} ATAS</div>
               <div className="text-[18px] font-bold">{String(s.itens).padStart(2, '0')} ITENS</div>
             </div>
@@ -8730,7 +9036,7 @@ function FaixaPrevisao({ title, titleClass = "bg-[#dcf0cf] text-navy-950", areaS
 }
 
 function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; buckets: Array<{ label: string; atas: number; itens: number }> }> }) {
-  const bucketColors = ["bg-[#e2e2e2]", "bg-[#f9dfa8]", "bg-[#edf8df]", "bg-[#f7e7e7]"];
+  const bucketColors = ["bucket-0", "bucket-1", "bucket-2", "bucket-3"];
   return (
     <section className="space-y-6 border-t border-line pt-2" aria-labelledby="previsao-por-mes">
       <h3 id="previsao-por-mes" className="text-[20px] font-sans font-semibold leading-tight tracking-normal text-navy-900">
@@ -8739,13 +9045,13 @@ function PrevisaoMensal({ areas }: { areas: Array<{ area: string; bg: string; bu
       <div className="space-y-7">
         {areas.map(({ area, bg, buckets }) => (
           <div key={area}>
-            <div className={clsx("mb-3 border border-navy-900 py-2 text-center text-[16px] font-bold text-white", bg)}>{area}</div>
+            <div className={clsx("mb-3 rounded-md border border-line py-2 text-center text-[16px] font-bold", bg)}>{area}</div>
             <div className="grid grid-cols-4 gap-2 sm:gap-3">
               {buckets.map((bucket, index) => (
                 <div key={`${area}-${bucket.label}`} className="relative min-w-0">
-                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index])}>
-                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.atas).padStart(2, "0")} ATAS</span>
-                    <span className="tnum text-[13px] font-semibold text-navy-950">{String(bucket.itens).padStart(2, "0")} ITENS</span>
+                  <div className={clsx("flex min-h-[58px] flex-col items-center justify-center rounded-lg border border-line px-1 text-center font-sans leading-tight tracking-normal", bucketColors[index % 4])}>
+                    <span className="tnum text-[13px] font-semibold">{String(bucket.atas).padStart(2, "0")} ATAS</span>
+                    <span className="tnum text-[13px] font-semibold">{String(bucket.itens).padStart(2, "0")} ITENS</span>
                   </div>
                   <div className="mt-2 flex min-h-7 items-start justify-center text-center text-[11px] font-sans leading-tight tracking-normal text-ink-soft">
                     <span>{bucket.label}</span>
@@ -8787,11 +9093,13 @@ export default function ProcessosPage() {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { BookOpen, LayoutDashboard, Maximize2, Minimize2, Table2, Upload } from "lucide-react";
+import { BookOpen, LayoutDashboard, Maximize2, Minimize2, Moon, Sun, Table2, Upload } from "lucide-react";
 import clsx from "clsx";
 import { fmtDate } from "@/lib/format";
 import { getStaticBaseSummary } from "@/lib/static-dashboard";
 import { STATIC_DATA_EVENT } from "@/lib/static-store";
+
+const THEME_STORAGE_KEY = "giro-atas-theme";
 
 const NAV = [
   { href: "/", label: "Panorama", icon: LayoutDashboard, match: (p: string) => p === "/" },
@@ -8804,14 +9112,14 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <span className="flex items-center gap-3">
       <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden="true" className="shrink-0">
-        <rect x="2" y="2" width="34" height="34" rx="9" fill="#0c2338" stroke="#1b4568" />
-        <path d="M9 24.5 15 15l4.2 5.2L23.5 14 29 24.5Z" fill="none" stroke="#e06e1f" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
-        <circle cx="28.2" cy="10.6" r="2.4" fill="#ec9152" />
+        <rect x="2" y="2" width="34" height="34" rx="9" fill="#e6f0f7" stroke="#b7d2e8" />
+        <path d="M9 24.5 15 15l4.2 5.2L23.5 14 29 24.5Z" fill="none" stroke="#064678" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+        <circle cx="28.2" cy="10.6" r="2.6" fill="#e06e1f" />
       </svg>
       {!compact && (
         <span className="leading-tight">
-          <span className="block font-display text-[17px] font-bold tracking-tight text-white">Giro de Atas</span>
-          <span className="block text-[11.5px] font-medium text-navy-300">Compras · Fundação Butantan</span>
+          <span className="block font-display text-[17px] font-bold tracking-tight text-navy-900">Giro de Atas</span>
+          <span className="block text-[11.5px] font-medium text-ink-soft">Compras · Fundação Butantan</span>
         </span>
       )}
     </span>
@@ -8829,9 +9137,15 @@ function BaseChip() {
       if (!data.hasData) {
         setInfo({ label: "Nenhuma base carregada", detalhe: "Importe uma planilha para começar" });
       } else {
+        const fonte =
+          data.dataSource === "shared"
+            ? "snapshot compartilhado"
+            : data.dataSource === "local"
+              ? "base local"
+              : "sem fonte compartilhada";
         setInfo({
           label: data.referenceDate ? `Base de referência: ${fmtDate(data.referenceDate)}` : "Base sem data de referência",
-          detalhe: `${data.activeCount} ${data.activeCount === 1 ? "base ativa" : "bases ativas"} · ${data.processCount.toLocaleString("pt-BR")} registros`,
+          detalhe: `${fonte} · ${data.activeCount} ${data.activeCount === 1 ? "base ativa" : "bases ativas"} · ${data.processCount.toLocaleString("pt-BR")} registros`,
         });
       }
     } catch {
@@ -8873,101 +9187,143 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isPanorama = pathname === "/" || pathname === "/Atas" || pathname === "/Atas/";
   const onImport = pathname.startsWith("/importar");
   const [panoramaFocus, setPanoramaFocus] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  const applyTheme = useCallback((next: "light" | "dark") => {
+    setTheme(next);
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", next);
+      const meta = document.querySelector('meta[name="color-scheme"]');
+      if (meta) meta.setAttribute("content", next === "dark" ? "dark" : "only light");
+    }
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Sem persistência disponível; mantém na sessão atual.
+    }
+  }, []);
 
   useEffect(() => {
-    // A visualização limpa é exclusiva do panorama; as demais rotas mantêm a navegação.
+    try {
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      const initial = saved === "dark" ? "dark" : "light";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      applyTheme(initial);
+    } catch {
+      applyTheme("light");
+    }
+  }, [applyTheme]);
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!isPanorama) setPanoramaFocus(false);
   }, [isPanorama, pathname]);
 
+  const toggleTheme = () => applyTheme(theme === "dark" ? "light" : "dark");
+
   return (
-    <div className={clsx("min-h-dvh", panoramaFocus && isPanorama && "bg-canvas")}>
-      {/* ================= Sidebar (desktop) ================= */}
+    <div className={clsx("min-h-dvh bg-canvas text-ink")}>
+      {/* ================= Sidebar (desktop — 100% clara no modo Claro) ================= */}
       {!panoramaFocus && (
-      <aside
-        className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col bg-navy-950 lg:flex"
-        aria-label="Navegação principal"
-      >
-        <div className="px-5 pb-5 pt-6">
-          <Link href="/" className="inline-block rounded-lg" aria-label="Giro de Atas — ir para o Panorama">
-            <BrandMark />
-          </Link>
-        </div>
-        <nav className="flex-1 space-y-1 px-3" aria-label="Seções do painel">
-          {NAV.map((item) => {
-            const active = item.match(pathname);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={clsx(
-                  "group relative flex min-h-11 items-center gap-3 rounded-xl px-3.5 text-[14px] font-medium transition-colors",
-                  active
-                    ? "bg-navy-800/80 text-white"
-                    : "text-navy-300 hover:bg-navy-900 hover:text-white",
-                )}
-              >
-                <span
-                  aria-hidden="true"
+        <aside
+          className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col border-r border-line bg-surface lg:flex"
+          aria-label="Navegação principal"
+        >
+          <div className="px-5 pb-5 pt-6">
+            <Link href="/" className="inline-block rounded-lg" aria-label="Giro de Atas — ir para o Panorama">
+              <BrandMark />
+            </Link>
+          </div>
+          <nav className="flex-1 space-y-1 px-3" aria-label="Seções do painel">
+            {NAV.map((item) => {
+              const active = item.match(pathname);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
                   className={clsx(
-                    "absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-accent-500 transition-opacity",
-                    active ? "opacity-100" : "opacity-0 group-hover:opacity-40",
+                    "group relative flex min-h-11 items-center gap-3 rounded-xl px-3.5 text-[14px] font-medium transition-colors",
+                    active
+                      ? "bg-navy-100 font-semibold text-navy-900"
+                      : "text-ink-soft hover:bg-navy-50 hover:text-navy-900",
                   )}
-                />
-                <item.icon size={19} strokeWidth={2} aria-hidden="true" className={active ? "text-accent-400" : "text-navy-400 group-hover:text-navy-200"} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="border-t border-navy-800/70 px-5 py-4">
-          <p className="text-[11.5px] leading-relaxed text-navy-400">
-            Dados armazenados neste navegador (IndexedDB). Não há sincronização automática com o SharePoint nem entre usuários.
-          </p>
-        </div>
-      </aside>
+                >
+                  <span
+                    aria-hidden="true"
+                    className={clsx(
+                      "absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-accent-500 transition-opacity",
+                      active ? "opacity-100" : "opacity-0 group-hover:opacity-40",
+                    )}
+                  />
+                  <item.icon
+                    size={19}
+                    strokeWidth={2}
+                    aria-hidden="true"
+                    className={active ? "text-accent-600" : "text-ink-soft group-hover:text-navy-800"}
+                  />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="border-t border-line px-5 py-4">
+            <p className="text-[11.5px] leading-relaxed text-ink-soft">
+              O panorama pode usar a leitura compartilhada corporativa; importações locais permanecem no IndexedDB deste navegador.
+            </p>
+          </div>
+        </aside>
       )}
 
       {/* ================= Topbar ================= */}
       {!panoramaFocus && (
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm lg:pl-[248px]">
-        <div className="flex h-[60px] items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex items-center gap-3 lg:hidden">
-            <Link href="/" aria-label="Giro de Atas — ir para o Panorama" className="rounded-lg">
-              <BrandMark compact />
-            </Link>
-            <span className="font-display text-[16px] font-bold tracking-tight text-navy-950">Giro de Atas</span>
-          </div>
-          <div className="hidden items-center gap-2 lg:flex" aria-hidden="true">
-            <span className="text-[13px] font-medium text-ink-soft">Painel de Compras e Atas de Registro de Preços</span>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-4">
-            {isPanorama && (
+        <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-sm lg:pl-[248px]">
+          <div className="flex h-[60px] items-center justify-between gap-3 px-4 sm:px-6">
+            <div className="flex items-center gap-3 lg:hidden">
+              <Link href="/" aria-label="Giro de Atas — ir para o Panorama" className="rounded-lg">
+                <BrandMark compact />
+              </Link>
+              <span className="font-display text-[16px] font-bold tracking-tight text-navy-900">Giro de Atas</span>
+            </div>
+            <div className="hidden items-center gap-2 lg:flex" aria-hidden="true">
+              <span className="text-[13px] font-medium text-ink-soft">Painel de Compras e Atas de Registro de Preços</span>
+            </div>
+            <div className="flex items-center gap-2.5 sm:gap-3">
               <button
                 type="button"
-                onClick={() => setPanoramaFocus(true)}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-navy-200 bg-white px-3 text-[12.5px] font-semibold text-navy-800 shadow-sm transition-colors hover:bg-navy-50"
-                aria-label="Abrir o panorama em tela cheia, sem navegação"
+                onClick={toggleTheme}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[12.5px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50"
+                aria-label={theme === "dark" ? "Mudar para o tema claro" : "Mudar para o tema escuro"}
+                title={theme === "dark" ? "Mudar para o tema claro" : "Mudar para o tema escuro"}
               >
-                <Maximize2 size={16} aria-hidden="true" />
-                <span className="hidden sm:inline">Tela cheia</span>
+                {theme === "dark" ? <Sun size={16} className="text-amber-400" aria-hidden="true" /> : <Moon size={16} className="text-navy-700" aria-hidden="true" />}
+                <span>{theme === "dark" ? "Claro" : "Escuro"}</span>
               </button>
-            )}
-            <BaseChip />
-            {!onImport && (
-              <Link
-                href="/importar"
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-accent-600 px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-accent-700"
-              >
-                <Upload size={16} aria-hidden="true" />
-                <span className="hidden sm:inline">Importar planilha</span>
-                <span className="sm:hidden">Importar</span>
-              </Link>
-            )}
+              {isPanorama && (
+                <button
+                  type="button"
+                  onClick={() => setPanoramaFocus(true)}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-[12.5px] font-semibold text-navy-900 shadow-sm transition-colors hover:bg-navy-50"
+                  aria-label="Abrir o panorama em tela cheia, sem navegação"
+                >
+                  <Maximize2 size={16} aria-hidden="true" />
+                  <span className="hidden sm:inline">Tela cheia</span>
+                </button>
+              )}
+              <BaseChip />
+              {!onImport && (
+                <Link
+                  href="/importar"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-accent-600 px-4 text-[13.5px] font-semibold text-white transition-colors hover:bg-accent-700"
+                >
+                  <Upload size={16} aria-hidden="true" />
+                  <span className="hidden sm:inline">Importar planilha</span>
+                  <span className="sm:hidden">Importar</span>
+                </Link>
+              )}
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
       )}
 
       {/* ================= Conteúdo ================= */}
@@ -8985,52 +9341,63 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       {panoramaFocus && isPanorama && (
-        <button
-          type="button"
-          onClick={() => setPanoramaFocus(false)}
-          className="fixed right-4 top-4 z-50 inline-flex min-h-10 items-center gap-2 rounded-xl border border-white/20 bg-navy-950/90 px-3 text-[12.5px] font-semibold text-white shadow-pop backdrop-blur-sm transition-colors hover:bg-navy-800"
-          aria-label="Sair da tela cheia e restaurar a navegação"
-        >
-          <Minimize2 size={16} aria-hidden="true" />
-          <span className="hidden sm:inline">Sair da tela cheia</span>
-        </button>
+        <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 text-[12.5px] font-semibold text-navy-900 shadow-pop backdrop-blur-sm transition-colors hover:bg-navy-50"
+            aria-label={theme === "dark" ? "Mudar para o tema claro" : "Mudar para o tema escuro"}
+          >
+            {theme === "dark" ? <Sun size={16} className="text-amber-400" aria-hidden="true" /> : <Moon size={16} className="text-navy-700" aria-hidden="true" />}
+            <span>{theme === "dark" ? "Claro" : "Escuro"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanoramaFocus(false)}
+            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface/95 px-3 text-[12.5px] font-semibold text-navy-900 shadow-pop backdrop-blur-sm transition-colors hover:bg-navy-50"
+            aria-label="Sair da tela cheia e restaurar a navegação"
+          >
+            <Minimize2 size={16} aria-hidden="true" />
+            <span className="hidden sm:inline">Sair da tela cheia</span>
+          </button>
+        </div>
       )}
 
       {/* ================= Navegação inferior (mobile) ================= */}
       {!panoramaFocus && (
-      <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
-        aria-label="Navegação principal (móvel)"
-        data-no-print
-      >
-        <ul className="grid grid-cols-4">
-          {NAV.map((item) => {
-            const active = item.match(pathname);
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={clsx(
-                    "relative flex min-h-[58px] flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
-                    active ? "text-navy-800" : "text-neutral-500 hover:text-navy-700",
-                  )}
-                >
-                  <span
-                    aria-hidden="true"
+        <nav
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
+          aria-label="Navegação principal (móvel)"
+          data-no-print
+        >
+          <ul className="grid grid-cols-4">
+            {NAV.map((item) => {
+              const active = item.match(pathname);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
                     className={clsx(
-                      "absolute top-0 h-[3px] w-10 rounded-b-full bg-accent-500 transition-opacity",
-                      active ? "opacity-100" : "opacity-0",
+                      "relative flex min-h-[58px] flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors",
+                      active ? "text-navy-900 font-semibold" : "text-ink-soft hover:text-navy-800",
                     )}
-                  />
-                  <item.icon size={21} strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" className={active ? "text-accent-600" : undefined} />
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={clsx(
+                        "absolute top-0 h-[3px] w-10 rounded-b-full bg-accent-500 transition-opacity",
+                        active ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <item.icon size={21} strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" className={active ? "text-accent-600" : undefined} />
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
       )}
     </div>
   );
@@ -9078,7 +9445,7 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
         <div className="max-h-[460px] overflow-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead className="sticky top-0 z-10">
-              <tr className="bg-navy-950 text-[11px] font-bold uppercase text-white">
+              <tr className="tbl-head text-[11px] font-bold uppercase">
                 <th className="px-4 py-2">Ata</th>
                 <th className="px-3 py-2">Contrato</th>
                 <th className="px-3 py-2">Fornecedor</th>
@@ -9087,9 +9454,9 @@ export function AtasConcluidas({ dados, referencia }: { dados: AtasConcluidasRes
                 <th className="px-3 py-2">Área</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="tbl-body-themed divide-y divide-line">
               {novas.map((ata) => (
-                <tr key={ata.key} className="odd:bg-white even:bg-navy-50/40">
+                <tr key={ata.key}>
                   <td className="px-4 py-2 font-semibold uppercase text-navy-950">
                     <span className="text-ink-soft">ATA: </span>
                     {ata.descricao}
@@ -9222,7 +9589,7 @@ export function Donut({ segments, total }: { segments: Segment[]; total: number 
   return (
     <div className="mt-3 flex flex-col items-center gap-5 sm:flex-row sm:gap-8">
       <svg viewBox="0 0 140 140" className="h-[150px] w-[150px] shrink-0" aria-hidden="true">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#eef1f4" strokeWidth="20" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--color-line)" strokeWidth="20" />
         {arcs}
         <text x="70" y="66" textAnchor="middle" className="fill-navy-950" fontSize="24" fontWeight="700" fontFamily="var(--font-display)">
           {fmtInt(total)}
@@ -9276,7 +9643,7 @@ export function HBars({
               {maxLabel && <span className="sr-only"> {maxLabel}</span>}
             </span>
           </div>
-          <div className="h-[9px] overflow-hidden rounded-full bg-[#eef1f4]" aria-hidden="true">
+          <div className="h-[9px] overflow-hidden rounded-full bg-navy-100" aria-hidden="true">
             <div
               className="h-full rounded-full transition-[width] duration-500"
               style={{ width: `${(item.value / max) * 100}%`, backgroundColor: barColor(i, item) }}
@@ -9307,7 +9674,7 @@ export function StackedRow({
         <span className="font-medium text-ink">{label}</span>
         <span className="tnum font-semibold text-navy-950">{fmtInt(total)}</span>
       </div>
-      <div className="flex h-[10px] overflow-hidden rounded-full bg-[#eef1f4]" aria-hidden="true">
+      <div className="flex h-[10px] overflow-hidden rounded-full bg-navy-100" aria-hidden="true">
         {parts
           .filter((p) => p.value > 0)
           .map((p) => (
@@ -9897,7 +10264,7 @@ function NovoDocumento({ onCreated }: { onCreated: (d: DocItem) => void }) {
       <button
         type="submit"
         disabled={salvando}
-        className="min-h-11 w-full rounded-xl bg-navy-900 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:opacity-60"
+        className="btn-brand min-h-11 w-full rounded-xl text-[14px] font-semibold transition-colors disabled:opacity-60"
       >
         {salvando ? "Salvando…" : "Salvar documento"}
       </button>
@@ -9943,7 +10310,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           </p>
         </div>
         {total && (
-          <div className="rounded-lg bg-white/70 px-3 py-2 text-right">
+          <div className="rounded-lg bg-surface/85 px-3 py-2 text-right">
             <p className="tnum text-[15px] font-bold text-navy-900">{fmtInt(total.itens)} itens</p>
             <p className="tnum text-[11.5px] text-ink-soft">{fmtInt(total.atas)} atas no total</p>
           </div>
@@ -9951,7 +10318,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
       </div>
 
       <div className="grid gap-3 p-4 sm:grid-cols-3">
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Maior concentração</p>
           {primeiro ? (
             <>
@@ -9965,7 +10332,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           )}
         </article>
 
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Quatro principais</p>
           {topFour.length > 0 ? (
             <p className="mt-1 text-[13px] font-bold text-navy-950">{fmtNum(concentration)}% dos itens</p>
@@ -9977,7 +10344,7 @@ export function FornecedoresAnalise({ fornecedores }: { fornecedores: SupplierRo
           </p>
         </article>
 
-        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-white/70 p-3">
+        <article className="min-w-0 rounded-xl border border-accent-200/80 bg-surface/85 p-3">
           <p className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">Outros fornecedores</p>
           {outros ? (
             <>
@@ -10378,7 +10745,7 @@ export function ImportWizard() {
                   aria-current={estado === "atual" ? "step" : undefined}
                   className={clsx(
                     "flex items-center gap-2 rounded-full px-3 py-1.5 text-[12.5px] font-semibold",
-                    estado === "atual" && "bg-navy-900 text-white",
+                    estado === "atual" && "btn-brand",
                     estado === "concluido" && "bg-ok-100 text-ok-700",
                     estado === "futuro" && "text-neutral-500",
                   )}
@@ -10493,7 +10860,7 @@ export function ImportWizard() {
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+                  className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors"
                 >
                   Continuar
                   <ArrowRight size={16} aria-hidden="true" />
@@ -10823,7 +11190,7 @@ export function ImportWizard() {
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5">
               <Link
                 href="/"
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700"
+                className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors"
               >
                 Ver panorama atualizado
                 <ArrowRight size={16} aria-hidden="true" />
@@ -10879,7 +11246,7 @@ function WizardNav({
         type="button"
         onClick={onNext}
         disabled={nextDisabled}
-        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-navy-900 px-5 text-[14px] font-semibold text-white transition-colors hover:bg-navy-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn-brand inline-flex min-h-11 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
       >
         {nextBusy && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
         {nextLabel}
@@ -11376,7 +11743,7 @@ export function ProcessosBrowser() {
           <button
             type="button"
             onClick={carregar}
-            className="min-h-10 rounded-xl bg-navy-800 px-4 text-[13.5px] font-semibold text-white hover:bg-navy-700"
+            className="btn-brand min-h-10 rounded-xl px-4 text-[13.5px] font-semibold transition-colors"
           >
             Tentar novamente
           </button>
@@ -11920,7 +12287,7 @@ export function ResumoCards({
               key={card.titulo}
               className={clsx(
                 "flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
-                anterior ? "border-[#f0b4b4] bg-[#f8d7d7]" : "border-[#d0d0d0] bg-[#e4e4e4]",
+                anterior ? "resumo-card-prev" : "resumo-card-curr",
               )}
             >
               <p className="text-[11px] font-bold uppercase leading-tight text-navy-950">{card.titulo}</p>
@@ -12220,7 +12587,7 @@ export function situacaoChave(situacao: string | null | undefined): SituacaoChav
 export const AREA_STYLE: Record<string, { chip: string; dot: string; bar: string; band: string; hex: string }> = {
   Indiretos: { chip: "bg-indiretos-100 text-indiretos-700", dot: "bg-indiretos-500", bar: "bg-indiretos-500", band: "bg-indiretos-500 text-white", hex: "#0b7c7b" },
   Diretos: { chip: "bg-diretos-100 text-diretos-700", dot: "bg-diretos-500", bar: "bg-diretos-500", band: "bg-diretos-500 text-white", hex: "#0a6fd6" },
-  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-500", bar: "bg-capex-500", band: "bg-capex-500 text-navy-950", hex: "#fca500" },
+  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-500", bar: "bg-capex-500", band: "bg-capex-500 text-[#16202a]", hex: "#fca500" },
   "Não informado": { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500", bar: "bg-neutral-400", band: "bg-neutral-500 text-white", hex: "#98a2b3" },
 };
 
@@ -15834,6 +16201,60 @@ export function suggestMapping(headers: string[]): Suggestion {
 }
 ````
 
+## `src/lib/published-snapshot.ts`
+
+````typescript
+import type { DashboardSnapshotPayload } from "@/lib/dashboard-snapshot";
+
+/**
+ * Contrato do snapshot compartilhado. O arquivo/API pode ser servido por uma
+ * Azure Function ou por outro endpoint protegido pelo Microsoft Entra ID.
+ *
+ * O snapshot não contém o Excel original: somente os blocos já consolidados
+ * pelo extrator do Giro.
+ */
+export interface PublishedSnapshotDocument {
+  schemaVersion: 1;
+  kind: "giro-snapshot";
+  generatedAt: string;
+  snapshot: DashboardSnapshotPayload;
+}
+
+/** URL configurável para a API protegida do Azure Static Web Apps. */
+export function publishedSnapshotUrl(): string | null {
+  const configured = process.env.NEXT_PUBLIC_GIRO_API_URL?.trim();
+  return configured || null;
+}
+
+/**
+ * Carrega a leitura compartilhada no navegador.
+ *
+ * Sem NEXT_PUBLIC_GIRO_API_URL o site permanece no modo local/IndexedDB. Isso
+ * permite desenvolver e publicar a interface antes de ligar o endpoint
+ * protegido pelo Entra ID, sem tentar buscar uma rota inexistente no Pages.
+ */
+export async function loadPublishedSnapshot(): Promise<DashboardSnapshotPayload | null> {
+  const url = publishedSnapshotUrl();
+  if (!url || typeof window === "undefined") return null;
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+    const document = await response.json() as Partial<PublishedSnapshotDocument>;
+    if (document.kind !== "giro-snapshot" || document.schemaVersion !== 1 || !document.snapshot) return null;
+    if (document.snapshot.schemaVersion !== 2 || !document.snapshot.coverage) return null;
+    return document.snapshot;
+  } catch {
+    // O IndexedDB/local continua sendo o fallback quando o endpoint estiver
+    // indisponível, em desenvolvimento ou temporariamente sem autenticação.
+    return null;
+  }
+}
+````
+
 ## `src/lib/static-dashboard.ts`
 
 ````typescript
@@ -15845,6 +16266,7 @@ import {
   formatStoredDataset,
   type ProcessRow,
 } from "@/lib/static-store";
+import { loadPublishedSnapshot } from "@/lib/published-snapshot";
 import {
   defaultPreviousSnapshot,
   type DashboardSnapshotPayload,
@@ -15886,6 +16308,8 @@ export type PanoramaBlockSource = "snapshot" | "registros" | "ausente";
 export interface StaticDashboardData {
   geradoEm: string;
   hasData: boolean;
+  /** Fonte do snapshot atualmente exibido no panorama. */
+  dataSource: "shared" | "local" | "none";
   currentSnapshot: DashboardSnapshotPayload | null;
   previousSnapshot: DashboardSnapshotPayload | null;
   blocos: Record<PanoramaBlock, PanoramaBlockSource>;
@@ -16083,11 +16507,31 @@ function buildAtasConcluidas(
 }
 
 export async function getStaticDashboardData(): Promise<StaticDashboardData> {
-  const [rows, allDatasets, snapshotDatasets] = await Promise.all([
+  const [rows, allDatasets, localSnapshotDatasets, publishedSnapshot] = await Promise.all([
     listActiveProcessRows(),
     listDatasets(),
     listSnapshotDatasets(),
+    loadPublishedSnapshot(),
   ]);
+
+  // Uma importação local continua sendo um override explícito deste navegador.
+  // Quando não existe snapshot local, todos os usuários autorizados podem ver
+  // a mesma leitura entregue pela API protegida do Azure/Entra.
+  const publishedDataset = publishedSnapshot ? {
+    id: -1,
+    fileName: publishedSnapshot.sourceFiles.join(", ") || "Snapshot compartilhado",
+    sheetName: "Snapshot publicado",
+    referenceDate: publishedSnapshot.referenceDate,
+    importedAt: publishedSnapshot.capturedAt,
+    status: "active" as const,
+    snapshot: publishedSnapshot,
+  } : null;
+  const snapshotDatasets = localSnapshotDatasets.length > 0
+    ? localSnapshotDatasets
+    : publishedDataset ? [publishedDataset] : [];
+  const dataSource: StaticDashboardData["dataSource"] = localSnapshotDatasets.length > 0
+    ? "local"
+    : publishedSnapshot ? "shared" : "none";
 
   const currentSnapshot = snapshotDatasets[0]?.snapshot ?? null;
   // Antes de uma segunda importação, a referência fornecida para 13/10 mantém
@@ -16367,6 +16811,7 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   return {
     geradoEm: new Date().toISOString(),
     hasData,
+    dataSource,
     currentSnapshot,
     previousSnapshot,
     blocos,
@@ -16390,8 +16835,9 @@ export async function getStaticBaseSummary() {
   const references = active.map((d) => d.referenceDate).filter(Boolean) as string[];
   return {
     hasData: data.hasData,
+    dataSource: data.dataSource,
     referenceDate: references.sort().reverse()[0] ?? data.currentSnapshot?.referenceDate ?? null,
-    activeCount: active.length,
+    activeCount: Math.max(active.length, data.dataSource === "shared" ? 1 : 0),
     processCount: data.kpis.processos,
   };
 }
@@ -16752,6 +17198,36 @@ export function formatStoredDataset(dataset: StoredDataset) {
     snapshot_coverage: dataset.snapshot?.coverage ?? null,
     report: dataset.report,
   };
+}
+````
+
+## `staticwebapp.config.json`
+
+````json
+{
+  "routes": [
+    {
+      "route": "/api/admin/*",
+      "allowedRoles": ["giro-admin"]
+    },
+    {
+      "route": "/api/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/.auth/*",
+      "allowedRoles": ["anonymous"]
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["authenticated"]
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer"
+    }
+  }
 }
 ````
 

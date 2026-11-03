@@ -69,7 +69,7 @@ export function situacaoChave(situacao: string | null | undefined): SituacaoChav
 export const AREA_STYLE: Record<string, { chip: string; dot: string; bar: string; band: string; hex: string }> = {
   Indiretos: { chip: "bg-indiretos-100 text-indiretos-700", dot: "bg-indiretos-500", bar: "bg-indiretos-500", band: "bg-indiretos-500 text-white", hex: "#0b7c7b" },
   Diretos: { chip: "bg-diretos-100 text-diretos-700", dot: "bg-diretos-500", bar: "bg-diretos-500", band: "bg-diretos-500 text-white", hex: "#0a6fd6" },
-  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-500", bar: "bg-capex-500", band: "bg-capex-500 text-navy-950", hex: "#fca500" },
+  CAPEX: { chip: "bg-capex-100 text-capex-700", dot: "bg-capex-500", bar: "bg-capex-500", band: "bg-capex-500 text-[#16202a]", hex: "#fca500" },
   "Não informado": { chip: "bg-neutral-100 text-neutral-700", dot: "bg-neutral-500", bar: "bg-neutral-400", band: "bg-neutral-500 text-white", hex: "#98a2b3" },
 };
 
