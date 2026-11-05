@@ -42,6 +42,7 @@ import {
   snapshotBlockLabel,
   type DashboardSnapshotPayload,
 } from "@/lib/dashboard-snapshot";
+import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
 
 /* ------------------------------------------------------------------ */
 
@@ -266,17 +267,19 @@ export function ImportWizard() {
     setValidando(true);
     setErroEtapa(null);
     try {
-      const snapshot = extractSnapshotPayload(combinedInfo.sourceSheets, {
+      const extractionOptions = {
         fileNames: combinedInfo.names,
         referenceDate: referenceDate || null,
-      });
+      };
+      const consolidated = extractConsolidatedGiro(combinedInfo.sourceSheets, extractionOptions);
+      const snapshot = consolidated?.snapshot ?? extractSnapshotPayload(combinedInfo.sourceSheets, extractionOptions);
       const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
       if (!meaningful) {
-        throw new Error("Nenhum bloco consolidado das abas GIRO 01–07 foi reconhecido. Confira se a planilha contém os nomes exatos das abas e do layout esperado.");
+        throw new Error("Nenhuma base consolidada ou bloco das abas GIRO 01–07 foi reconhecido. Envie a pasta com Negociação, Renovação e Base - Controle de Contratos, ou uma planilha no layout antigo.");
       }
-      // A importação consolidada não cria registros operacionais por inferência.
-      // Linhas de processos permanecem zero quando a fonte traz somente o snapshot.
-      const result: ValidationResult = { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
+      // A nova pasta gera também os registros completos de Processos automaticamente.
+      // O layout antigo continua sendo apenas snapshot, sem inferência operacional.
+      const result: ValidationResult = consolidated?.result ?? { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
       setResultadoValidacao(result);
       setResultadoSnapshot(snapshot);
       const resumo = resumoDaValidacao(result);
@@ -362,7 +365,7 @@ export function ImportWizard() {
       <PageHeader
         overline="Dados"
         title="Importar planilha"
-        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura das abas GIRO é automática e o arquivo permanece no seu navegador após a confirmação.`}
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. Negociação, Renovação e Base - Controle de Contratos são reconhecidas automaticamente; o layout GIRO 01–07 continua compatível. Os dados permanecem no seu navegador após a confirmação.`}
       />
 
       <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
@@ -655,7 +658,7 @@ export function ImportWizard() {
           {!canValidate && (
             <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
               <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Nenhum bloco reconhecido. Volte ao arquivo e confirme as abas GIRO 01–07 e os nomes exatos do layout.
+              Nenhum bloco reconhecido. Volte ao arquivo e confirme as três bases consolidadas ou as abas GIRO 01–07 e os nomes exatos do layout.
             </div>
           )}
 

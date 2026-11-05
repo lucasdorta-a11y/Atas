@@ -397,7 +397,10 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   // dos blocos explícitos, não da contagem de linhas operacionais (que pode ser
   // zero em uma importação somente de métricas).
   if (currentSnapshot) {
-    kpis.processos = porArea.reduce((sum, area) => sum + area.processos, 0);
+    // Quando a importação também trouxe os registros completos, o indicador
+    // global acompanha a consulta de Processos. Os totais por área usados no
+    // gráfico de compradores continuam representando os contratos da Base.
+    kpis.processos = rows.length > 0 ? rows.length : porArea.reduce((sum, area) => sum + area.processos, 0);
     kpis.valorTotal = porArea.reduce((sum, area) => sum + area.valor, 0);
     kpis.itens = [...currentEvolution.values()].reduce((sum, area) => sum + area.concluidas_itens + area.andamento_itens, 0);
   }

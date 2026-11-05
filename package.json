@@ -10,6 +10,7 @@
     "docs:fonte": "node scripts/gerar-codigo-fonte.mjs",
     "amostras": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/gerar-amostras.mts",
     "extrair": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/extrair-snapshot.mts",
+    "consolidado:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/consolidado-dry-run.mts",
     "panorama:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/panorama-dry-run.mts",
     "giro:json": "node --no-warnings --import ./scripts/dev/register.mjs scripts/gerar-giro-json.mts"
   },

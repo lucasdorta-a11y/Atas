@@ -1,4 +1,5 @@
 import { normText, parseDateBR, parseNumberBR } from "@/lib/domain";
+import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
 
 /**
  * Estruturas dos blocos consolidados da planilha de gestão de atas.
@@ -80,6 +81,8 @@ export interface SnapshotValueArea {
   savingProp: number | null;
   reducaoHistPct: number | null;
   reducaoPropPct: number | null;
+  /** Saldo vigente calculado diretamente pela Base consolidada, quando disponível. */
+  saldoDisponivel?: number | null;
 }
 
 export interface SnapshotBuyer {
@@ -2502,6 +2505,11 @@ export function extractSnapshotPayload(
   sheets: SnapshotSourceSheet[],
   options: { fileNames?: string[]; referenceDate?: string | null } = {},
 ): DashboardSnapshotPayload {
+  // A nova pasta consolidada é detectada pelos cabeçalhos das três bases.
+  // Planilhas antigas seguem integralmente pelo extrator GIRO 01–07 abaixo.
+  const consolidated = extractConsolidatedGiro(sheets, options);
+  if (consolidated) return consolidated.snapshot;
+
   const payload = emptyDashboardSnapshot(options.referenceDate ?? null, options.fileNames ?? [...new Set(sheets.map((sheet) => sheet.fileName))]);
   extractReadingTable(payload, sheets);
   extractAreaValues(payload, sheets);

@@ -299,7 +299,9 @@ export async function listActiveProcessRows(): Promise<ProcessRow[]> {
         situacao: prazo.chave,
         file_name: dataset.fileName,
         kind: dataset.kind,
-        natureza: dataset.natureza,
+        // Nas três bases consolidadas, a natureza pertence a cada registro;
+        // nas importações antigas, permanece a natureza do dataset.
+        natureza: record.extra?.Natureza ?? dataset.natureza,
         reference_date: dataset.referenceDate,
         imported_at: dataset.importedAt,
       });

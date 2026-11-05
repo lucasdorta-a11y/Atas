@@ -18,6 +18,7 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [postcss.config.mjs](#postcssconfigmjs)
 - [public/.nojekyll](#publicnojekyll)
 - [scripts/dev/alias-loader.mjs](#scriptsdevaliasloadermjs)
+- [scripts/dev/consolidado-dry-run.mts](#scriptsdevconsolidadodryrunmts)
 - [scripts/dev/extrair-snapshot.mts](#scriptsdevextrairsnapshotmts)
 - [scripts/dev/gerar-amostras.mts](#scriptsdevgeraramostrasmts)
 - [scripts/dev/panorama-dry-run.mts](#scriptsdevpanoramadryrunmts)
@@ -43,6 +44,7 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [src/components/status-atas.tsx](#srccomponentsstatusatastsx)
 - [src/components/ui.tsx](#srccomponentsuitsx)
 - [src/lib/client-parse.ts](#srclibclientparsets)
+- [src/lib/consolidated-giro.ts](#srclibconsolidatedgirots)
 - [src/lib/csv.ts](#srclibcsvts)
 - [src/lib/dashboard-snapshot.ts](#srclibdashboardsnapshotts)
 - [src/lib/domain.ts](#srclibdomaints)
@@ -187,9 +189,9 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
 - lê automaticamente todas as abas com dados e consolida as linhas;
 - trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
-- reconhece automaticamente os blocos consolidados das abas `GIRO 01–07`, sem mapeamento manual de colunas operacionais;
+- reconhece automaticamente tanto a nova pasta com **Negociação + Renovação + Base - Controle de Contratos** quanto as abas antigas `GIRO 01–07`, sem mapeamento manual;
 - mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
-- alimenta o panorama com o snapshot confirmado e mantém a consulta de processos, filtros, paginação e exportação CSV para registros operacionais já salvos;
+- alimenta o panorama e, na nova pasta consolidada, gera automaticamente os registros completos da consulta de Processos, incluindo CW e Ariba na pesquisa, filtros, paginação e exportação CSV;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -251,6 +253,9 @@ npm run amostras
 # quais blocos são reconhecidos e com quais números
 npm run extrair -- amostras/semana-atual.xlsx --ref=2026-10-13
 
+# valida a nova pasta consolidada sem gravar JSON nem dados em public/
+npm run consolidado:dry-run -- pasta-consolidada.xlsx --ref=AAAA-MM-DD
+
 # monta o StaticDashboardData completo que a tela usa
 npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
 
@@ -285,13 +290,28 @@ https://lucasdorta-a11y.github.io/Atas/
 3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
 4. Na etapa **Tipo de base**, escolha somente **Substituir** ou **Combinar** e informe a data de referência.
 5. Confira o **Resumo automático**: os blocos reconhecidos são apresentados visualmente e os ausentes permanecem explicitamente ausentes.
-6. Revise a importação do snapshot, sem mapeamento operacional e sem criação de processos por inferência.
+6. Revise o snapshot e, para a nova pasta consolidada, os registros de Processos gerados automaticamente. Não há mapeamento operacional; o layout antigo continua sendo somente snapshot.
 7. Baixe o relatório de validação, se necessário, e confirme a importação.
 8. **Substituir** arquiva a leitura ativa no histórico; **Combinar** mantém as bases locais ativas.
 
 A origem, a data de referência, os blocos reconhecidos/ausentes e os avisos ficam visíveis na auditoria das bases.
 
-## Leitura exata do painel consolidado
+## Nova pasta consolidada: Negociação + Renovação + Contratos
+
+Quando a `Base - Controle de Contratos` contém os cabeçalhos `CW` e `Status do CW`, o site reconhece o novo layout e exige também as bases de Negociação e Renovação. As três podem estar em um único `.xlsx` com três abas. A leitura usa os nomes dos cabeçalhos, não posições fixas de colunas, e tem prioridade sobre o extrator antigo.
+
+Nesse layout, a mesma extração produz:
+
+- os 12 blocos do Panorama, com os seis cards, evolução, valores, saving, compradores, fornecedores, previsões e renovações;
+- a lista completa de processos de Andamento, Contratos e Histórico para a página **Processos**;
+- chaves de pesquisa por contrato, CW e projeto Ariba, além dos demais campos já existentes;
+- a lista completa de atas finalizadas, comparada com a importação anterior pelo histórico local do IndexedDB.
+
+Contratos vencidos com renovação ativa não entram como “vencidas sem ação” nos cards; continuam visíveis no status de renovações. Registros com `RENOVADO` saem da carteira pendente. Fornecedores e vínculos ausentes permanecem sinalizados, sem inferência. A primeira importação consolidada estabelece a linha de base completa; as seguintes passam a mostrar somente as novas finalizadas em relação ao snapshot local anterior.
+
+Se esses cabeçalhos não estiverem presentes, o site segue com o fallback `GIRO 01–07` descrito abaixo. Nenhum dado da planilha é incorporado ao build ou ao GitHub Pages: a importação continua apenas no navegador do usuário.
+
+## Leitura exata do painel consolidado (layout GIRO 01–07)
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
 
@@ -345,8 +365,10 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 ## Testes realizados
 
-- `npm run typecheck`
+- `npm run typecheck` e `npm run lint`
 - `npm run build` com export estático
+- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos
+- fallback do layout antigo verificado com `npm run extrair`
 - smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no servidor de desenvolvimento
 - validação local compartilhada entre preview e gravação, incluindo múltiplos arquivos e abas
 
@@ -373,7 +395,7 @@ export default defineConfig([
 ````typescript
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
-import "./.next/dev/types/routes.d.ts";
+import "./.next/types/routes.d.ts";
 
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
@@ -7259,6 +7281,7 @@ export default nextConfig;
     "docs:fonte": "node scripts/gerar-codigo-fonte.mjs",
     "amostras": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/gerar-amostras.mts",
     "extrair": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/extrair-snapshot.mts",
+    "consolidado:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/consolidado-dry-run.mts",
     "panorama:dry-run": "node --no-warnings --import ./scripts/dev/register.mjs scripts/dev/panorama-dry-run.mts",
     "giro:json": "node --no-warnings --import ./scripts/dev/register.mjs scripts/gerar-giro-json.mts"
   },
@@ -7365,6 +7388,129 @@ export async function load(url, context, nextLoad) {
     return { format: "module", source: result.outputText, shortCircuit: true };
   }
   return nextLoad(url, context);
+}
+````
+
+## `scripts/dev/consolidado-dry-run.mts`
+
+````typescript
+/**
+ * Valida a leitura das três bases consolidadas sem escrever JSON nem dados em public/.
+ *
+ * npm run consolidado:dry-run -- negociacao.xlsx renovacao.xlsx contratos.xlsx --ref=AAAA-MM-DD
+ * Também aceita um único .xlsx com as três abas, ou três CSVs.
+ */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import * as XLSX from "xlsx";
+import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
+import type { SnapshotSourceSheet } from "@/lib/dashboard-snapshot";
+import { situacaoPrazo } from "@/lib/domain";
+
+const args = process.argv.slice(2);
+const files = args.filter((arg) => !arg.startsWith("--"));
+const referenceDate = args.find((arg) => arg.startsWith("--ref="))?.slice(6) ?? null;
+if (!files.length) {
+  console.error("Uso: npm run consolidado:dry-run -- <arquivos .xlsx/.csv> [--ref=AAAA-MM-DD]");
+  process.exit(1);
+}
+
+function decodeCsv(buffer: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder("windows-1252").decode(buffer);
+  }
+}
+
+function delimiter(text: string): string {
+  const sample = text.split(/\r\n|\r|\n/).slice(0, 30).join("\n");
+  return [";", ",", "\t", "|"].sort((a, b) => (sample.split(b).length - 1) - (sample.split(a).length - 1))[0];
+}
+
+const sheets: SnapshotSourceSheet[] = [];
+for (const file of files) {
+  const buffer = readFileSync(file);
+  const ext = path.extname(file).toLowerCase();
+  const text = ext === ".csv" ? decodeCsv(buffer) : null;
+  const workbook = ext === ".csv"
+    ? XLSX.read(text, { type: "string", FS: delimiter(text!), raw: true })
+    : XLSX.read(buffer, { type: "buffer", cellDates: true });
+  for (const sheetName of workbook.SheetNames) {
+    sheets.push({
+      fileName: path.basename(file),
+      sheetName,
+      matrix: XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+        header: 1, raw: true, defval: null, blankrows: true,
+      }) as unknown[][],
+    });
+  }
+}
+
+const extracted = extractConsolidatedGiro(sheets, { referenceDate, fileNames: files.map((file) => path.basename(file)) });
+if (!extracted) throw new Error("As três bases consolidadas não foram reconhecidas.");
+const { snapshot, result } = extracted;
+const assert = (condition: unknown, message: string) => {
+  if (!condition) throw new Error(`Falha de consistência: ${message}`);
+};
+const sum = (values: Array<number | null | undefined>) => values.reduce<number>((total, value) => total + (value ?? 0), 0);
+const areas = ["INDIRETOS", "DIRETOS", "CAPEX"] as const;
+const natureCount = (nature: string) => result.records.filter((record) => record.extra.Natureza === nature).length;
+const contratos = sum(areas.map((area) => snapshot.topCompradores[area].totalAtasArea));
+const finalizadas = snapshot.atasConcluidas.length;
+const canceladas = sum(areas.map((area) => snapshot.previsoes.canceladas[area].atas));
+const andamento = snapshot.kpis.andamentoAtas ?? 0;
+
+assert(snapshot.coverage.missing.length === 0, "há blocos ausentes no snapshot");
+assert(result.records.length === contratos + finalizadas + canceladas + andamento, "Processos não reconcilia com Contratos + Negociação");
+assert(natureCount("Contratos Vigentes") === contratos, "natureza Contratos Vigentes");
+assert(natureCount("Histórico (Finaliz./Canc.)") === finalizadas + canceladas, "natureza Histórico");
+assert(natureCount("Atas em Andamento") === andamento, "natureza Atas em Andamento");
+assert(new Set(result.records.map((record) => record.rowHash)).size === result.records.length, "rowHash duplicado");
+assert(result.records.every((record) => record.numero && record.objeto), "registro sem número ou objeto");
+for (const area of areas) {
+  const evolution = snapshot.evolucao[area];
+  assert(evolution.andamentoAtas === snapshot.previsaoMeses[area].rows.reduce((total, row) => total + (row.atas ?? 0), 0), `previsão mensal de ${area}`);
+}
+
+const cwSearchable = result.records.filter((record) => /\bCW\d+/i.test(record.extra.CW ?? "")).length;
+console.log("Leitura consolidada íntegra — nenhum arquivo foi gravado.");
+console.log(`Referência: ${snapshot.referenceDate} | blocos: ${snapshot.coverage.found.length} | avisos: ${result.warnings}`);
+console.log(`Processos: ${result.records.length} = ${andamento} Andamento + ${contratos} Contratos + ${finalizadas + canceladas} Histórico`);
+console.log(`Registros com CW pesquisável: ${cwSearchable}`);
+console.log("KPIs:", JSON.stringify(snapshot.kpis));
+console.log(`Valor contratado: ${sum(areas.map((area) => snapshot.valueAreas[area].valor)).toFixed(2)}`);
+console.log(`Saldo vigente disponível: ${sum(areas.map((area) => snapshot.valueAreas[area].saldoDisponivel)).toFixed(2)}`);
+console.log(`Saving sob proposta: ${(snapshot.savingTotal.savingProp ?? 0).toFixed(2)}`);
+
+// Com ATAS_STUB_STORE=1, testa também a montagem real do Panorama sem IndexedDB.
+if (process.env.ATAS_STUB_STORE === "1") {
+  const rows = result.records.map((record, index) => {
+    const prazo = situacaoPrazo(record.situacaoNorm, record.dataFim);
+    return {
+      id: `dry-${index}`, dataset_id: 1,
+      area: record.area, numero: record.numero, objeto: record.objeto,
+      unidade: record.unidade, fornecedor: record.fornecedor, responsavel: record.responsavel,
+      etapa: record.etapa, situacao_fonte: record.situacaoFonte, situacao_norm: record.situacaoNorm,
+      data_inicio: record.dataInicio, data_fim: record.dataFim, quantidade: record.quantidade,
+      valor: record.valor, status_consumo: record.statusConsumo,
+      saving_hist: record.savingHist, saving_prop: record.savingProp,
+      status_renovacao: record.statusRenovacao, data_previsao: record.dataPrevisao,
+      observacao: record.observacao, link: record.link, source_row: record.sourceRow,
+      extra: record.extra, dias: prazo.dias, situacao: prazo.chave,
+      file_name: "dry-run", kind: "outro", natureza: record.extra.Natureza ?? "snapshot",
+      reference_date: snapshot.referenceDate, imported_at: snapshot.capturedAt,
+    };
+  });
+  (globalThis as Record<string, unknown>).__ATAS_STORE__ = { snapshots: [snapshot], rows, datasets: [] };
+  const { getStaticDashboardData, getStaticBaseSummary } = await import("@/lib/static-dashboard");
+  const dashboard = await getStaticDashboardData();
+  const summary = await getStaticBaseSummary();
+  assert(summary.processCount === result.records.length, "contagem global do Panorama");
+  assert(dashboard.kpis.concluidosAtas === snapshot.kpis.concluidasAtas, "card de concluídas no Panorama");
+  assert(dashboard.kpis.andamentoAtas === snapshot.kpis.andamentoAtas, "card de andamento no Panorama");
+  assert(dashboard.atasConcluidas.totalFinalizadas === finalizadas, "lista de finalizadas no Panorama");
+  console.log(`Panorama integrado: ${summary.processCount} registros | ${dashboard.atasConcluidas.totalFinalizadas} finalizadas na base atual`);
 }
 ````
 
@@ -10410,6 +10556,7 @@ import {
   snapshotBlockLabel,
   type DashboardSnapshotPayload,
 } from "@/lib/dashboard-snapshot";
+import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
 
 /* ------------------------------------------------------------------ */
 
@@ -10634,17 +10781,19 @@ export function ImportWizard() {
     setValidando(true);
     setErroEtapa(null);
     try {
-      const snapshot = extractSnapshotPayload(combinedInfo.sourceSheets, {
+      const extractionOptions = {
         fileNames: combinedInfo.names,
         referenceDate: referenceDate || null,
-      });
+      };
+      const consolidated = extractConsolidatedGiro(combinedInfo.sourceSheets, extractionOptions);
+      const snapshot = consolidated?.snapshot ?? extractSnapshotPayload(combinedInfo.sourceSheets, extractionOptions);
       const meaningful = hasSnapshotPayloadMeaningfulData(snapshot);
       if (!meaningful) {
-        throw new Error("Nenhum bloco consolidado das abas GIRO 01–07 foi reconhecido. Confira se a planilha contém os nomes exatos das abas e do layout esperado.");
+        throw new Error("Nenhuma base consolidada ou bloco das abas GIRO 01–07 foi reconhecido. Envie a pasta com Negociação, Renovação e Base - Controle de Contratos, ou uma planilha no layout antigo.");
       }
-      // A importação consolidada não cria registros operacionais por inferência.
-      // Linhas de processos permanecem zero quando a fonte traz somente o snapshot.
-      const result: ValidationResult = { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
+      // A nova pasta gera também os registros completos de Processos automaticamente.
+      // O layout antigo continua sendo apenas snapshot, sem inferência operacional.
+      const result: ValidationResult = consolidated?.result ?? { records: [], issues: [], skipped: 0, duplicates: 0, warnings: 0 };
       setResultadoValidacao(result);
       setResultadoSnapshot(snapshot);
       const resumo = resumoDaValidacao(result);
@@ -10730,7 +10879,7 @@ export function ImportWizard() {
       <PageHeader
         overline="Dados"
         title="Importar planilha"
-        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. A leitura das abas GIRO é automática e o arquivo permanece no seu navegador após a confirmação.`}
+        description={`Leia arquivos .xlsx, .xls ou .csv de até ${MAX_FILE_MB} MB. Negociação, Renovação e Base - Controle de Contratos são reconhecidas automaticamente; o layout GIRO 01–07 continua compatível. Os dados permanecem no seu navegador após a confirmação.`}
       />
 
       <div ref={liveRef} role="status" aria-live="polite" className="sr-only" />
@@ -11023,7 +11172,7 @@ export function ImportWizard() {
           {!canValidate && (
             <div className="card flex items-start gap-2.5 border-danger-600/30 bg-danger-100/40 p-4 text-[13px] leading-relaxed text-danger-700" role="alert">
               <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-              Nenhum bloco reconhecido. Volte ao arquivo e confirme as abas GIRO 01–07 e os nomes exatos do layout.
+              Nenhum bloco reconhecido. Volte ao arquivo e confirme as três bases consolidadas ou as abas GIRO 01–07 e os nomes exatos do layout.
             </div>
           )}
 
@@ -12937,6 +13086,825 @@ export function extractTable(sheet: ParsedSheet, headerRowIndex: number): SheetT
 }
 ````
 
+## `src/lib/consolidated-giro.ts`
+
+````typescript
+/**
+ * Leitura automática das três bases consolidadas do Giro:
+ * Negociação + Renovação + Base - Controle de Contratos.
+ *
+ * Não depende das abas-resumo GIRO 01–07 nem de posições fixas de colunas.
+ * O mesmo módulo alimenta o snapshot do Panorama e os registros da consulta
+ * de Processos; a comparação semanal continua sendo feita pelo IndexedDB.
+ */
+import type {
+  DashboardSnapshotPayload,
+  SnapshotSourceSheet,
+} from "./dashboard-snapshot";
+import type { CleanRecord, Issue, ValidationResult } from "./domain";
+
+const AREAS = ["INDIRETOS", "DIRETOS", "CAPEX"] as const;
+const BANDS = ["ate_15", "ate_30", "ate_60", "vencidas", "acima_60", "canceladas", "finalizadas"] as const;
+const BLOCK_KEYS = [
+  "kpis-leitura", "valores-por-area", "saving", "top-compradores", "fornecedores",
+  "evolucao", "previsao-faixas", "previsao-meses", "previsoes-cruzadas",
+  "atas-concluidas", "contratos-fornecedores", "status-atas",
+];
+const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+type Area = (typeof AREAS)[number];
+type Rec = Record<string, any>;
+type Matrix = unknown[][];
+interface Table {
+  sheet: SnapshotSourceSheet;
+  headerRow: number;
+  map: Record<string, number>;
+  rows: Matrix;
+  preHeader: Matrix;
+}
+
+export interface ConsolidatedGiroExtraction {
+  snapshot: DashboardSnapshotPayload;
+  result: ValidationResult;
+}
+
+function clean(value: unknown): string {
+  return String(value ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function headerNorm(value: unknown): string {
+  return clean(value).normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+}
+
+function upper(value: unknown): string {
+  return clean(value).toUpperCase();
+}
+
+function round2(value: number): number {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function parseMoneyBR(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? round2(value) : 0;
+  const raw = clean(value);
+  if (!raw || /^R?\$?\s*-?$/.test(raw) || raw.includes("#")) return 0;
+  const negative = /^\s*-/.test(raw) || /^\(.*\)$/.test(raw);
+  let text = raw.replace(/R\$/gi, "").replace(/%/g, "").replace(/\s/g, "");
+  text = text.replace(/[^\d.,-]/g, "").replace(/-/g, "");
+  if (!text) return 0;
+  if (text.includes(",")) text = text.replace(/\./g, "").replace(",", ".");
+  else text = text.replace(/\.(?=\d{3}(?:\D|$))/g, "");
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) return 0;
+  return round2(negative ? -Math.abs(parsed) : parsed);
+}
+
+function parseIntBR(value: unknown): number {
+  return Math.round(parseMoneyBR(value));
+}
+
+function parseDateBR(value: unknown): { iso: string; br: string } {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return { iso: `${year}-${month}-${day}`, br: `${day}/${month}/${year}` };
+  }
+  const raw = clean(value);
+  let match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    let year = Number(match[3]);
+    if (year < 100) year += 2000;
+    if (day < 1 || day > 31 || month < 1 || month > 12) return { iso: "", br: "" };
+    const dd = String(day).padStart(2, "0");
+    const mm = String(month).padStart(2, "0");
+    return { iso: `${year}-${mm}-${dd}`, br: `${dd}/${mm}/${year}` };
+  }
+  match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return { iso: raw, br: `${match[3]}/${match[2]}/${match[1]}` };
+  return { iso: "", br: "" };
+}
+
+function daysBetween(fromIso: string, toIso: string): number | null {
+  if (!fromIso || !toIso) return null;
+  return Math.round((new Date(`${toIso}T00:00:00Z`).getTime() - new Date(`${fromIso}T00:00:00Z`).getTime()) / 86400000);
+}
+
+function pct(num: number, den: number): number {
+  return den ? round2((num * 100) / den) : 0;
+}
+
+function areaKey(raw: unknown): Area | "" {
+  const value = upper(raw);
+  if (value.includes("CAPEX")) return "CAPEX";
+  if (value.includes("INDIRET")) return "INDIRETOS";
+  if (value.includes("DIRET")) return "DIRETOS";
+  return "";
+}
+
+function areaLabel(raw: unknown): string {
+  const key = areaKey(raw);
+  return key === "INDIRETOS" ? "Indiretos" : key === "DIRETOS" ? "Diretos" : key === "CAPEX" ? "CAPEX" : "Não informado";
+}
+
+function stripCode(raw: unknown): string {
+  return clean(raw).replace(/\s*\([A-Z]?\d+\)\s*$/i, "").trim();
+}
+
+function normBuyer(raw: unknown): string {
+  const value = stripCode(raw).toUpperCase();
+  if (!value) return "";
+  if (["FABIO LUIS", "FÁBIO LUIS", "FABIO LUÍS"].includes(value)) return "FÁBIO LUÍS";
+  if (value === "LUCAS MAIA VICENTINI") return "LUCAS VICENTINI";
+  return value;
+}
+
+function normModalidade(raw: unknown): string {
+  const original = clean(raw).replace(/\s*\(\d+\)\s*$/, "").trim();
+  const value = upper(original);
+  if (!value) return "Não informada";
+  if (value.includes("ATO CONVOCAT")) return "Ato Convocatório";
+  if (value.includes("COTA") && value.includes("SIMPLIF")) return "Cotação Simplificada";
+  if (value.includes("DISPENSA")) return "Dispensa";
+  if (value.includes("EXCLUSIV")) return "Exclusividade";
+  if (value.includes("INEXIG") || value.includes("INEXIB")) return "Inexigibilidade";
+  if (value.includes("CATÁLOGO") || value.includes("CATALOGO")) return "Ata / Catálogo";
+  return original;
+}
+
+function normGrupo(raw: unknown): string {
+  const base = clean(raw).replace(/\s*\(\d+\)\s*$/, "").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!base) return "Não classificado";
+  if (base.startsWith("ALMOXATIFADO") || base.startsWith("ALMOXARIFADO")) return "ALMOXARIFADO TÉCNICO";
+  if (base.startsWith("ALIMENTOS PARA ANIMA")) return "ALIMENTOS PARA ANIMAIS";
+  if (base.startsWith("ANIMAIS E ACESSORIOS")) return "ANIMAIS E ACESSÓRIOS";
+  if (base.startsWith("AUX. DE PRODU") || base.startsWith("AUXILIAR DE PRODU") || base === "MATERIAL AUXILIAR DE PRODUÇÃO") return "AUXILIAR DE PRODUÇÃO";
+  if (base.startsWith("MATERIAIS AUX CRITIC")) return "MATERIAIS AUX. CRÍTICOS";
+  if (base.startsWith("CONSTR.CV")) return "CONSTRUÇÃO CIVIL / MARCENARIA";
+  if (base.startsWith("CONSUMÍVEL DE PRODU") || base.startsWith("CONSUMIVEL DE PRODU")) return base.includes("REAGENTE") ? "CONSUMÍVEIS / REAGENTES CONTROLADOS" : "CONSUMÍVEL DE PRODUÇÃO";
+  if (base.startsWith("ELETRICA / AUTOMA")) return "ELÉTRICA / AUTOMAÇÃO";
+  if (base.startsWith("EMBALAG")) return "EMBALAGENS E ACONDICIONAMENTO";
+  if (base.startsWith("EPI E EPC")) return "EPI E EPC";
+  if (base.startsWith("FERRAMENTAS MANUAIS")) return "FERRAMENTAS MANUAIS";
+  if (base.startsWith("FERTILIZANTES E DEFE")) return "FERTILIZANTES E DEFENSIVOS";
+  if (base.startsWith("FLORES,PLANTAS")) return "FLORES, PLANTAS E SEMENTES";
+  if (base.startsWith("INSUMOS CLINICOS")) return "INSUMOS CLÍNICOS E DIAGNÓSTICOS";
+  if (base.startsWith("INSUMOS HOSP")) return "INSUMOS HOSPITALARES";
+  if (base.startsWith("INSUMOS PARA FAZENDA")) return "INSUMOS PARA FAZENDA";
+  if (base.startsWith("MATERIA PRIMA") || base.startsWith("MATÉRIA PRIMA")) return "MATÉRIA-PRIMA";
+  if (base.startsWith("MATERIAIS DE ESCRITO")) return "MATERIAIS DE ESCRITÓRIO";
+  if (base.startsWith("MATERIAIS E EQUIPAME")) return "MATERIAIS E EQUIPAMENTOS LAB.";
+  if (base.startsWith("MATERIAIS ESTUDOS CL")) return "MATERIAIS ESTUDOS CLÍNICOS";
+  if (base.startsWith("PECAS DE VEICULOS")) return "PEÇAS DE VEÍCULOS";
+  if (base.startsWith("REAGENTE CONTROLAD") || base.startsWith("REAGENTES CONTROLAD")) return "REAGENTES CONTROLADOS";
+  if (base.startsWith("REAGENTE CONSUMO") || base.startsWith("REAGENTES CONSUMO")) return base.includes("AUXILIAR") ? "REAGENTES E AUX. PRODUÇÃO" : "REAGENTES DE CONSUMO";
+  if (base.startsWith("SERVICOS DE MANUTENC")) return "SERVIÇOS DE MANUTENÇÃO";
+  if (base.startsWith("SUPRIMENTOS DE INFOR")) return "SUPRIMENTOS DE INFORMÁTICA";
+  if (base.startsWith("TINTAS / ABRASIVOS")) return "TINTAS E ABRASIVOS";
+  if (base === "MOBILIARIO") return "MOBILIÁRIO";
+  return base;
+}
+
+function normTipoDocSap(raw: unknown): string {
+  const value = upper(raw);
+  if (!value) return "";
+  if (value.includes("QTD") || value.includes("QUANT")) return "Por Quantidade";
+  if (value.includes("VALOR")) return "Por Valor";
+  return clean(raw);
+}
+
+function makeHeader(sheet: SnapshotSourceSheet, required: string[]): Table | null {
+  const req = required.map(headerNorm);
+  const headerRow = sheet.matrix.findIndex((row) => {
+    const cells = new Set(row.map(headerNorm));
+    return req.every((name) => cells.has(name));
+  });
+  if (headerRow < 0) return null;
+  const map: Record<string, number> = {};
+  sheet.matrix[headerRow].forEach((value, index) => {
+    const key = headerNorm(value);
+    // Em cabeçalhos duplicados, preserva a primeira ocorrência, como no gerador validado.
+    if (key && map[key] === undefined) map[key] = index;
+  });
+  return { sheet, headerRow, map, rows: sheet.matrix.slice(headerRow + 1), preHeader: sheet.matrix.slice(0, headerRow) };
+}
+
+function findTable(sheets: SnapshotSourceSheet[], required: string[]): Table | null {
+  for (const sheet of sheets) {
+    const table = makeHeader(sheet, required);
+    if (table) return table;
+  }
+  return null;
+}
+
+function cell(row: unknown[], map: Record<string, number>, name: string): string {
+  const index = map[headerNorm(name)];
+  return index === undefined ? "" : clean(row[index]);
+}
+
+function rawCell(row: unknown[], map: Record<string, number>, name: string): unknown {
+  const index = map[headerNorm(name)];
+  return index === undefined ? null : row[index];
+}
+
+function hashRecord(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `consolidado-${(hash >>> 0).toString(16)}`;
+}
+
+function compactStrings(values: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    const text = clean(value);
+    if (text) result[key] = text;
+  }
+  return result;
+}
+
+/**
+ * Retorna null para planilhas legadas, permitindo o fallback GIRO 01–07.
+ * Se a nova Base for detectada sem as outras duas bases, informa o que falta.
+ */
+export function extractConsolidatedGiro(
+  sheets: SnapshotSourceSheet[],
+  options: { fileNames?: string[]; referenceDate?: string | null } = {},
+): ConsolidatedGiroExtraction | null {
+  const base = findTable(sheets, ["CW", "Contrato", "Cód SAP", "Valor total", "Área", "Status do CW"]);
+  if (!base) return null;
+  const neg = findTable(sheets, ["DESCRIÇÃO DOS LOTES ATAS", "QTD ITENS", "N° PROJETO ARIBA", "N° CONTRATO", "ESTIMATIVA DE CONCLUSÃO"]);
+  const ren = findTable(sheets, ["CONTRATO", "CW", "STATUS CW", "DECISÃO COMPRADOR", "QTD ITENS ATUAIS"]);
+  if (!neg || !ren) {
+    const missing = [!neg ? "Atas em Negociação" : "", !ren ? "Atas em Renovação" : ""].filter(Boolean).join(" e ");
+    throw new Error(`A Base - Controle de Contratos foi reconhecida, mas faltam as abas ${missing}. Envie a pasta consolidada completa.`);
+  }
+
+  let referenceDate = options.referenceDate ? parseDateBR(options.referenceDate).iso : "";
+  if (!referenceDate) {
+    for (const source of [base, ren]) {
+      for (const row of source.preHeader) {
+        for (const value of row) {
+          const parsed = parseDateBR(value);
+          if (parsed.iso) {
+            referenceDate = parsed.iso;
+            break;
+          }
+        }
+        if (referenceDate) break;
+      }
+      if (referenceDate) break;
+    }
+  }
+  if (!referenceDate) throw new Error("Data de referência não localizada. Informe a data da atualização antes de validar.");
+
+  // ---------- Base de contratos ----------
+  const baseItems: Rec[] = [];
+  for (const row of base.rows) {
+    const contrato = cell(row, base.map, "Contrato");
+    if (!/^\d+$/.test(contrato)) continue;
+    const vt = parseMoneyBR(rawCell(row, base.map, "Valor total"));
+    const vl = parseMoneyBR(rawCell(row, base.map, "Valor liberado"));
+    const vdRaw = cell(row, base.map, "Valor Disponivel");
+    const vd = vdRaw ? parseMoneyBR(rawCell(row, base.map, "Valor Disponivel")) : Math.max(0, round2(vt - vl));
+    const nivel = upper(cell(row, base.map, "NIVEL DE CONSUMO QTD"));
+    const qtdPrev = parseMoneyBR(rawCell(row, base.map, "Quantidade prevista"));
+    const qtdAberto = parseMoneyBR(rawCell(row, base.map, "Meta de quantidade em aberto"));
+    const consumo = nivel.includes("CONSUMIDO") ? "CONSUMIDO" : nivel.includes("SALDO") ? "COM SALDO" : qtdPrev > 0 && qtdAberto <= 0 ? "CONSUMIDO" : "COM SALDO";
+    baseItems.push({
+      contrato,
+      cw: cell(row, base.map, "CW"),
+      cwStatus: cell(row, base.map, "Status do CW"),
+      item: cell(row, base.map, "Item"),
+      sap: cell(row, base.map, "Cód SAP"),
+      material: cell(row, base.map, "Material"),
+      fornecedorRaw: cell(row, base.map, "Fornecedor"),
+      fornecedor: stripCode(cell(row, base.map, "Fornecedor")),
+      consumo, vt, vl, vd,
+      di: parseDateBR(rawCell(row, base.map, "Válido desde")),
+      df: parseDateBR(rawCell(row, base.map, "Válido até")),
+      statusVig: upper(cell(row, base.map, "Status Vigência")),
+      tipoDoc: normTipoDocSap(cell(row, base.map, "Descr,tp,doc,compras")),
+      compradorRaw: cell(row, base.map, "Comprador"),
+      comprador: normBuyer(cell(row, base.map, "Comprador")),
+      grupoRaw: cell(row, base.map, "Grupo de mercadorias"),
+      grupo: normGrupo(cell(row, base.map, "Grupo de mercadorias")),
+      gestor: cell(row, base.map, "Gestor do Contrato"),
+      modalidade: normModalidade(cell(row, base.map, "Modalidade")),
+      area: areaKey(cell(row, base.map, "Área")),
+    });
+  }
+
+  const contracts = new Map<string, Rec>();
+  const cwIndex = new Map<string, Set<string>>();
+  for (const item of baseItems) {
+    if (!contracts.has(item.contrato)) contracts.set(item.contrato, { contrato: item.contrato, items: [] });
+    contracts.get(item.contrato)!.items.push(item);
+    if (item.cw) {
+      if (!cwIndex.has(item.cw)) cwIndex.set(item.cw, new Set());
+      cwIndex.get(item.cw)!.add(item.contrato);
+    }
+  }
+
+  function dominantArea(items: Rec[]): Area | "" {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.area, (counts.get(item.area) ?? 0) + 1);
+    return ([...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "") as Area | "";
+  }
+
+  function contractStatus(items: Rec[]): string {
+    const statuses = new Set(items.map((item) => item.statusVig).filter(Boolean));
+    if (statuses.has("VENCIDO")) return "VENCIDO";
+    if (statuses.has("RENOVAR")) return "RENOVAR";
+    if (statuses.has("VÁLIDO")) return "VÁLIDO";
+    return "";
+  }
+
+  for (const contract of contracts.values()) {
+    const first = contract.items[0];
+    contract.area = dominantArea(contract.items);
+    contract.statusVig = contractStatus(contract.items);
+    contract.df = contract.items.find((item: Rec) => item.df.iso)?.df ?? { iso: "", br: "" };
+    contract.di = contract.items.find((item: Rec) => item.di.iso)?.di ?? { iso: "", br: "" };
+    contract.cws = [...new Set(contract.items.map((item: Rec) => item.cw).filter(Boolean))];
+    contract.cwStatuses = [...new Set(contract.items.map((item: Rec) => item.cwStatus).filter(Boolean))];
+    contract.fornecedoresRaw = [...new Set(contract.items.map((item: Rec) => item.fornecedorRaw).filter(Boolean))];
+    contract.fornecedores = [...new Set(contract.items.map((item: Rec) => item.fornecedor).filter(Boolean))];
+    contract.fornCodes = contract.fornecedoresRaw.map((value: string) => value.match(/\((\d+)\)\s*$/)?.[1]).filter(Boolean);
+    contract.compradorRaw = first.compradorRaw;
+    contract.comprador = first.comprador;
+    contract.grupoRaw = first.grupoRaw;
+    contract.grupo = first.grupo;
+    contract.gestor = first.gestor;
+    contract.modalidade = first.modalidade;
+    contract.tipoDoc = first.tipoDoc;
+    contract.comSaldo = contract.items.filter((item: Rec) => item.consumo === "COM SALDO").length;
+    contract.consumido = contract.items.filter((item: Rec) => item.consumo === "CONSUMIDO").length;
+    contract.valorTotal = round2(contract.items.reduce((sum: number, item: Rec) => sum + item.vt, 0));
+    contract.valorDisp = round2(contract.items.reduce((sum: number, item: Rec) => sum + item.vd, 0));
+  }
+
+  // ---------- Renovação ----------
+  const renewals: Rec[] = [];
+  let renewalCwFallback = 0;
+  let renewalUnmatched = 0;
+  for (const row of ren.rows) {
+    const contrato = cell(row, ren.map, "CONTRATO");
+    if (!contrato) continue;
+    const cw = cell(row, ren.map, "CW");
+    let linkedContract = contracts.has(contrato) ? contrato : "";
+    if (!linkedContract && cw && cwIndex.get(cw)?.size === 1) {
+      linkedContract = [...cwIndex.get(cw)!][0];
+      renewalCwFallback++;
+    }
+    if (!linkedContract) renewalUnmatched++;
+    const df = parseDateBR(rawCell(row, ren.map, "VALIDO ATÉ"));
+    const diasPlanilha = parseIntBR(rawCell(row, ren.map, "DIAS VIGÊNCIA"));
+    const diasData = daysBetween(referenceDate, df.iso);
+    renewals.push({
+      contrato, linkedContract, cw,
+      qtdItens: parseIntBR(rawCell(row, ren.map, "QTD ITENS ATUAIS")),
+      valorContrato: parseMoneyBR(rawCell(row, ren.map, "VALOR DO CONTRATO")),
+      fornecedor: cell(row, ren.map, "FORNECEDOR"),
+      di: parseDateBR(rawCell(row, ren.map, "VÁLIDO DESDE")), df,
+      dias: diasData ?? diasPlanilha,
+      statusVig: upper(cell(row, ren.map, "STATUS VIGÊNCIA")),
+      comprador: cell(row, ren.map, "COMPRADOR ORIGINAL"),
+      area: areaKey(cell(row, ren.map, "AREA")),
+      modalidade: cell(row, ren.map, "MODALIDADE ORIGINAL"),
+      statusCW: upper(cell(row, ren.map, "STATUS CW")),
+      decisao: upper(cell(row, ren.map, "DECISÃO COMPRADOR")),
+      qtdRenovar: parseIntBR(rawCell(row, ren.map, "QTD DE ITENS A RENOVAR")),
+      valorAta: parseMoneyBR(rawCell(row, ren.map, "VALOR DA ATA")),
+      valorRenovado: parseMoneyBR(rawCell(row, ren.map, "VALOR RENOVADO")),
+      observacao: cell(row, ren.map, "OBSERVAÇÕES / MOTIVO DA NÃO RENOVAÇÃO / EXCLUSÃO DE ITENS / NOVA ATA"),
+    });
+  }
+
+  function renewalIsActive(renewal: Rec): boolean {
+    return renewal.statusCW !== "RENOVADO" && !renewal.decisao.includes("NÃO RENOVAR") && !renewal.decisao.includes("NAO RENOVAR");
+  }
+  const activeRenewalContracts = new Set(renewals.filter(renewalIsActive).map((renewal) => renewal.linkedContract || renewal.contrato));
+
+  // ---------- Negociação ----------
+  const negotiations: Rec[] = [];
+  for (const row of neg.rows) {
+    const descricao = cell(row, neg.map, "DESCRIÇÃO DOS LOTES ATAS");
+    if (!descricao) continue;
+    const etapa = cell(row, neg.map, "ETAPA ATUAL") || "EM PREPARAÇÃO";
+    const etapaUpper = upper(etapa);
+    const sn = etapaUpper.includes("FINALIZ") ? "concluido" : etapaUpper.includes("CANCEL") ? "cancelado" : "";
+    const contratoTexto = cell(row, neg.map, "N° CONTRATO");
+    const contratosEncontrados = contratoTexto.match(/\d{7,}/g) ?? [];
+    const contratosVinculados = contratosEncontrados.filter((contrato) => contracts.has(contrato));
+    const ariba = cell(row, neg.map, "N° PROJETO ARIBA");
+    const rawBuyer = cell(row, neg.map, "COMPRADOR");
+    const rawCat = cell(row, neg.map, "CATEGORIA");
+    negotiations.push({
+      descricao, etapa, sn, ariba, contratoTexto, contratosEncontrados, contratosVinculados,
+      qtdItens: parseIntBR(rawCell(row, neg.map, "QTD ITENS")),
+      qtdContratada: parseIntBR(rawCell(row, neg.map, "QTD CONTRATADA")),
+      estimativa: parseMoneyBR(rawCell(row, neg.map, "ESTIMATIVA VALOR TOTAL")),
+      precoHistorico: parseMoneyBR(rawCell(row, neg.map, "PREÇO HISTÓRICO")),
+      propostaInicial: parseMoneyBR(rawCell(row, neg.map, "PROPOSTA INICIAL")),
+      propostaFinal: parseMoneyBR(rawCell(row, neg.map, "PROPOSTA FINAL")),
+      savingHist: parseMoneyBR(rawCell(row, neg.map, "REDUÇÃO HISTÓRICO")),
+      savingProp: parseMoneyBR(rawCell(row, neg.map, "REDUÇÃO PROPOSTA INICIAL")),
+      compradorRaw: rawBuyer,
+      comprador: normBuyer(rawBuyer),
+      grupoRaw: rawCat,
+      grupo: normGrupo(rawCat),
+      area: areaKey(cell(row, neg.map, "AREA")),
+      modalidade: normModalidade(cell(row, neg.map, "MODALIDADE")),
+      di: parseDateBR(rawCell(row, neg.map, "DATA DE INICIO")),
+      df: parseDateBR(rawCell(row, neg.map, "ESTIMATIVA DE CONCLUSÃO")),
+      prazo: cell(row, neg.map, "PRAZO CONCLUSÃO"),
+      mes: cell(row, neg.map, "ESTIMATIVA MÊS CONCLUSÃO"),
+      statusAta: cell(row, neg.map, "STATUS DA ATA"),
+    });
+  }
+  const activeNegotiations = negotiations.filter((item) => !item.sn);
+  const finalizedNegotiations = negotiations.filter((item) => item.sn === "concluido");
+  const contractEnrich = new Map<string, Rec>();
+  for (const negotiation of negotiations) {
+    for (const contrato of negotiation.contratosVinculados) {
+      contractEnrich.set(contrato, { lote: negotiation.descricao, ariba: negotiation.ariba, sh: negotiation.savingHist, sp: negotiation.savingProp });
+    }
+  }
+
+  // ---------- KPIs e evolução ----------
+  const metricSets: Rec = Object.fromEntries(AREAS.map((area) => [area, { concluidas: [], aVencer: [], vencidas: [] }]));
+  for (const contract of contracts.values()) {
+    let category = "";
+    if (contract.statusVig === "VENCIDO") category = activeRenewalContracts.has(contract.contrato) ? "aVencer" : "vencidas";
+    else if (contract.statusVig === "RENOVAR" || activeRenewalContracts.has(contract.contrato)) category = "aVencer";
+    else if (contract.statusVig === "VÁLIDO") category = "concluidas";
+    else {
+      const days = daysBetween(referenceDate, contract.df.iso);
+      if (days !== null && days < 0) category = activeRenewalContracts.has(contract.contrato) ? "aVencer" : "vencidas";
+      else if (days !== null && days <= 100) category = "aVencer";
+      else category = "concluidas";
+    }
+    if (metricSets[contract.area]) metricSets[contract.area][category].push(contract);
+  }
+
+  function distinctItems(contractList: Rec[]): number {
+    const keys = new Set<string>();
+    for (const contract of contractList) {
+      for (const item of contract.items) keys.add(item.sap ? `SAP:${item.sap}` : `ITEM:${item.contrato}:${item.item}`);
+    }
+    return keys.size;
+  }
+
+  const evolucao: Rec = {};
+  for (const area of AREAS) {
+    const sets = metricSets[area];
+    const validItems = sets.concluidas.flatMap((contract: Rec) => contract.items);
+    const andamento = activeNegotiations.filter((item) => item.area === area);
+    evolucao[area] = {
+      concluidasAtas: sets.concluidas.length,
+      concluidasItens: distinctItems(sets.concluidas),
+      andamentoAtas: andamento.length,
+      andamentoItens: andamento.reduce((sum: number, item: Rec) => sum + item.qtdItens, 0),
+      saldoItens: validItems.filter((item: Rec) => item.consumo === "COM SALDO").length,
+      semSaldoItens: validItems.filter((item: Rec) => item.consumo === "CONSUMIDO").length,
+      vencidasAtas: sets.vencidas.length,
+      vencidasItens: distinctItems(sets.vencidas),
+      aVencerAtas: sets.aVencer.length,
+      aVencerItens: distinctItems(sets.aVencer),
+    };
+  }
+  const kpis = {
+    concluidasAtas: AREAS.reduce((sum, area) => sum + evolucao[area].concluidasAtas, 0),
+    concluidasItens: AREAS.reduce((sum, area) => sum + evolucao[area].concluidasItens, 0),
+    andamentoAtas: activeNegotiations.length,
+    andamentoItens: activeNegotiations.reduce((sum, item) => sum + item.qtdItens, 0),
+    saldoItens: AREAS.reduce((sum, area) => sum + evolucao[area].saldoItens, 0),
+    consumidoItens: AREAS.reduce((sum, area) => sum + evolucao[area].semSaldoItens, 0),
+    aVencerAtas: AREAS.reduce((sum, area) => sum + evolucao[area].aVencerAtas, 0),
+    aVencerItens: AREAS.reduce((sum, area) => sum + evolucao[area].aVencerItens, 0),
+    vencidasAtas: AREAS.reduce((sum, area) => sum + evolucao[area].vencidasAtas, 0),
+    vencidasItens: AREAS.reduce((sum, area) => sum + evolucao[area].vencidasItens, 0),
+  };
+
+  // ---------- Valores, saving, compradores e fornecedores ----------
+  const valueAreas: Rec = {};
+  for (const area of AREAS) {
+    const items = baseItems.filter((item) => item.area === area);
+    const finals = finalizedNegotiations.filter((item) => item.area === area);
+    const valorSaving = round2(finals.reduce((sum, item) => sum + item.propostaFinal, 0));
+    const savingHist = round2(finals.reduce((sum, item) => sum + item.savingHist, 0));
+    const savingProp = round2(finals.reduce((sum, item) => sum + item.savingProp, 0));
+    valueAreas[area] = {
+      valor: round2(items.reduce((sum, item) => sum + item.vt, 0)),
+      valorSaving, savingHist, savingProp,
+      reducaoHistPct: pct(savingHist, valorSaving),
+      reducaoPropPct: pct(savingProp, valorSaving),
+      saldoDisponivel: round2(items.filter((item) => item.statusVig !== "VENCIDO").reduce((sum, item) => sum + item.vd, 0)),
+    };
+  }
+  const savingTotal = {
+    valor: null,
+    valorSaving: round2(AREAS.reduce((sum, area) => sum + valueAreas[area].valorSaving, 0)),
+    savingHist: round2(AREAS.reduce((sum, area) => sum + valueAreas[area].savingHist, 0)),
+    savingProp: round2(AREAS.reduce((sum, area) => sum + valueAreas[area].savingProp, 0)),
+    reducaoHistPct: round2(AREAS.reduce((sum, area) => sum + valueAreas[area].reducaoHistPct, 0)),
+    reducaoPropPct: round2(AREAS.reduce((sum, area) => sum + valueAreas[area].reducaoPropPct, 0)),
+  };
+
+  const topCompradores: Rec = {};
+  for (const area of AREAS) {
+    const byBuyer = new Map<string, Rec>();
+    for (const item of baseItems.filter((row) => row.area === area)) {
+      const key = item.comprador || "NÃO INFORMADO";
+      if (!byBuyer.has(key)) byBuyer.set(key, { name: key, itens: 0, contracts: new Set<string>() });
+      const stat = byBuyer.get(key)!;
+      stat.itens++;
+      stat.contracts.add(item.contrato);
+    }
+    const totalAtasArea = [...contracts.values()].filter((contract) => contract.area === area).length;
+    const buyers = [...byBuyer.values()].map((item) => ({ name: item.name, itens: item.itens, atas: item.contracts.size, totalAtasArea }))
+      .sort((a, b) => b.itens - a.itens || b.atas - a.atas || a.name.localeCompare(b.name)).slice(0, 5);
+    topCompradores[area] = { area, totalAtasArea, topAtas: buyers.length, buyers };
+  }
+
+  function supplierStats(items: Rec[], area: string): Rec[] {
+    const bySupplier = new Map<string, Rec>();
+    for (const item of items) {
+      if (!item.fornecedorRaw) continue;
+      if (!bySupplier.has(item.fornecedorRaw)) bySupplier.set(item.fornecedorRaw, { fornecedor: item.fornecedorRaw, itens: 0, contracts: new Set<string>() });
+      const stat = bySupplier.get(item.fornecedorRaw)!;
+      stat.itens++;
+      stat.contracts.add(item.contrato);
+    }
+    return [...bySupplier.values()].map((item) => {
+      const concentracaoPct = pct(item.itens, items.length);
+      return {
+        area, fornecedor: item.fornecedor, qtdAtas: item.contracts.size, qtdItens: item.itens, concentracaoPct,
+        analise: concentracaoPct >= 15 ? "Alta Concentração" : concentracaoPct >= 5 ? "Volume Médio" : "Pulverizado",
+        _sort: item.itens,
+      };
+    }).sort((a, b) => b._sort - a._sort || b.qtdAtas - a.qtdAtas || a.fornecedor.localeCompare(b.fornecedor));
+  }
+
+  const fornecedores: Rec = {};
+  for (const area of AREAS) {
+    fornecedores[area] = supplierStats(baseItems.filter((item) => item.area === area), area).slice(0, 5).map(({ _sort, ...item }) => item);
+  }
+  const generalSuppliers = supplierStats(baseItems, "GERAL");
+  const fornecedoresGeral: Rec[] = generalSuppliers.slice(0, 4).map(({ _sort, ...item }) => item);
+  if (generalSuppliers.length > 4) {
+    const others = generalSuppliers.slice(4);
+    const qtdItens = others.reduce((sum, item) => sum + item.qtdItens, 0);
+    const concentracaoPct = pct(qtdItens, baseItems.length);
+    fornecedoresGeral.push({
+      area: "GERAL", fornecedor: "OUTROS FORNECEDORES",
+      qtdAtas: others.reduce((sum, item) => sum + item.qtdAtas, 0), qtdItens, concentracaoPct,
+      analise: concentracaoPct >= 15 ? "Alta Concentração" : concentracaoPct >= 5 ? "Volume Médio" : "Pulverizado",
+    });
+  }
+
+  // ---------- Previsões ----------
+  const previsoes: Rec = Object.fromEntries(BANDS.map((band) => [band, Object.fromEntries(AREAS.map((area) => [area, { atas: 0, itens: 0, buyers: [] }]))]));
+  const forecastBuyerMaps = new Map<string, Map<string, Rec>>();
+  function forecastBand(negotiation: Rec): string {
+    if (negotiation.sn === "concluido") return "finalizadas";
+    if (negotiation.sn === "cancelado") return "canceladas";
+    const prazo = upper(negotiation.prazo);
+    if (prazo.includes("15")) return "ate_15";
+    if (prazo.includes("30")) return "ate_30";
+    if (prazo.includes("60") && !prazo.includes("ACIMA")) return "ate_60";
+    if (prazo.includes("ACIMA")) return "acima_60";
+    return "vencidas";
+  }
+  for (const negotiation of negotiations) {
+    const band = forecastBand(negotiation);
+    if (!previsoes[band] || !previsoes[band][negotiation.area]) continue;
+    const target = previsoes[band][negotiation.area];
+    target.atas++;
+    target.itens += negotiation.qtdItens;
+    const key = `${band}|${negotiation.area}`;
+    if (!forecastBuyerMaps.has(key)) forecastBuyerMaps.set(key, new Map());
+    const byBuyer = forecastBuyerMaps.get(key)!;
+    const buyerKey = negotiation.compradorRaw || "NÃO INFORMADO";
+    if (!byBuyer.has(buyerKey)) byBuyer.set(buyerKey, { name: buyerKey, atas: 0, itens: 0, dates: [] });
+    const buyer = byBuyer.get(buyerKey)!;
+    buyer.atas++;
+    buyer.itens += negotiation.qtdItens;
+    if (negotiation.df.iso) buyer.dates.push(negotiation.df.iso);
+  }
+  for (const band of BANDS) {
+    for (const area of AREAS) {
+      const byBuyer = forecastBuyerMaps.get(`${band}|${area}`) ?? new Map<string, Rec>();
+      previsoes[band][area].buyers = [...byBuyer.values()].map((item) => ({
+        name: item.name, atas: item.atas, itens: item.itens, prazoConclusao: item.dates.sort()[0] ?? null,
+      })).sort((a, b) => b.itens - a.itens || b.atas - a.atas || a.name.localeCompare(b.name));
+    }
+  }
+
+  const futureMonthKeys = new Set<string>();
+  for (const negotiation of activeNegotiations) {
+    if (negotiation.df.iso && negotiation.df.iso >= referenceDate) futureMonthKeys.add(negotiation.df.iso.slice(0, 7));
+  }
+  const refMonth = referenceDate.slice(0, 7);
+  for (let index = 0; index < 3; index++) {
+    const date = new Date(`${refMonth}-01T00:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + index);
+    futureMonthKeys.add(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  const monthKeys = [...futureMonthKeys].sort();
+  const previsaoMeses: Rec = {};
+  for (const area of AREAS) {
+    const rows: Rec[] = monthKeys.map((key) => {
+      const matching = activeNegotiations.filter((item) => item.area === area && item.df.iso && item.df.iso >= referenceDate && item.df.iso.startsWith(key));
+      const [year, month] = key.split("-").map(Number);
+      return { label: `${MONTHS[month - 1]}/${year}`, month, year, atas: matching.length, itens: matching.reduce((sum, item) => sum + item.qtdItens, 0) };
+    });
+    const expired = activeNegotiations.filter((item) => item.area === area && (!item.df.iso || item.df.iso < referenceDate));
+    rows.push({ label: "Vencida/Sem Previsão", month: null, year: null, atas: expired.length, itens: expired.reduce((sum, item) => sum + item.qtdItens, 0) });
+    previsaoMeses[area] = { rows };
+  }
+
+  // ---------- Status de renovações ----------
+  const statusAtas: Rec = {};
+  for (const area of AREAS) {
+    const rows = renewals.filter((renewal) => renewal.area === area && renewalIsActive(renewal));
+    const priorities = rows.filter((renewal) => renewal.dias !== null && renewal.dias <= 15)
+      .sort((a, b) => (a.df.iso || "9999").localeCompare(b.df.iso || "9999"))
+      .map((renewal) => ({
+        contrato: renewal.contrato,
+        vencimento: renewal.df.iso || null,
+        comprador: normBuyer(renewal.comprador) || null,
+        situacao: renewal.statusCW === "NÃO INICIADO" ? "A INICIAR" : renewal.statusCW || renewal.decisao || "A INICIAR",
+      }));
+    const inProgress = rows.find((renewal) => renewal.statusCW === "EM RENOVAÇÃO");
+    statusAtas[area] = {
+      area, layout: "renovacoes", baseDate: referenceDate,
+      titulo: `${area} | Status de Renovações`, subtitulo: "Carteira em alerta de 100 dias | Atas a renovar",
+      total: null, vigentes: null,
+      vencidas: rows.filter((renewal) => renewal.statusVig === "VENCIDO" || renewal.dias < 0).length,
+      ate15: rows.filter((renewal) => renewal.statusVig !== "VENCIDO" && renewal.dias >= 0 && renewal.dias <= 15).length,
+      de16a30: null, aRenovar: null, totalRenovar: rows.length,
+      emAndamento: rows.filter((renewal) => renewal.statusCW === "EM RENOVAÇÃO").length,
+      prioridades: priorities, carteira: [],
+      renovacaoEmAndamento: inProgress ? {
+        contrato: inProgress.contrato, comprador: normBuyer(inProgress.comprador) || null,
+        vencimento: inProgress.df.iso || null, texto: [inProgress.cw, inProgress.decisao].filter(Boolean).join(" · "),
+      } : null,
+      notas: [],
+    };
+  }
+
+  // Todas as finalizadas ficam no snapshot: o IndexedDB compara com a importação anterior.
+  const atasConcluidas = finalizedNegotiations.map((negotiation) => {
+    const suppliers = [...new Set(negotiation.contratosVinculados.flatMap((contrato: string) => contracts.get(contrato)?.fornecedores ?? []))] as string[];
+    return {
+      key: negotiation.contratosEncontrados.join("") || (negotiation.ariba ? `ARIBA:${negotiation.ariba}` : `LOTE:${upper(negotiation.descricao)}|${negotiation.comprador}|${negotiation.area}`),
+      descricao: negotiation.descricao,
+      contrato: negotiation.contratoTexto ? negotiation.contratoTexto.replace(/\s*\/\s*/g, " / ") : null,
+      fornecedor: suppliers.length ? suppliers.join(" / ") : null,
+      itens: negotiation.qtdItens,
+      comprador: negotiation.comprador || null,
+      area: negotiation.area || null,
+      etapa: negotiation.etapa,
+      valor: negotiation.propostaFinal || null,
+    };
+  });
+  const fornecedoresPorContrato = Object.fromEntries([...contracts.values()].map((contract) => [contract.contrato, contract.fornecedores.join(" / ")]));
+  const missingSupplierFinals = finalizedNegotiations.filter((negotiation) => negotiation.contratosVinculados.length === 0);
+  const notes = [
+    "Leitura calculada diretamente das três bases consolidadas, sem as abas-resumo GIRO 01–07.",
+    "Atas Concluídas contém todas as finalizadas da base atual; as novas são calculadas pela comparação com a importação anterior no histórico local.",
+  ];
+  if (missingSupplierFinals.length) notes.push(`${missingSupplierFinals.length} ata(s) finalizada(s) sem contrato correspondente na Base; o fornecedor não foi inferido.`);
+  if (renewalUnmatched) notes.push(`${renewalUnmatched} renovação(ões) sem contrato correspondente na Base; mantida(s) somente em Status de Renovações.`);
+  if (renewalCwFallback) notes.push(`${renewalCwFallback} renovação(ões) vinculada(s) pelo CW como fallback.`);
+
+  const snapshot = {
+    schemaVersion: 2,
+    referenceDate,
+    sourceFiles: options.fileNames ?? [...new Set(sheets.map((sheet) => sheet.fileName))],
+    capturedAt: new Date().toISOString(),
+    kpis, valueAreas, savingTotal, topCompradores, fornecedores, fornecedoresGeral,
+    evolucao, previsoes, previsaoMeses, atasConcluidas, fornecedoresPorContrato, statusAtas,
+    coverage: { found: [...BLOCK_KEYS], missing: [] }, notes,
+  } as unknown as DashboardSnapshotPayload;
+
+  // ---------- Registros completos da consulta de Processos ----------
+  const records: CleanRecord[] = [];
+  const issues: Issue[] = [];
+  let sourceRow = 0;
+  const addRecord = (input: Omit<CleanRecord, "rowHash" | "sourceRow">, hashKey: string) => {
+    sourceRow++;
+    records.push({ ...input, sourceRow, rowHash: hashRecord(`${hashKey}|${sourceRow}`) });
+  };
+
+  for (const contract of contracts.values()) {
+    const info = contractEnrich.get(contract.contrato);
+    const groupClean = clean(contract.grupoRaw).replace(/\s*\(\d+\)\s*$/, "").trim();
+    const materials = [...new Set(contract.items.map((item: Rec) => item.material).filter(Boolean))] as string[];
+    const matSample = materials.slice(0, 2).join("; ");
+    const objeto = info?.lote ? `${info.lote}${groupClean ? ` — ${groupClean}` : ""}` : groupClean ? `${groupClean} — ${matSample}` : matSample || "Contrato SAP";
+    const linkedRenewal = renewals.find((renewal) => (renewal.linkedContract || renewal.contrato) === contract.contrato);
+    addRecord({
+      numero: contract.contrato,
+      objeto,
+      area: areaLabel(contract.area),
+      unidade: null,
+      fornecedor: contract.fornecedores.join(" / ") || null,
+      responsavel: contract.comprador || null,
+      etapa: contract.statusVig || "VÁLIDO",
+      situacaoFonte: contract.statusVig || "VÁLIDO",
+      situacaoNorm: null,
+      dataInicio: contract.di.iso || null,
+      dataFim: contract.df.iso || null,
+      quantidade: contract.items.length,
+      valor: contract.valorTotal,
+      statusConsumo: contract.comSaldo > 0 ? "Com Saldo" : contract.consumido > 0 ? "Consumido" : null,
+      savingHist: info?.sh ?? null,
+      savingProp: info?.sp ?? null,
+      statusRenovacao: linkedRenewal?.statusCW || linkedRenewal?.decisao || null,
+      dataPrevisao: null,
+      observacao: linkedRenewal?.observacao || null,
+      link: null,
+      extra: compactStrings({
+        Natureza: "Contratos Vigentes",
+        CW: contract.cws.join(" / "),
+        "Status do CW": contract.cwStatuses.join(" / "),
+        "N° Projeto Ariba": info?.ariba,
+        "Grupo de mercadorias": contract.grupo,
+        Modalidade: contract.modalidade,
+        Gestor: contract.gestor,
+        "Tipo de documento SAP": contract.tipoDoc,
+        "Itens com saldo": contract.comSaldo,
+        "Itens consumidos": contract.consumido,
+        "Saldo disponível": contract.valorDisp,
+      }),
+    }, `CONTRATO:${contract.contrato}`);
+  }
+
+  for (const negotiation of negotiations) {
+    const linked = negotiation.contratosVinculados.map((contrato: string) => contracts.get(contrato)).filter(Boolean);
+    const suppliers = [...new Set(linked.flatMap((contract: Rec) => contract.fornecedores))] as string[];
+    const cws = [...new Set(linked.flatMap((contract: Rec) => contract.cws))] as string[];
+    const numero = negotiation.contratoTexto ? negotiation.contratoTexto.replace(/\s+/g, " ") : negotiation.ariba ? `Ariba ${negotiation.ariba}` : `Lote ${negotiation.descricao}`;
+    addRecord({
+      numero,
+      objeto: negotiation.descricao,
+      area: areaLabel(negotiation.area),
+      unidade: null,
+      fornecedor: suppliers.join(" / ") || null,
+      responsavel: negotiation.comprador || null,
+      etapa: negotiation.etapa,
+      situacaoFonte: negotiation.etapa,
+      situacaoNorm: negotiation.sn || null,
+      dataInicio: negotiation.di.iso || null,
+      dataFim: negotiation.df.iso || null,
+      quantidade: negotiation.qtdItens,
+      valor: negotiation.propostaFinal > 0 ? negotiation.propostaFinal : negotiation.estimativa,
+      statusConsumo: null,
+      savingHist: negotiation.savingHist || null,
+      savingProp: negotiation.savingProp || null,
+      statusRenovacao: null,
+      dataPrevisao: negotiation.df.iso || null,
+      observacao: negotiation.statusAta || null,
+      link: null,
+      extra: compactStrings({
+        Natureza: negotiation.sn ? "Histórico (Finaliz./Canc.)" : "Atas em Andamento",
+        CW: cws.join(" / "),
+        "N° Projeto Ariba": negotiation.ariba,
+        "Qtd. contratada": negotiation.qtdContratada,
+        "Grupo de mercadorias": negotiation.grupo,
+        Modalidade: negotiation.modalidade,
+        "Prazo de conclusão": negotiation.prazo,
+      }),
+    }, `NEGOCIACAO:${negotiation.ariba}|${negotiation.descricao}`);
+  }
+
+  for (const negotiation of missingSupplierFinals) {
+    issues.push({
+      row: negotiations.indexOf(negotiation) + 1,
+      column: "N° CONTRATO",
+      message: `Ata finalizada sem contrato correspondente na Base; fornecedor não inferido (${negotiation.contratoTexto || negotiation.ariba || negotiation.descricao}).`,
+      severity: "warning",
+    });
+  }
+  if (renewalUnmatched) {
+    issues.push({ row: 1, column: "CONTRATO / CW", message: `${renewalUnmatched} renovação(ões) sem correspondência na Base; nenhum vínculo foi inventado.`, severity: "warning" });
+  }
+
+  return {
+    snapshot,
+    result: { records, issues, skipped: 0, duplicates: 0, warnings: issues.filter((issue) => issue.severity === "warning").length },
+  };
+}
+````
+
 ## `src/lib/csv.ts`
 
 ````typescript
@@ -12972,6 +13940,7 @@ export function buildCsv(headers: string[], rows: unknown[][]): string {
 
 ````typescript
 import { normText, parseDateBR, parseNumberBR } from "@/lib/domain";
+import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
 
 /**
  * Estruturas dos blocos consolidados da planilha de gestão de atas.
@@ -13053,6 +14022,8 @@ export interface SnapshotValueArea {
   savingProp: number | null;
   reducaoHistPct: number | null;
   reducaoPropPct: number | null;
+  /** Saldo vigente calculado diretamente pela Base consolidada, quando disponível. */
+  saldoDisponivel?: number | null;
 }
 
 export interface SnapshotBuyer {
@@ -15475,6 +16446,11 @@ export function extractSnapshotPayload(
   sheets: SnapshotSourceSheet[],
   options: { fileNames?: string[]; referenceDate?: string | null } = {},
 ): DashboardSnapshotPayload {
+  // A nova pasta consolidada é detectada pelos cabeçalhos das três bases.
+  // Planilhas antigas seguem integralmente pelo extrator GIRO 01–07 abaixo.
+  const consolidated = extractConsolidatedGiro(sheets, options);
+  if (consolidated) return consolidated.snapshot;
+
   const payload = emptyDashboardSnapshot(options.referenceDate ?? null, options.fileNames ?? [...new Set(sheets.map((sheet) => sheet.fileName))]);
   extractReadingTable(payload, sheets);
   extractAreaValues(payload, sheets);
@@ -16657,7 +17633,10 @@ export async function getStaticDashboardData(): Promise<StaticDashboardData> {
   // dos blocos explícitos, não da contagem de linhas operacionais (que pode ser
   // zero em uma importação somente de métricas).
   if (currentSnapshot) {
-    kpis.processos = porArea.reduce((sum, area) => sum + area.processos, 0);
+    // Quando a importação também trouxe os registros completos, o indicador
+    // global acompanha a consulta de Processos. Os totais por área usados no
+    // gráfico de compradores continuam representando os contratos da Base.
+    kpis.processos = rows.length > 0 ? rows.length : porArea.reduce((sum, area) => sum + area.processos, 0);
     kpis.valorTotal = porArea.reduce((sum, area) => sum + area.valor, 0);
     kpis.itens = [...currentEvolution.values()].reduce((sum, area) => sum + area.concluidas_itens + area.andamento_itens, 0);
   }
@@ -17147,7 +18126,9 @@ export async function listActiveProcessRows(): Promise<ProcessRow[]> {
         situacao: prazo.chave,
         file_name: dataset.fileName,
         kind: dataset.kind,
-        natureza: dataset.natureza,
+        // Nas três bases consolidadas, a natureza pertence a cada registro;
+        // nas importações antigas, permanece a natureza do dataset.
+        natureza: record.extra?.Natureza ?? dataset.natureza,
         reference_date: dataset.referenceDate,
         imported_at: dataset.importedAt,
       });

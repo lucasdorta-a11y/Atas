@@ -7,9 +7,9 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - aceita até duas planilhas `.xlsx`, `.xls` ou `.csv` por importação;
 - lê automaticamente todas as abas com dados e consolida as linhas;
 - trata CSV com `;`, `,`, tabulação, acentos, UTF-8, Windows-1252, aspas e números pt-BR;
-- reconhece automaticamente os blocos consolidados das abas `GIRO 01–07`, sem mapeamento manual de colunas operacionais;
+- reconhece automaticamente tanto a nova pasta com **Negociação + Renovação + Base - Controle de Contratos** quanto as abas antigas `GIRO 01–07`, sem mapeamento manual;
 - mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
-- alimenta o panorama com o snapshot confirmado e mantém a consulta de processos, filtros, paginação e exportação CSV para registros operacionais já salvos;
+- alimenta o panorama e, na nova pasta consolidada, gera automaticamente os registros completos da consulta de Processos, incluindo CW e Ariba na pesquisa, filtros, paginação e exportação CSV;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -71,6 +71,9 @@ npm run amostras
 # quais blocos são reconhecidos e com quais números
 npm run extrair -- amostras/semana-atual.xlsx --ref=2026-10-13
 
+# valida a nova pasta consolidada sem gravar JSON nem dados em public/
+npm run consolidado:dry-run -- pasta-consolidada.xlsx --ref=AAAA-MM-DD
+
 # monta o StaticDashboardData completo que a tela usa
 npm run panorama:dry-run -- amostras/semana-atual.xlsx --ref=2026-10-13
 
@@ -105,13 +108,28 @@ https://lucasdorta-a11y.github.io/Atas/
 3. O painel lê todas as abas não vazias e mostra a quantidade de arquivos, abas e linhas.
 4. Na etapa **Tipo de base**, escolha somente **Substituir** ou **Combinar** e informe a data de referência.
 5. Confira o **Resumo automático**: os blocos reconhecidos são apresentados visualmente e os ausentes permanecem explicitamente ausentes.
-6. Revise a importação do snapshot, sem mapeamento operacional e sem criação de processos por inferência.
+6. Revise o snapshot e, para a nova pasta consolidada, os registros de Processos gerados automaticamente. Não há mapeamento operacional; o layout antigo continua sendo somente snapshot.
 7. Baixe o relatório de validação, se necessário, e confirme a importação.
 8. **Substituir** arquiva a leitura ativa no histórico; **Combinar** mantém as bases locais ativas.
 
 A origem, a data de referência, os blocos reconhecidos/ausentes e os avisos ficam visíveis na auditoria das bases.
 
-## Leitura exata do painel consolidado
+## Nova pasta consolidada: Negociação + Renovação + Contratos
+
+Quando a `Base - Controle de Contratos` contém os cabeçalhos `CW` e `Status do CW`, o site reconhece o novo layout e exige também as bases de Negociação e Renovação. As três podem estar em um único `.xlsx` com três abas. A leitura usa os nomes dos cabeçalhos, não posições fixas de colunas, e tem prioridade sobre o extrator antigo.
+
+Nesse layout, a mesma extração produz:
+
+- os 12 blocos do Panorama, com os seis cards, evolução, valores, saving, compradores, fornecedores, previsões e renovações;
+- a lista completa de processos de Andamento, Contratos e Histórico para a página **Processos**;
+- chaves de pesquisa por contrato, CW e projeto Ariba, além dos demais campos já existentes;
+- a lista completa de atas finalizadas, comparada com a importação anterior pelo histórico local do IndexedDB.
+
+Contratos vencidos com renovação ativa não entram como “vencidas sem ação” nos cards; continuam visíveis no status de renovações. Registros com `RENOVADO` saem da carteira pendente. Fornecedores e vínculos ausentes permanecem sinalizados, sem inferência. A primeira importação consolidada estabelece a linha de base completa; as seguintes passam a mostrar somente as novas finalizadas em relação ao snapshot local anterior.
+
+Se esses cabeçalhos não estiverem presentes, o site segue com o fallback `GIRO 01–07` descrito abaixo. Nenhum dado da planilha é incorporado ao build ou ao GitHub Pages: a importação continua apenas no navegador do usuário.
+
+## Leitura exata do painel consolidado (layout GIRO 01–07)
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
 
@@ -165,8 +183,10 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 ## Testes realizados
 
-- `npm run typecheck`
+- `npm run typecheck` e `npm run lint`
 - `npm run build` com export estático
+- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos
+- fallback do layout antigo verificado com `npm run extrair`
 - smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no servidor de desenvolvimento
 - validação local compartilhada entre preview e gravação, incluindo múltiplos arquivos e abas
 
