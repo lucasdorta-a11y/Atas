@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 import clsx from "clsx";
 import { fmtInt } from "@/lib/format";
+import type { PanoramaCardKey } from "@/lib/process-links";
 
 /**
  * Seis cards de resumo (espelho da página do SharePoint): uma linha para a
@@ -22,6 +25,7 @@ export type ResumoKpis = {
 };
 
 type CardSpec = {
+  key: PanoramaCardKey;
   titulo: string;
   cor: string;
   atas?: keyof ResumoKpis;
@@ -30,12 +34,12 @@ type CardSpec = {
 
 /* Cores dos valores iguais às dos cards do SharePoint. */
 const CARDS: CardSpec[] = [
-  { titulo: "ATA CONCLUÍDAS (VÁLIDAS)", cor: "#1e8e3e", atas: "concluidasAtas", itens: "concluidasItens" },
-  { titulo: "ATAS EM ANDAMENTO", cor: "#1a56db", atas: "andamentoAtas", itens: "andamentoItens" },
-  { titulo: "ITENS COM SALDO (VÁLIDOS)", cor: "#0e8c8c", itens: "saldoItens" },
-  { titulo: "ITENS SEM SALDO (VÁLIDOS)", cor: "#e8870e", itens: "consumidoItens" },
-  { titulo: "ATAS VENCIDAS", cor: "#d93025", atas: "vencidasAtas", itens: "vencidasItens" },
-  { titulo: "ATAS A VENCER", cor: "#7a3fe0", atas: "aVencerAtas", itens: "aVencerItens" },
+  { key: "concluidas", titulo: "ATA CONCLUÍDAS (VÁLIDAS)", cor: "#1e8e3e", atas: "concluidasAtas", itens: "concluidasItens" },
+  { key: "andamento", titulo: "ATAS EM ANDAMENTO", cor: "#1a56db", atas: "andamentoAtas", itens: "andamentoItens" },
+  { key: "saldo", titulo: "ITENS COM SALDO (VÁLIDOS)", cor: "#0e8c8c", itens: "saldoItens" },
+  { key: "sem_saldo", titulo: "ITENS SEM SALDO (VÁLIDOS)", cor: "#e8870e", itens: "consumidoItens" },
+  { key: "vencidas", titulo: "ATAS VENCIDAS", cor: "#d93025", atas: "vencidasAtas", itens: "vencidasItens" },
+  { key: "a_vencer", titulo: "ATAS A VENCER", cor: "#7a3fe0", atas: "aVencerAtas", itens: "aVencerItens" },
 ];
 
 export function ResumoCards({
@@ -43,6 +47,7 @@ export function ResumoCards({
   status,
   kpis,
   tone,
+  hrefForCard,
 }: {
   /** Ex.: “Resumo das Atas Concluídas”. */
   titulo: string;
@@ -50,6 +55,8 @@ export function ResumoCards({
   status: string;
   kpis: ResumoKpis;
   tone: "anterior" | "atual";
+  /** Somente a leitura atual possui processos completos para drill-through. */
+  hrefForCard?: (card: PanoramaCardKey) => string;
 }) {
   const anterior = tone === "anterior";
   return (
@@ -62,14 +69,14 @@ export function ResumoCards({
         {CARDS.map((card) => {
           const atas = card.atas ? kpis[card.atas] : undefined;
           const itens = kpis[card.itens];
-          return (
-            <div
-              key={card.titulo}
-              className={clsx(
-                "flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
-                anterior ? "resumo-card-prev" : "resumo-card-curr",
-              )}
-            >
+          const href = hrefForCard?.(card.key);
+          const classes = clsx(
+            "group flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
+            anterior ? "resumo-card-prev" : "resumo-card-curr",
+            href && "transition-all hover:-translate-y-0.5 hover:border-navy-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500",
+          );
+          const content = (
+            <>
               <p className="text-[11px] font-bold uppercase leading-tight text-navy-950">{card.titulo}</p>
               <div className="mt-2 space-y-0.5 text-[15px] font-extrabold leading-tight" style={{ color: card.cor }}>
                 {card.atas && (
@@ -81,6 +88,20 @@ export function ResumoCards({
                   <span className="tabular-nums">{valor(itens)}</span> ITENS
                 </p>
               </div>
+              {href && (
+                <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-navy-600 opacity-75 transition-opacity group-hover:opacity-100">
+                  Ver processos <ArrowUpRight size={11} aria-hidden="true" />
+                </span>
+              )}
+            </>
+          );
+          return href ? (
+            <Link key={card.key} href={href} className={classes} aria-label={`${card.titulo}: abrir processos filtrados`}>
+              {content}
+            </Link>
+          ) : (
+            <div key={card.key} className={classes}>
+              {content}
             </div>
           );
         })}

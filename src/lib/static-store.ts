@@ -5,6 +5,7 @@ import {
   type DatasetNatureza,
   type ImportMode,
   type Issue,
+  type GiroProcessMetadata,
   type SituacaoChave,
 } from "@/lib/domain";
 import type { DashboardSnapshotPayload } from "@/lib/dashboard-snapshot";
@@ -100,6 +101,7 @@ export interface ProcessRow {
   link: string | null;
   source_row: number | null;
   extra: Record<string, string> | null;
+  giro?: GiroProcessMetadata | null;
   dias: number | null;
   situacao: SituacaoChave;
   file_name: string;
@@ -295,13 +297,14 @@ export async function listActiveProcessRows(): Promise<ProcessRow[]> {
         link: record.link,
         source_row: record.sourceRow,
         extra: record.extra,
+        giro: record.giro ?? null,
         dias: prazo.dias,
         situacao: prazo.chave,
         file_name: dataset.fileName,
         kind: dataset.kind,
         // Nas três bases consolidadas, a natureza pertence a cada registro;
         // nas importações antigas, permanece a natureza do dataset.
-        natureza: record.extra?.Natureza ?? dataset.natureza,
+        natureza: record.giro?.natureza ?? record.extra?.Natureza ?? dataset.natureza,
         reference_date: dataset.referenceDate,
         imported_at: dataset.importedAt,
       });

@@ -10,6 +10,8 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - reconhece automaticamente tanto a nova pasta com **Negociação + Renovação + Base - Controle de Contratos** quanto as abas antigas `GIRO 01–07`, sem mapeamento manual;
 - mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
 - alimenta o panorama e, na nova pasta consolidada, gera automaticamente os registros completos da consulta de Processos, incluindo CW e Ariba na pesquisa, filtros, paginação e exportação CSV;
+- transforma os seis cards atuais do Panorama em atalhos para os processos correspondentes, preservando o recorte por área; os cards anteriores continuam somente comparativos;
+- oferece filtros executivos, indicadores acionáveis, URLs com o recorte aplicado e detalhes que isolam um processo e seus vínculos;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -129,6 +131,21 @@ Contratos vencidos com renovação ativa não entram como “vencidas sem ação
 
 Se esses cabeçalhos não estiverem presentes, o site segue com o fallback `GIRO 01–07` descrito abaixo. Nenhum dado da planilha é incorporado ao build ou ao GitHub Pages: a importação continua apenas no navegador do usuário.
 
+## Filtros executivos e navegação pelos processos
+
+No **Panorama**, o seletor de área recalcula os blocos aplicáveis e é preservado ao abrir Processos. Também há controle para a base dos percentuais de saving e atalhos para Críticos, A Renovar, Sem saldo e Andamento. Os seis cards da leitura atual abrem suas carteiras; a leitura anterior não é clicável porque serve apenas à comparação. Nomes de compradores e fornecedores também abrem o recorte correspondente.
+
+A página **Processos** contém a base completa de Andamento, Contratos e Histórico, com:
+
+- busca por contrato, CW, Ariba, objeto, fornecedor e demais campos pesquisáveis;
+- área, natureza, etapa, régua de prazo, comprador, fornecedor, categoria, modalidade, materialidade, saldo, saving, carteira, previsão mensal e alertas de governança;
+- filtros rápidos, filtros avançados, chips removíveis e URLs que preservam o recorte;
+- cinco indicadores do resultado, com ações que mantêm os filtros já aplicados;
+- ordenação, paginação, exportação CSV de todo o recorte, tabela no desktop e cartões no celular;
+- diálogo de detalhes com os campos originais e a ação **Filtrar processo e vínculos**, que usa o projeto Ariba ou o identificador do processo para isolar os registros relacionados.
+
+Os dados permanecem locais: uma URL com filtros pode ser reaberta no mesmo navegador, mas não transporta a base para outro usuário.
+
 ## Leitura exata do painel consolidado (layout GIRO 01–07)
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
@@ -185,9 +202,12 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 - `npm run typecheck` e `npm run lint`
 - `npm run build` com export estático
-- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos
+- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos, incluindo os seis cards no total geral e por área
+- integração `ATAS_STUB_STORE=1` do dashboard e dos recortes executivos com a base consolidada
 - fallback do layout antigo verificado com `npm run extrair`
-- smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no servidor de desenvolvimento
+- duas importações sucessivas em Chromium, com gravação real no IndexedDB e preservação da referência anterior
+- testes em navegador dos cards, deep links, área, CW, vínculos, previsão mensal, alertas, tema Claro/Escuro e diálogo móvel
+- smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no build estático, todas com HTTP 200
 - validação local compartilhada entre preview e gravação, incluindo múltiplos arquivos e abas
 
 ## Decisões de dados

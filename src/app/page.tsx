@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { FileStack, FileUp, RefreshCw, SearchX } from "lucide-react";
+import { ArrowUpRight, FileStack, FileUp, RefreshCw, SearchX, SlidersHorizontal } from "lucide-react";
 import { getStaticDashboardData, type PanoramaBlock, type StaticDashboardData } from "@/lib/static-dashboard";
 import { STATIC_DATA_EVENT } from "@/lib/static-store";
-import { SNAPSHOT_BLOCKS, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
+import { SNAPSHOT_BLOCKS, type DashboardSnapshotPayload, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
-import { ResumoCards } from "@/components/resumo-cards";
+import { ResumoCards, type ResumoKpis } from "@/components/resumo-cards";
 import { AtasConcluidas } from "@/components/atas-concluidas";
 import { FornecedoresAnalise } from "@/components/fornecedores-analise";
 import { StatusAtas } from "@/components/status-atas";
 import { EmptyState, PageHeader, areaStyle } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
+import { panoramaCardHref, panoramaQuickHref, processosHref, type PanoramaAreaFilter } from "@/lib/process-links";
 import clsx from "clsx";
 
 const MONTH_NAMES_PT = [
@@ -35,6 +36,8 @@ export default function PanoramaPage() {
   const [data, setData] = useState<StaticDashboardData | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [areaPanorama, setAreaPanorama] = useState<PanoramaAreaFilter>("TODAS");
+  const [baseSaving, setBaseSaving] = useState<"contratado" | "referencia">("contratado");
 
   const carregar = useCallback(async () => {
     setAtualizando(true);
@@ -126,9 +129,55 @@ export default function PanoramaPage() {
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
   // Ordem única das áreas em todos os blocos do painel, conforme a planilha.
-  const areaVisualOrder = ["INDIRETOS", "DIRETOS", "CAPEX"];
-  const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
-  const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
+  const areaVisualOrder: SnapshotArea[] = ["INDIRETOS", "DIRETOS", "CAPEX"];
+  const areasVisiveis = areaPanorama === "TODAS" ? areaVisualOrder : [areaPanorama];
+  const porAreaVisual = [...(porArea as any[])]
+    .filter((item) => areaPanorama === "TODAS" || String(item.area).toUpperCase() === areaPanorama)
+    .sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase() as SnapshotArea) - areaVisualOrder.indexOf(String(b.area).toUpperCase() as SnapshotArea));
+  const evolucaoVisual = [...(evolucao as any[])]
+    .filter((item) => areaPanorama === "TODAS" || String(item.area).toUpperCase() === areaPanorama)
+    .sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase() as SnapshotArea) - areaVisualOrder.indexOf(String(b.area).toUpperCase() as SnapshotArea));
+  const currentResumoKpis: ResumoKpis = areaPanorama === "TODAS" ? {
+    concluidasAtas: kpis.concluidosAtas,
+    concluidasItens: kpis.concluidosItens,
+    andamentoAtas: kpis.andamentoAtas,
+    andamentoItens: kpis.andamentoItens,
+    saldoItens: kpis.saldoItens,
+    consumidoItens: kpis.consumidoItens,
+    aVencerAtas: kpis.aVencerAtas,
+    aVencerItens: kpis.aVencerItens,
+    vencidasAtas: kpis.vencidasAtas,
+    vencidasItens: kpis.vencidasItens,
+  } : evolutionToResumo(evolucaoVisual[0]);
+  const previousResumoKpis = previousSnapshot ? snapshotKpisForArea(previousSnapshot, areaPanorama) : null;
+  const savingVisual = areaPanorama === "TODAS" ? savingTotal : porAreaVisual[0] ? {
+    valorSaving: porAreaVisual[0].valorSaving ?? porAreaVisual[0].valor,
+    saving_hist: porAreaVisual[0].saving_hist,
+    saving_prop: porAreaVisual[0].saving_prop,
+    reducao_hist_pct: porAreaVisual[0].reducao_hist_pct,
+    reducao_prop_pct: porAreaVisual[0].reducao_prop_pct,
+  } : null;
+  const fornecedoresVisual = areaPanorama === "TODAS" ? fornecedores : (currentSnapshot?.fornecedores[areaPanorama] ?? []).map((item) => ({
+    area: areaPanorama,
+    fornecedor: item.fornecedor,
+    atas: item.qtdAtas ?? 0,
+    itens: item.qtdItens ?? 0,
+    concentracao: item.concentracaoPct ?? 0,
+    analise: item.analise,
+  }));
+  const atasConcluidasVisual = areaPanorama === "TODAS" ? atasConcluidas : {
+    ...atasConcluidas,
+    novas: atasConcluidas.novas.filter((item) => item.area === areaPanorama),
+    totalFinalizadas: currentSnapshot?.atasConcluidas.filter((item) => item.area === areaPanorama).length ?? atasConcluidas.novas.filter((item) => item.area === areaPanorama).length,
+  };
+  const savingPct = (valorBase: number, saving: number, original: number | null | undefined) => {
+    if (baseSaving === "contratado") return original ?? (valorBase > 0 ? (saving * 100) / valorBase : 0);
+    return valorBase + saving > 0 ? (saving * 100) / (valorBase + saving) : 0;
+  };
+
+  const valorSavingVisualTotal = savingVisual?.valorSaving ?? porAreaVisual.reduce((sum, item) => sum + Number(item.valorSaving ?? item.valor ?? 0), 0);
+  const savingHistVisualTotal = savingVisual?.saving_hist ?? porAreaVisual.reduce((sum, item) => sum + Number(item.saving_hist ?? 0), 0);
+  const savingPropVisualTotal = savingVisual?.saving_prop ?? porAreaVisual.reduce((sum, item) => sum + Number(item.saving_prop ?? 0), 0);
 
   const prevByBand = (area: string, band: ForecastBand) => {
     const key = area.toUpperCase() as SnapshotArea;
@@ -195,14 +244,14 @@ export default function PanoramaPage() {
   const areaPercent = (area: string) => {
     const ordered = ["INDIRETOS", "DIRETOS", "CAPEX"];
     const index = ordered.indexOf(area);
-    const total = (porArea as any[]).reduce((sum, item) => sum + Number(item.processos || 0), 0);
+    const total = porAreaVisual.reduce((sum, item) => sum + Number(item.processos || 0), 0);
     if (total <= 0 || index < 0) return 0;
-    if (index === ordered.length - 1) {
-      const prior = (porArea as any[]).filter((item) => ordered.indexOf(String(item.area).toUpperCase()) < index)
+    if (index === ordered.length - 1 || areasVisiveis.length === 1) {
+      const prior = porAreaVisual.filter((item) => ordered.indexOf(String(item.area).toUpperCase()) < index)
         .reduce((sum, item) => sum + Number(((Number(item.processos || 0) / total) * 100).toFixed(2)), 0);
       return Math.max(0, Number((100 - prior).toFixed(2)));
     }
-    const current = (porArea as any[]).find((item) => String(item.area).toUpperCase() === area);
+    const current = porAreaVisual.find((item) => String(item.area).toUpperCase() === area);
     return Number(((Number(current?.processos || 0) / total) * 100).toFixed(2));
   };
 
@@ -224,6 +273,59 @@ export default function PanoramaPage() {
           </button>
         )}
       />
+
+      <section aria-label="Filtros executivos do panorama" className="card space-y-4 p-4" data-no-print>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[520px]">
+            <label className="text-[12px] font-semibold text-navy-900">
+              <span className="mb-1.5 flex items-center gap-1.5"><SlidersHorizontal size={14} aria-hidden="true" /> Área do panorama</span>
+              <select
+                value={areaPanorama}
+                onChange={(event) => setAreaPanorama(event.target.value as PanoramaAreaFilter)}
+                className="min-h-10 w-full rounded-xl border border-line bg-surface px-3 text-[13px] font-medium text-ink"
+              >
+                <option value="TODAS">Todas as células</option>
+                <option value="INDIRETOS">Indiretos</option>
+                <option value="DIRETOS">Diretos</option>
+                <option value="CAPEX">CAPEX</option>
+              </select>
+            </label>
+            <label className="text-[12px] font-semibold text-navy-900">
+              <span className="mb-1.5 block">Base dos percentuais de saving</span>
+              <select
+                value={baseSaving}
+                onChange={(event) => setBaseSaving(event.target.value as "contratado" | "referencia")}
+                className="min-h-10 w-full rounded-xl border border-line bg-surface px-3 text-[13px] font-medium text-ink"
+              >
+                <option value="contratado">% sobre valor contratado</option>
+                <option value="referencia">% sobre preço inicial de referência</option>
+              </select>
+            </label>
+          </div>
+          <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.07em] text-ink-soft">Abrir recorte em Processos</p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["criticos", "Críticos"],
+                ["renovar", "A Renovar"],
+                ["sem_saldo", "Sem saldo"],
+                ["andamento", "Andamento"],
+              ] as const).map(([action, label]) => (
+                <Link
+                  key={action}
+                  href={panoramaQuickHref(action, areaPanorama)}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-navy-800 transition-colors hover:border-navy-300 hover:bg-navy-50"
+                >
+                  {label}<ArrowUpRight size={12} aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p className="text-[12px] leading-relaxed text-ink-soft">
+          Os cards da semana atual também são clicáveis e abrem os processos correspondentes. O filtro de área é preservado nessa navegação.
+        </p>
+      </section>
 
       {/* Bloco 1: seis cards de resumo — semana anterior e semana atual. */}
       <section aria-labelledby="comparacao-semanal" className="space-y-5">
@@ -257,7 +359,7 @@ export default function PanoramaPage() {
           <ResumoCards
             titulo="Resumo das Atas Concluídas"
             status={`Status semana anterior ${formatShortDate(previousSnapshot.referenceDate)}`}
-            kpis={previousSnapshot.kpis}
+            kpis={previousResumoKpis ?? previousSnapshot.kpis}
             tone="anterior"
           />
         )}
@@ -268,18 +370,8 @@ export default function PanoramaPage() {
             titulo="Resumo das Atas Concluídas"
             status={`Status atual ${formatShortDate(currentSnapshot?.referenceDate)}`}
             tone="atual"
-            kpis={{
-              concluidasAtas: kpis.concluidosAtas,
-              concluidasItens: kpis.concluidosItens,
-              andamentoAtas: kpis.andamentoAtas,
-              andamentoItens: kpis.andamentoItens,
-              saldoItens: kpis.saldoItens,
-              consumidoItens: kpis.consumidoItens,
-              aVencerAtas: kpis.aVencerAtas,
-              aVencerItens: kpis.aVencerItens,
-              vencidasAtas: kpis.vencidasAtas,
-              vencidasItens: kpis.vencidasItens,
-            }}
+            kpis={currentResumoKpis}
+            hrefForCard={(card) => panoramaCardHref(card, areaPanorama)}
           />
         )}
       </section>
@@ -293,7 +385,7 @@ export default function PanoramaPage() {
         {ausente("atas-concluidas") ? (
           <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
         ) : (
-          <AtasConcluidas dados={atasConcluidas} referencia={referencia} />
+          <AtasConcluidas dados={atasConcluidasVisual} referencia={referencia} />
         )}
       </section>
 
@@ -321,7 +413,7 @@ export default function PanoramaPage() {
                 ))}
                 <tr className="tbl-total-row font-bold">
                   <td className="px-5 py-3">TOTAL</td>
-                  <td className="px-5 py-3 text-right">{fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.valor, 0))}</td>
+                  <td className="px-5 py-3 text-right">{fmtCurrency(porAreaVisual.reduce((acc, a) => acc + Number(a.valor ?? 0), 0))}</td>
                 </tr>
               </tbody>
             </table>
@@ -346,27 +438,23 @@ export default function PanoramaPage() {
                     <td className="px-2 py-3">{fmtCurrency(a.valorSaving ?? a.valor)}</td>
                     <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_hist)}<br/>
-                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{fmtNum(savingPct(Number(a.valorSaving ?? a.valor ?? 0), Number(a.saving_hist ?? 0), a.reducao_hist_pct))}%</span>
                     </td>
                     <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_prop)}<br/>
-                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{fmtNum(savingPct(Number(a.valorSaving ?? a.valor ?? 0), Number(a.saving_prop ?? 0), a.reducao_prop_pct))}%</span>
                     </td>
                   </tr>
                 ))}
                 <tr className="tbl-total-row font-bold border-t border-line">
-                  <td className="px-2 py-3">{fmtCurrency(savingTotal?.valorSaving ?? (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))}</td>
+                  <td className="px-2 py-3">{fmtCurrency(valorSavingVisualTotal)}</td>
                   <td className="px-2 py-3 border-l border-line">
-                    {fmtCurrency(savingTotal?.saving_hist ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
-                    <span className="text-[11px] font-normal">{savingTotal?.reducao_hist_pct !== null && savingTotal?.reducao_hist_pct !== undefined
-                      ? `${fmtNum(savingTotal.reducao_hist_pct)}%`
-                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
+                    {fmtCurrency(savingHistVisualTotal)}<br/>
+                    <span className="text-[11px] font-normal">{fmtNum(savingPct(valorSavingVisualTotal, savingHistVisualTotal, savingVisual?.reducao_hist_pct))}%</span>
                   </td>
                   <td className="px-2 py-3 border-l border-line">
-                    {fmtCurrency(savingTotal?.saving_prop ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
-                    <span className="text-[11px] font-normal">{savingTotal?.reducao_prop_pct !== null && savingTotal?.reducao_prop_pct !== undefined
-                      ? `${fmtNum(savingTotal.reducao_prop_pct)}%`
-                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
+                    {fmtCurrency(savingPropVisualTotal)}<br/>
+                    <span className="text-[11px] font-normal">{fmtNum(savingPct(valorSavingVisualTotal, savingPropVisualTotal, savingVisual?.reducao_prop_pct))}%</span>
                   </td>
                 </tr>
               </tbody>
@@ -384,7 +472,7 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="top-compradores" referencia={referencia} />
           ) : (
           <div className="grid gap-4 md:grid-cols-3">
-            {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
+            {areasVisiveis.map(area => {
               const areaStats = (porArea as any[]).find(a => a.area.toUpperCase() === area) || { processos: 0 };
               const percent = areaPercent(area);
               const tCompradores = (topCompradores as any[]).filter(t => t.area.toUpperCase() === area);
@@ -401,7 +489,11 @@ export default function PanoramaPage() {
                     <ul className="space-y-1.5 text-[11px] divide-y divide-line/60">
                       {tCompradores.map(c => (
                         <li key={c.responsavel} className="flex justify-between items-center pt-1.5 first:pt-0 text-navy-800">
-                          <span className="font-bold text-navy-700 uppercase truncate pr-2">{c.responsavel}</span>
+                          <Link
+                            href={processosHref({ comprador: c.responsavel, area: area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", origem: "comprador" })}
+                            className="truncate pr-2 font-bold uppercase text-navy-700 underline decoration-transparent underline-offset-2 transition-colors hover:text-accent-700 hover:decoration-current"
+                            title={`Abrir processos de ${c.responsavel}`}
+                          >{c.responsavel}</Link>
                           <span className="shrink-0 text-navy-950 font-semibold">{c.itens} ITENS | {c.atas} ATAS</span>
                         </li>
                       ))}
@@ -420,7 +512,7 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="fornecedores" referencia={referencia} />
           ) : (
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
-            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">FORNECEDORES GERAL</h3>
+            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">{areaPanorama === "TODAS" ? "FORNECEDORES GERAL" : `FORNECEDORES — ${areaPanorama}`}</h3>
             <table className="w-full min-w-[720px] text-left">
               <thead>
                 <tr className="tbl-head text-center font-bold">
@@ -432,14 +524,22 @@ export default function PanoramaPage() {
                 </tr>
               </thead>
               <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
-                {(fornecedores as any[]).length === 0 ? (
+                {(fornecedoresVisual as any[]).length === 0 ? (
                   <tr><td colSpan={5} className="px-3 py-5 text-ink-soft">Nenhuma linha específica reconhecida.</td></tr>
-                ) : (fornecedores as any[]).map((f: any, index: number) => {
+                ) : (fornecedoresVisual as any[]).map((f: any, index: number) => {
                   const analysis = f.analise || (f.concentracao >= 15 ? "Alta Concentração" : f.concentracao >= 5 ? "Volume Médio" : "Pulverizado");
                   const analysisTone = analysis.toUpperCase().includes("ALTA") ? "tone-alta" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "tone-media" : "tone-pulv";
                   return (
                     <tr key={`${f.fornecedor}-${index}`}>
-                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">{f.fornecedor}</td>
+                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">
+                        {f.fornecedor === "OUTROS FORNECEDORES" ? f.fornecedor : (
+                          <Link
+                            href={processosHref({ fornecedor: f.fornecedor, area: areaPanorama === "TODAS" ? undefined : areaPanorama === "INDIRETOS" ? "Indiretos" : areaPanorama === "DIRETOS" ? "Diretos" : "CAPEX", origem: "fornecedor" })}
+                            className="underline decoration-transparent underline-offset-2 transition-colors hover:text-accent-700 hover:decoration-current"
+                            title={`Abrir processos de ${f.fornecedor}`}
+                          >{f.fornecedor}</Link>
+                        )}
+                      </td>
                       <td className="px-2 py-2 border-l border-line">{fmtInt(f.atas)}</td>
                       <td className="px-2 py-2 border-l border-line">{fmtInt(f.itens)}</td>
                       <td className="px-2 py-2 border-l border-line">{fmtNum(f.concentracao)}%</td>
@@ -451,7 +551,7 @@ export default function PanoramaPage() {
             </table>
           </div>
           )}
-          {!ausente("fornecedores") && <FornecedoresAnalise fornecedores={fornecedores} />}
+          {!ausente("fornecedores") && areaPanorama === "TODAS" && <FornecedoresAnalise fornecedores={fornecedoresVisual} />}
         </div>
       </section>
 
@@ -501,7 +601,7 @@ export default function PanoramaPage() {
         {ausente("status-atas") ? (
           <BlocoAusente bloco="status-atas" referencia={referencia} />
         ) : (
-          <StatusAtas areas={statusAtas} referencia={referencia} />
+          <StatusAtas areas={statusAtas} referencia={referencia} areasVisiveis={areasVisiveis} />
         )}
       </section>
 
@@ -520,9 +620,7 @@ export default function PanoramaPage() {
               title={title}
               titleClass={titleClass}
               areaStats={[
-                { area: "INDIRETOS", bg: areaStyle("Indiretos").band, ...prevByBand("Indiretos", band) },
-                { area: "DIRETOS", bg: areaStyle("Diretos").band, ...prevByBand("Diretos", band) },
-                { area: "CAPEX", bg: areaStyle("CAPEX").band, ...prevByBand("CAPEX", band) },
+                ...areasVisiveis.map((area) => ({ area, bg: areaStyle(area).band, ...prevByBand(area, band) })),
               ]}
             />
           ))}
@@ -533,9 +631,7 @@ export default function PanoramaPage() {
         ) : (
           <PrevisaoMensal
             areas={[
-              { area: "INDIRETOS", bg: areaStyle("Indiretos").band, buckets: monthlyForArea("Indiretos") },
-              { area: "DIRETOS", bg: areaStyle("Diretos").band, buckets: monthlyForArea("Diretos") },
-              { area: "CAPEX", bg: areaStyle("CAPEX").band, buckets: monthlyForArea("CAPEX") },
+              ...areasVisiveis.map((area) => ({ area, bg: areaStyle(area).band, buckets: monthlyForArea(area) })),
             ]}
           />
         )}
@@ -548,6 +644,26 @@ export default function PanoramaPage() {
       </section>
     </div>
   );
+}
+
+function evolutionToResumo(evolution: any): ResumoKpis {
+  const value = (snake: string, camel: string) => evolution?.[snake] ?? evolution?.[camel] ?? null;
+  return {
+    concluidasAtas: value("concluidas_atas", "concluidasAtas"),
+    concluidasItens: value("concluidas_itens", "concluidasItens"),
+    andamentoAtas: value("andamento_atas", "andamentoAtas"),
+    andamentoItens: value("andamento_itens", "andamentoItens"),
+    saldoItens: value("saldo_itens", "saldoItens"),
+    consumidoItens: value("semsaldo_itens", "semSaldoItens"),
+    vencidasAtas: value("vencidas_atas", "vencidasAtas"),
+    vencidasItens: value("vencidas_itens", "vencidasItens"),
+    aVencerAtas: value("a_vencer_atas", "aVencerAtas"),
+    aVencerItens: value("a_vencer_itens", "aVencerItens"),
+  };
+}
+
+function snapshotKpisForArea(snapshot: DashboardSnapshotPayload, area: PanoramaAreaFilter): ResumoKpis {
+  return area === "TODAS" ? snapshot.kpis : evolutionToResumo(snapshot.evolucao[area]);
 }
 
 /* --- Componentes de Gráficos --- */

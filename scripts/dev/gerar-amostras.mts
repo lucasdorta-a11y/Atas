@@ -68,16 +68,16 @@ const resumo = (current: boolean): Matrix => [
 
 const andamento = (current: boolean): Matrix => [
   ["DESCRIÇÃO DOS LOTES ATAS", "QTD ITENS", "COMPRADOR", "AREA", "ETAPA ATUAL", "N° CONTRATO", "ESTIMATIVA VALOR TOTAL"],
-  ["Kit de vidraria", 40, "ANA SILVA", "INDIRETOS", current ? "FINALIZADO" : "EM ANDAMENTO", "4600001001", 12000],
-  ["Reagentes de laboratório", 60, "BRUNO LIMA", "DIRETOS", "FINALIZADO", "4600001002", 24000],
-  ["Serviço de calibração", 25, "CARLA SOUZA", "CAPEX", current ? "FINALIZADA" : "EM ANDAMENTO", "4600001003", 18000],
+  ["Kit de vidraria", 40, "ANA SILVA", "INDIRETOS", current ? "FINALIZADO" : "EM ANDAMENTO", "9900001001", 12000],
+  ["Reagentes de laboratório", 60, "BRUNO LIMA", "DIRETOS", "FINALIZADO", "9900001002", 24000],
+  ["Serviço de calibração", 25, "CARLA SOUZA", "CAPEX", current ? "FINALIZADA" : "EM ANDAMENTO", "9900001003", 18000],
 ];
 
 const contratos: Matrix = [
   ["Contrato", "Item", "Fornecedor"],
-  ["4600001001", "Material A", "ACME MATERIAL (1000411)"],
-  ["4600001002", "Material B", "BETA SERVIÇOS (1000412)"],
-  ["4600001003", "Material C", "GAMA INDUSTRIAL (1000413)"],
+  ["9900001001", "Material A", "ACME MATERIAL"],
+  ["9900001002", "Material B", "BETA SERVIÇOS"],
+  ["9900001003", "Material C", "GAMA INDUSTRIAL"],
 ];
 
 const cruzamento: Matrix = [
@@ -95,9 +95,9 @@ const statusAtas = (): Matrix => {
     [11 + offset, 0, 2, banner ? 1 : 0],
     ["TOTAL A RENOVAR", "VENCIDAS", "ATÉ 15 DIAS", "EM ANDAMENTO"],
     ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)", "SITUAÇÃO"],
-    [`460000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "LUCAS VICENTINI", banner ? "EM ANDAMENTO" : "A INICIAR"],
-    [`460000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "LUCAS VICENTINI", "A INICIAR"],
-    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 4600000895 | LUCAS VICENTINI | VENCIMENTO 28/10/2026"] as Row] : []),
+    [`990000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "COMPRADOR DEMO", banner ? "EM ANDAMENTO" : "A INICIAR"],
+    [`990000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "COMPRADOR DEMO", "A INICIAR"],
+    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 9900000895 | COMPRADOR DEMO | VENCIMENTO 28/10/2026"] as Row] : []),
     [],
   ];
   return [...area("INDIRETOS", 0, true), ...area("DIRETOS", 10, false), ...area("CAPEX", 20, false)];

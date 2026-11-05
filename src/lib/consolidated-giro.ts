@@ -459,6 +459,7 @@ export function extractConsolidatedGiro(
       else if (days !== null && days <= 100) category = "aVencer";
       else category = "concluidas";
     }
+    contract.carteira = category === "aVencer" ? "a_vencer" : category;
     if (metricSets[contract.area]) metricSets[contract.area][category].push(contract);
   }
 
@@ -753,7 +754,27 @@ export function extractConsolidatedGiro(
         "Itens com saldo": contract.comSaldo,
         "Itens consumidos": contract.consumido,
         "Saldo disponível": contract.valorDisp,
+        "Carteira do Panorama": contract.carteira,
       }),
+      giro: {
+        natureza: "Contratos Vigentes",
+        ariba: info?.ariba ?? null,
+        cw: [...contract.cws],
+        fornecedorPrincipal: contract.fornecedores[0] ?? null,
+        gestor: contract.gestor || null,
+        grupo: contract.grupo || null,
+        modalidade: contract.modalidade || null,
+        tipoDocSap: contract.tipoDoc || null,
+        saldoStatus: contract.consumido > 0 && contract.comSaldo === 0 ? "sem_saldo" : contract.consumido > 0 ? "parcial" : "integral",
+        qtdComSaldo: contract.comSaldo,
+        qtdConsumidos: contract.consumido,
+        semContratoSap: false,
+        valorDisponivel: contract.valorDisp,
+        savingMapeado: info ? round2(Math.max(info.sh || 0, info.sp || 0)) : 0,
+        consumo: [contract.comSaldo ? `${contract.comSaldo} c/ saldo` : "", contract.consumido ? `${contract.consumido} consum.` : ""].filter(Boolean).join(" · ") || null,
+        carteira: contract.carteira ?? null,
+        itemKeys: contract.items.map((item: Rec) => item.sap ? `SAP:${item.sap}` : `ITEM:${item.contrato}:${item.item}`),
+      },
     }, `CONTRATO:${contract.contrato}`);
   }
 
@@ -791,7 +812,27 @@ export function extractConsolidatedGiro(
         "Grupo de mercadorias": negotiation.grupo,
         Modalidade: negotiation.modalidade,
         "Prazo de conclusão": negotiation.prazo,
+        "Sem contrato SAP": negotiation.sn === "concluido" && linked.length === 0 ? "Sim" : "",
       }),
+      giro: {
+        natureza: negotiation.sn ? "Histórico (Finaliz./Canc.)" : "Atas em Andamento",
+        ariba: negotiation.ariba || null,
+        cw: [...cws],
+        fornecedorPrincipal: suppliers[0] ?? null,
+        gestor: null,
+        grupo: negotiation.grupo || null,
+        modalidade: negotiation.modalidade || null,
+        tipoDocSap: null,
+        saldoStatus: "na",
+        qtdComSaldo: 0,
+        qtdConsumidos: 0,
+        semContratoSap: negotiation.sn === "concluido" && linked.length === 0,
+        valorDisponivel: 0,
+        savingMapeado: negotiation.savingHist > 0 ? negotiation.savingHist : negotiation.savingProp > 0 ? negotiation.savingProp : 0,
+        consumo: negotiation.prazo || null,
+        carteira: null,
+        itemKeys: [],
+      },
     }, `NEGOCIACAO:${negotiation.ariba}|${negotiation.descricao}`);
   }
 

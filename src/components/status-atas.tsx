@@ -7,13 +7,15 @@ const AREAS: SnapshotArea[] = ["INDIRETOS", "DIRETOS", "CAPEX"];
 export function StatusAtas({
   areas,
   referencia,
+  areasVisiveis = AREAS,
 }: {
   areas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   referencia: string | null;
+  areasVisiveis?: SnapshotArea[];
 }) {
   return (
     <div className="space-y-6">
-      {AREAS.map((area) => {
+      {areasVisiveis.map((area) => {
         const status = areas[area];
         const style = areaStyle(area);
         return (

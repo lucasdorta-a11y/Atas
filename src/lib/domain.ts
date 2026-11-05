@@ -284,6 +284,28 @@ export interface Issue {
   severity: "error" | "warning";
 }
 
+export interface GiroProcessMetadata {
+  natureza?: "Atas em Andamento" | "Contratos Vigentes" | "Histórico (Finaliz./Canc.)" | string;
+  ariba?: string | null;
+  cw?: string[];
+  fornecedorPrincipal?: string | null;
+  gestor?: string | null;
+  grupo?: string | null;
+  modalidade?: string | null;
+  tipoDocSap?: string | null;
+  saldoStatus?: "sem_saldo" | "parcial" | "integral" | "na";
+  qtdComSaldo?: number;
+  qtdConsumidos?: number;
+  semContratoSap?: boolean;
+  valorDisponivel?: number | null;
+  savingMapeado?: number | null;
+  consumo?: string | null;
+  /** Classe exata usada pelos seis cards do Panorama para contratos SAP. */
+  carteira?: "concluidas" | "a_vencer" | "vencidas" | null;
+  /** Chaves SAP usadas para contar itens distintos sem duplicar contratos. */
+  itemKeys?: string[];
+}
+
 export interface CleanRecord {
   numero: string;
   objeto: string;
@@ -306,6 +328,8 @@ export interface CleanRecord {
   observacao: string | null;
   link: string | null;
   extra: Record<string, string>;
+  /** Metadados enriquecidos da pasta consolidada; ausente em bases legadas. */
+  giro?: GiroProcessMetadata;
   rowHash: string;
   sourceRow: number;
 }

@@ -50,6 +50,8 @@ Documento gerado a partir do projeto atual para publicação estática no GitHub
 - [src/lib/domain.ts](#srclibdomaints)
 - [src/lib/format.ts](#srclibformatts)
 - [src/lib/mapping.ts](#srclibmappingts)
+- [src/lib/process-executive.ts](#srclibprocessexecutivets)
+- [src/lib/process-links.ts](#srclibprocesslinksts)
 - [src/lib/published-snapshot.ts](#srclibpublishedsnapshotts)
 - [src/lib/static-dashboard.ts](#srclibstaticdashboardts)
 - [src/lib/static-store.ts](#srclibstaticstorets)
@@ -192,6 +194,8 @@ Painel interno de compras e Atas de Registro de Preços da Fundação Butantan. 
 - reconhece automaticamente tanto a nova pasta com **Negociação + Renovação + Base - Controle de Contratos** quanto as abas antigas `GIRO 01–07`, sem mapeamento manual;
 - mostra um resumo visual dos blocos encontrados e sinaliza os que não vieram na fonte, sem preencher ausências com zeros;
 - alimenta o panorama e, na nova pasta consolidada, gera automaticamente os registros completos da consulta de Processos, incluindo CW e Ariba na pesquisa, filtros, paginação e exportação CSV;
+- transforma os seis cards atuais do Panorama em atalhos para os processos correspondentes, preservando o recorte por área; os cards anteriores continuam somente comparativos;
+- oferece filtros executivos, indicadores acionáveis, URLs com o recorte aplicado e detalhes que isolam um processo e seus vínculos;
 - mantém o histórico de bases substituídas no armazenamento local;
 - apresenta consumo, saving, renovações, fornecedores, compradores e previsões por área;
 - oferece a seção de documentos e regras de preenchimento;
@@ -311,6 +315,21 @@ Contratos vencidos com renovação ativa não entram como “vencidas sem ação
 
 Se esses cabeçalhos não estiverem presentes, o site segue com o fallback `GIRO 01–07` descrito abaixo. Nenhum dado da planilha é incorporado ao build ou ao GitHub Pages: a importação continua apenas no navegador do usuário.
 
+## Filtros executivos e navegação pelos processos
+
+No **Panorama**, o seletor de área recalcula os blocos aplicáveis e é preservado ao abrir Processos. Também há controle para a base dos percentuais de saving e atalhos para Críticos, A Renovar, Sem saldo e Andamento. Os seis cards da leitura atual abrem suas carteiras; a leitura anterior não é clicável porque serve apenas à comparação. Nomes de compradores e fornecedores também abrem o recorte correspondente.
+
+A página **Processos** contém a base completa de Andamento, Contratos e Histórico, com:
+
+- busca por contrato, CW, Ariba, objeto, fornecedor e demais campos pesquisáveis;
+- área, natureza, etapa, régua de prazo, comprador, fornecedor, categoria, modalidade, materialidade, saldo, saving, carteira, previsão mensal e alertas de governança;
+- filtros rápidos, filtros avançados, chips removíveis e URLs que preservam o recorte;
+- cinco indicadores do resultado, com ações que mantêm os filtros já aplicados;
+- ordenação, paginação, exportação CSV de todo o recorte, tabela no desktop e cartões no celular;
+- diálogo de detalhes com os campos originais e a ação **Filtrar processo e vínculos**, que usa o projeto Ariba ou o identificador do processo para isolar os registros relacionados.
+
+Os dados permanecem locais: uma URL com filtros pode ser reaberta no mesmo navegador, mas não transporta a base para outro usuário.
+
 ## Leitura exata do painel consolidado (layout GIRO 01–07)
 
 A importação reconhece os blocos do dashboard **somente** pelos nomes abaixo. Se um cabeçalho ou rótulo divergir, ele aparece como bloco não reconhecido para validação humana; não é feita uma inferência genérica. Na auditoria, os blocos têm rótulos legíveis em `SNAPSHOT_BLOCKS`; no panorama, cada bloco informa se veio do snapshot, dos registros operacionais ou se está ausente. Ausência significa que a planilha não trouxe aquele conteúdo, não que o valor seja zero.
@@ -367,9 +386,12 @@ Snapshots, registros operacionais, documentos e histórico ficam no IndexedDB lo
 
 - `npm run typecheck` e `npm run lint`
 - `npm run build` com export estático
-- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos
+- `npm run consolidado:dry-run` com reconciliação entre Panorama e Processos, incluindo os seis cards no total geral e por área
+- integração `ATAS_STUB_STORE=1` do dashboard e dos recortes executivos com a base consolidada
 - fallback do layout antigo verificado com `npm run extrair`
-- smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no servidor de desenvolvimento
+- duas importações sucessivas em Chromium, com gravação real no IndexedDB e preservação da referência anterior
+- testes em navegador dos cards, deep links, área, CW, vínculos, previsão mensal, alertas, tema Claro/Escuro e diálogo móvel
+- smoke test das rotas `/`, `/importar/`, `/processos/` e `/documentos/` no build estático, todas com HTTP 200
 - validação local compartilhada entre preview e gravação, incluindo múltiplos arquivos e abas
 
 ## Decisões de dados
@@ -7404,14 +7426,23 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
 import { extractConsolidatedGiro } from "@/lib/consolidated-giro";
-import type { SnapshotSourceSheet } from "@/lib/dashboard-snapshot";
+import type { DashboardSnapshotPayload, SnapshotSourceSheet } from "@/lib/dashboard-snapshot";
 import { situacaoPrazo } from "@/lib/domain";
+import {
+  EMPTY_EXECUTIVE_FILTERS,
+  filterExecutiveProcesses,
+  normalizeExecutiveProcesses,
+  relatedProcessQuery,
+  summarizeExecutiveProcesses,
+} from "@/lib/process-executive";
+import { panoramaCardHref } from "@/lib/process-links";
 
 const args = process.argv.slice(2);
 const files = args.filter((arg) => !arg.startsWith("--"));
 const referenceDate = args.find((arg) => arg.startsWith("--ref="))?.slice(6) ?? null;
+const previousFile = args.find((arg) => arg.startsWith("--previous="))?.slice(11) ?? null;
 if (!files.length) {
-  console.error("Uso: npm run consolidado:dry-run -- <arquivos .xlsx/.csv> [--ref=AAAA-MM-DD]");
+  console.error("Uso: npm run consolidado:dry-run -- <arquivos .xlsx/.csv> [--ref=AAAA-MM-DD] [--previous=snapshot-anterior.json]");
   process.exit(1);
 }
 
@@ -7460,8 +7491,13 @@ const contratos = sum(areas.map((area) => snapshot.topCompradores[area].totalAta
 const finalizadas = snapshot.atasConcluidas.length;
 const canceladas = sum(areas.map((area) => snapshot.previsoes.canceladas[area].atas));
 const andamento = snapshot.kpis.andamentoAtas ?? 0;
+const previousSnapshot: DashboardSnapshotPayload | null = previousFile ? (() => {
+  const parsed = JSON.parse(readFileSync(previousFile, "utf8")) as { snapshot?: DashboardSnapshotPayload } & DashboardSnapshotPayload;
+  return parsed.snapshot ?? parsed;
+})() : null;
 
 assert(snapshot.coverage.missing.length === 0, "há blocos ausentes no snapshot");
+assert(!previousSnapshot || (previousSnapshot.referenceDate < snapshot.referenceDate && Array.isArray(previousSnapshot.atasConcluidas)), "snapshot anterior válido e mais antigo");
 assert(result.records.length === contratos + finalizadas + canceladas + andamento, "Processos não reconcilia com Contratos + Negociação");
 assert(natureCount("Contratos Vigentes") === contratos, "natureza Contratos Vigentes");
 assert(natureCount("Histórico (Finaliz./Canc.)") === finalizadas + canceladas, "natureza Histórico");
@@ -7497,12 +7533,12 @@ if (process.env.ATAS_STUB_STORE === "1") {
       saving_hist: record.savingHist, saving_prop: record.savingProp,
       status_renovacao: record.statusRenovacao, data_previsao: record.dataPrevisao,
       observacao: record.observacao, link: record.link, source_row: record.sourceRow,
-      extra: record.extra, dias: prazo.dias, situacao: prazo.chave,
+      extra: record.extra, giro: record.giro ?? null, dias: prazo.dias, situacao: prazo.chave,
       file_name: "dry-run", kind: "outro", natureza: record.extra.Natureza ?? "snapshot",
       reference_date: snapshot.referenceDate, imported_at: snapshot.capturedAt,
     };
   });
-  (globalThis as Record<string, unknown>).__ATAS_STORE__ = { snapshots: [snapshot], rows, datasets: [] };
+  (globalThis as Record<string, unknown>).__ATAS_STORE__ = { snapshots: [snapshot, ...(previousSnapshot ? [previousSnapshot] : [])], rows, datasets: [] };
   const { getStaticDashboardData, getStaticBaseSummary } = await import("@/lib/static-dashboard");
   const dashboard = await getStaticDashboardData();
   const summary = await getStaticBaseSummary();
@@ -7510,7 +7546,71 @@ if (process.env.ATAS_STUB_STORE === "1") {
   assert(dashboard.kpis.concluidosAtas === snapshot.kpis.concluidasAtas, "card de concluídas no Panorama");
   assert(dashboard.kpis.andamentoAtas === snapshot.kpis.andamentoAtas, "card de andamento no Panorama");
   assert(dashboard.atasConcluidas.totalFinalizadas === finalizadas, "lista de finalizadas no Panorama");
+  if (previousSnapshot) {
+    const previousKeys = new Set(previousSnapshot.atasConcluidas.map((ata) => ata.key));
+    const expectedNew = snapshot.atasConcluidas.filter((ata) => !previousKeys.has(ata.key));
+    assert(dashboard.previousSnapshot?.referenceDate === previousSnapshot.referenceDate, "referência anterior no histórico");
+    assert(dashboard.atasConcluidas.comparadoComReferencia === previousSnapshot.referenceDate, "comparação com a importação anterior");
+    assert(new Set(dashboard.atasConcluidas.novas.map((ata) => ata.key)).size === expectedNew.length
+      && dashboard.atasConcluidas.novas.every((ata) => !previousKeys.has(ata.key))
+      && expectedNew.every((ata) => dashboard.atasConcluidas.novas.some((current) => current.key === ata.key)), "delta exato de finalizadas entre as duas referências");
+    console.log(`Histórico integrado: ${previousSnapshot.referenceDate} → ${snapshot.referenceDate} | ${expectedNew.length} nova(s) finalizada(s)`);
+  }
+
+  const executive = normalizeExecutiveProcesses(rows);
+  const apply = (patch: Partial<typeof EMPTY_EXECUTIVE_FILTERS>) => {
+    const current = { ...EMPTY_EXECUTIVE_FILTERS, ...patch };
+    const filtered = filterExecutiveProcesses(executive, current);
+    return { filtered, summary: summarizeExecutiveProcesses(filtered, current) };
+  };
+  const concluidas = apply({ carteira: "concluidas" });
+  const aVencer = apply({ carteira: "a_vencer" });
+  const vencidas = apply({ carteira: "vencidas" });
+  const andamentoProc = apply({ natureza: "Atas em Andamento" });
+  const comSaldo = apply({ carteira: "concluidas", saldo: "com_saldo" });
+  const semSaldo = apply({ carteira: "concluidas", saldo: "com_esgotados" });
+  assert(concluidas.summary.processos === snapshot.kpis.concluidasAtas && concluidas.summary.itens === snapshot.kpis.concluidasItens, "drill-through do card Concluídas");
+  assert(aVencer.summary.processos === snapshot.kpis.aVencerAtas && aVencer.summary.itens === snapshot.kpis.aVencerItens, "drill-through do card A Vencer");
+  assert(vencidas.summary.processos === snapshot.kpis.vencidasAtas && vencidas.summary.itens === snapshot.kpis.vencidasItens, "drill-through do card Vencidas");
+  assert(andamentoProc.summary.processos === snapshot.kpis.andamentoAtas && andamentoProc.summary.itens === snapshot.kpis.andamentoItens, "drill-through do card Andamento");
+  assert(comSaldo.summary.itens === snapshot.kpis.saldoItens, "drill-through do card Itens com Saldo");
+  assert(semSaldo.summary.itens === snapshot.kpis.consumidoItens, "drill-through do card Itens sem Saldo");
+  for (const area of areas) {
+    const areaLabel = area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX";
+    const expected = snapshot.evolucao[area];
+    const areaConcluidas = apply({ area: areaLabel, carteira: "concluidas" }).summary;
+    const areaAndamento = apply({ area: areaLabel, natureza: "Atas em Andamento" }).summary;
+    const areaComSaldo = apply({ area: areaLabel, carteira: "concluidas", saldo: "com_saldo" }).summary;
+    const areaSemSaldo = apply({ area: areaLabel, carteira: "concluidas", saldo: "com_esgotados" }).summary;
+    const areaVencidas = apply({ area: areaLabel, carteira: "vencidas" }).summary;
+    const areaAVencer = apply({ area: areaLabel, carteira: "a_vencer" }).summary;
+    assert(areaConcluidas.processos === expected.concluidasAtas && areaConcluidas.itens === expected.concluidasItens, `card Concluídas — ${area}`);
+    assert(areaAndamento.processos === expected.andamentoAtas && areaAndamento.itens === expected.andamentoItens, `card Andamento — ${area}`);
+    assert(areaComSaldo.itens === expected.saldoItens && areaSemSaldo.itens === expected.semSaldoItens, `cards de saldo — ${area}`);
+    assert(areaVencidas.processos === expected.vencidasAtas && areaVencidas.itens === expected.vencidasItens, `card Vencidas — ${area}`);
+    assert(areaAVencer.processos === expected.aVencerAtas && areaAVencer.itens === expected.aVencerItens, `card A Vencer — ${area}`);
+  }
+  const cardUrl = new URL(panoramaCardHref("saldo", "DIRETOS"), "https://local.invalid");
+  assert(cardUrl.searchParams.get("area") === "Diretos" && cardUrl.searchParams.get("carteira") === "concluidas" && cardUrl.searchParams.get("saldo") === "com_saldo", "URL do card preserva área e recorte");
+  const saving = apply({ saving: "com" }).filtered;
+  assert(saving.length > 0 && saving.every((row) => row.savingMapeado > 0), "recorte de saving mapeado");
+  const semContrato = apply({ alerta: "sem_contrato" }).filtered.length;
+  assert(semContrato === result.issues.filter((issue) => issue.column === "N° CONTRATO").length, "alerta de finalizados sem contrato SAP");
+  const cwSample = executive.find((row) => row.cw.length > 0)?.cw[0];
+  if (cwSample) assert(apply({ q: cwSample }).filtered.length > 0, "pesquisa por CW");
+  const relatedSample = executive.find((row) => Boolean(row.ariba));
+  if (relatedSample) {
+    const related = apply({ q: relatedProcessQuery(relatedSample) }).filtered;
+    assert(related.length > 0 && related.some((row) => row.id === relatedSample.id), "filtro de processo e vínculos");
+  }
+  const monthSample = snapshot.previsaoMeses.INDIRETOS.rows.find((row) => row.month !== null && row.year !== null);
+  if (monthSample) {
+    const key = `${monthSample.year}-${String(monthSample.month).padStart(2, "0")}`;
+    const expected = sum(areas.map((area) => sum(snapshot.previsaoMeses[area].rows.filter((row) => row.month === monthSample.month && row.year === monthSample.year).map((row) => row.atas))));
+    assert(apply({ mes: key }).summary.processos === expected, `filtro de previsão mensal ${key}`);
+  }
   console.log(`Panorama integrado: ${summary.processCount} registros | ${dashboard.atasConcluidas.totalFinalizadas} finalizadas na base atual`);
+  console.log(`Drill-through: concluídas ${concluidas.summary.processos}/${concluidas.summary.itens} | andamento ${andamentoProc.summary.processos}/${andamentoProc.summary.itens} | saldo ${comSaldo.summary.itens} | sem saldo ${semSaldo.summary.itens} | vencidas ${vencidas.summary.processos}/${vencidas.summary.itens} | a vencer ${aVencer.summary.processos}/${aVencer.summary.itens}`);
 }
 ````
 
@@ -7735,16 +7835,16 @@ const resumo = (current: boolean): Matrix => [
 
 const andamento = (current: boolean): Matrix => [
   ["DESCRIÇÃO DOS LOTES ATAS", "QTD ITENS", "COMPRADOR", "AREA", "ETAPA ATUAL", "N° CONTRATO", "ESTIMATIVA VALOR TOTAL"],
-  ["Kit de vidraria", 40, "ANA SILVA", "INDIRETOS", current ? "FINALIZADO" : "EM ANDAMENTO", "4600001001", 12000],
-  ["Reagentes de laboratório", 60, "BRUNO LIMA", "DIRETOS", "FINALIZADO", "4600001002", 24000],
-  ["Serviço de calibração", 25, "CARLA SOUZA", "CAPEX", current ? "FINALIZADA" : "EM ANDAMENTO", "4600001003", 18000],
+  ["Kit de vidraria", 40, "ANA SILVA", "INDIRETOS", current ? "FINALIZADO" : "EM ANDAMENTO", "9900001001", 12000],
+  ["Reagentes de laboratório", 60, "BRUNO LIMA", "DIRETOS", "FINALIZADO", "9900001002", 24000],
+  ["Serviço de calibração", 25, "CARLA SOUZA", "CAPEX", current ? "FINALIZADA" : "EM ANDAMENTO", "9900001003", 18000],
 ];
 
 const contratos: Matrix = [
   ["Contrato", "Item", "Fornecedor"],
-  ["4600001001", "Material A", "ACME MATERIAL (1000411)"],
-  ["4600001002", "Material B", "BETA SERVIÇOS (1000412)"],
-  ["4600001003", "Material C", "GAMA INDUSTRIAL (1000413)"],
+  ["9900001001", "Material A", "ACME MATERIAL"],
+  ["9900001002", "Material B", "BETA SERVIÇOS"],
+  ["9900001003", "Material C", "GAMA INDUSTRIAL"],
 ];
 
 const cruzamento: Matrix = [
@@ -7762,9 +7862,9 @@ const statusAtas = (): Matrix => {
     [11 + offset, 0, 2, banner ? 1 : 0],
     ["TOTAL A RENOVAR", "VENCIDAS", "ATÉ 15 DIAS", "EM ANDAMENTO"],
     ["CONTRATO SAP", "VENCIMENTO", "COMPRADOR(A)", "SITUAÇÃO"],
-    [`460000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "LUCAS VICENTINI", banner ? "EM ANDAMENTO" : "A INICIAR"],
-    [`460000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "LUCAS VICENTINI", "A INICIAR"],
-    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 4600000895 | LUCAS VICENTINI | VENCIMENTO 28/10/2026"] as Row] : []),
+    [`990000${String(895 + offset).padStart(4, "0")}`, "28/10/2026", "COMPRADOR DEMO", banner ? "EM ANDAMENTO" : "A INICIAR"],
+    [`990000${String(894 + offset).padStart(4, "0")}`, "29/10/2026", "COMPRADOR DEMO", "A INICIAR"],
+    ...(banner ? [["RENOVAÇÃO EM ANDAMENTO: 9900000895 | COMPRADOR DEMO | VENCIMENTO 28/10/2026"] as Row] : []),
     [],
   ];
   return [...area("INDIRETOS", 0, true), ...area("DIRETOS", 10, false), ...area("CAPEX", 20, false)];
@@ -8566,18 +8666,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 "use client";
 
 import Link from "next/link";
-import { FileStack, FileUp, RefreshCw, SearchX } from "lucide-react";
+import { ArrowUpRight, FileStack, FileUp, RefreshCw, SearchX, SlidersHorizontal } from "lucide-react";
 import { getStaticDashboardData, type PanoramaBlock, type StaticDashboardData } from "@/lib/static-dashboard";
 import { STATIC_DATA_EVENT } from "@/lib/static-store";
-import { SNAPSHOT_BLOCKS, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
+import { SNAPSHOT_BLOCKS, type DashboardSnapshotPayload, type ForecastBand, type SnapshotArea, type SnapshotMonthlyForecastRow } from "@/lib/dashboard-snapshot";
 import { useCallback, useEffect, useState } from "react";
 import { DatasetsPanel } from "@/components/datasets-panel";
-import { ResumoCards } from "@/components/resumo-cards";
+import { ResumoCards, type ResumoKpis } from "@/components/resumo-cards";
 import { AtasConcluidas } from "@/components/atas-concluidas";
 import { FornecedoresAnalise } from "@/components/fornecedores-analise";
 import { StatusAtas } from "@/components/status-atas";
 import { EmptyState, PageHeader, areaStyle } from "@/components/ui";
 import { fmtCurrency, fmtDateLong, fmtInt, fmtNum } from "@/lib/format";
+import { panoramaCardHref, panoramaQuickHref, processosHref, type PanoramaAreaFilter } from "@/lib/process-links";
 import clsx from "clsx";
 
 const MONTH_NAMES_PT = [
@@ -8600,6 +8701,8 @@ export default function PanoramaPage() {
   const [data, setData] = useState<StaticDashboardData | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [areaPanorama, setAreaPanorama] = useState<PanoramaAreaFilter>("TODAS");
+  const [baseSaving, setBaseSaving] = useState<"contratado" | "referencia">("contratado");
 
   const carregar = useCallback(async () => {
     setAtualizando(true);
@@ -8691,9 +8794,55 @@ export default function PanoramaPage() {
   const referencia = currentSnapshot?.referenceDate ?? null;
   const ausente = (bloco: PanoramaBlock) => blocos[bloco] === "ausente";
   // Ordem única das áreas em todos os blocos do painel, conforme a planilha.
-  const areaVisualOrder = ["INDIRETOS", "DIRETOS", "CAPEX"];
-  const porAreaVisual = [...(porArea as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
-  const evolucaoVisual = [...(evolucao as any[])].sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase()) - areaVisualOrder.indexOf(String(b.area).toUpperCase()));
+  const areaVisualOrder: SnapshotArea[] = ["INDIRETOS", "DIRETOS", "CAPEX"];
+  const areasVisiveis = areaPanorama === "TODAS" ? areaVisualOrder : [areaPanorama];
+  const porAreaVisual = [...(porArea as any[])]
+    .filter((item) => areaPanorama === "TODAS" || String(item.area).toUpperCase() === areaPanorama)
+    .sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase() as SnapshotArea) - areaVisualOrder.indexOf(String(b.area).toUpperCase() as SnapshotArea));
+  const evolucaoVisual = [...(evolucao as any[])]
+    .filter((item) => areaPanorama === "TODAS" || String(item.area).toUpperCase() === areaPanorama)
+    .sort((a, b) => areaVisualOrder.indexOf(String(a.area).toUpperCase() as SnapshotArea) - areaVisualOrder.indexOf(String(b.area).toUpperCase() as SnapshotArea));
+  const currentResumoKpis: ResumoKpis = areaPanorama === "TODAS" ? {
+    concluidasAtas: kpis.concluidosAtas,
+    concluidasItens: kpis.concluidosItens,
+    andamentoAtas: kpis.andamentoAtas,
+    andamentoItens: kpis.andamentoItens,
+    saldoItens: kpis.saldoItens,
+    consumidoItens: kpis.consumidoItens,
+    aVencerAtas: kpis.aVencerAtas,
+    aVencerItens: kpis.aVencerItens,
+    vencidasAtas: kpis.vencidasAtas,
+    vencidasItens: kpis.vencidasItens,
+  } : evolutionToResumo(evolucaoVisual[0]);
+  const previousResumoKpis = previousSnapshot ? snapshotKpisForArea(previousSnapshot, areaPanorama) : null;
+  const savingVisual = areaPanorama === "TODAS" ? savingTotal : porAreaVisual[0] ? {
+    valorSaving: porAreaVisual[0].valorSaving ?? porAreaVisual[0].valor,
+    saving_hist: porAreaVisual[0].saving_hist,
+    saving_prop: porAreaVisual[0].saving_prop,
+    reducao_hist_pct: porAreaVisual[0].reducao_hist_pct,
+    reducao_prop_pct: porAreaVisual[0].reducao_prop_pct,
+  } : null;
+  const fornecedoresVisual = areaPanorama === "TODAS" ? fornecedores : (currentSnapshot?.fornecedores[areaPanorama] ?? []).map((item) => ({
+    area: areaPanorama,
+    fornecedor: item.fornecedor,
+    atas: item.qtdAtas ?? 0,
+    itens: item.qtdItens ?? 0,
+    concentracao: item.concentracaoPct ?? 0,
+    analise: item.analise,
+  }));
+  const atasConcluidasVisual = areaPanorama === "TODAS" ? atasConcluidas : {
+    ...atasConcluidas,
+    novas: atasConcluidas.novas.filter((item) => item.area === areaPanorama),
+    totalFinalizadas: currentSnapshot?.atasConcluidas.filter((item) => item.area === areaPanorama).length ?? atasConcluidas.novas.filter((item) => item.area === areaPanorama).length,
+  };
+  const savingPct = (valorBase: number, saving: number, original: number | null | undefined) => {
+    if (baseSaving === "contratado") return original ?? (valorBase > 0 ? (saving * 100) / valorBase : 0);
+    return valorBase + saving > 0 ? (saving * 100) / (valorBase + saving) : 0;
+  };
+
+  const valorSavingVisualTotal = savingVisual?.valorSaving ?? porAreaVisual.reduce((sum, item) => sum + Number(item.valorSaving ?? item.valor ?? 0), 0);
+  const savingHistVisualTotal = savingVisual?.saving_hist ?? porAreaVisual.reduce((sum, item) => sum + Number(item.saving_hist ?? 0), 0);
+  const savingPropVisualTotal = savingVisual?.saving_prop ?? porAreaVisual.reduce((sum, item) => sum + Number(item.saving_prop ?? 0), 0);
 
   const prevByBand = (area: string, band: ForecastBand) => {
     const key = area.toUpperCase() as SnapshotArea;
@@ -8760,14 +8909,14 @@ export default function PanoramaPage() {
   const areaPercent = (area: string) => {
     const ordered = ["INDIRETOS", "DIRETOS", "CAPEX"];
     const index = ordered.indexOf(area);
-    const total = (porArea as any[]).reduce((sum, item) => sum + Number(item.processos || 0), 0);
+    const total = porAreaVisual.reduce((sum, item) => sum + Number(item.processos || 0), 0);
     if (total <= 0 || index < 0) return 0;
-    if (index === ordered.length - 1) {
-      const prior = (porArea as any[]).filter((item) => ordered.indexOf(String(item.area).toUpperCase()) < index)
+    if (index === ordered.length - 1 || areasVisiveis.length === 1) {
+      const prior = porAreaVisual.filter((item) => ordered.indexOf(String(item.area).toUpperCase()) < index)
         .reduce((sum, item) => sum + Number(((Number(item.processos || 0) / total) * 100).toFixed(2)), 0);
       return Math.max(0, Number((100 - prior).toFixed(2)));
     }
-    const current = (porArea as any[]).find((item) => String(item.area).toUpperCase() === area);
+    const current = porAreaVisual.find((item) => String(item.area).toUpperCase() === area);
     return Number(((Number(current?.processos || 0) / total) * 100).toFixed(2));
   };
 
@@ -8789,6 +8938,59 @@ export default function PanoramaPage() {
           </button>
         )}
       />
+
+      <section aria-label="Filtros executivos do panorama" className="card space-y-4 p-4" data-no-print>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[520px]">
+            <label className="text-[12px] font-semibold text-navy-900">
+              <span className="mb-1.5 flex items-center gap-1.5"><SlidersHorizontal size={14} aria-hidden="true" /> Área do panorama</span>
+              <select
+                value={areaPanorama}
+                onChange={(event) => setAreaPanorama(event.target.value as PanoramaAreaFilter)}
+                className="min-h-10 w-full rounded-xl border border-line bg-surface px-3 text-[13px] font-medium text-ink"
+              >
+                <option value="TODAS">Todas as células</option>
+                <option value="INDIRETOS">Indiretos</option>
+                <option value="DIRETOS">Diretos</option>
+                <option value="CAPEX">CAPEX</option>
+              </select>
+            </label>
+            <label className="text-[12px] font-semibold text-navy-900">
+              <span className="mb-1.5 block">Base dos percentuais de saving</span>
+              <select
+                value={baseSaving}
+                onChange={(event) => setBaseSaving(event.target.value as "contratado" | "referencia")}
+                className="min-h-10 w-full rounded-xl border border-line bg-surface px-3 text-[13px] font-medium text-ink"
+              >
+                <option value="contratado">% sobre valor contratado</option>
+                <option value="referencia">% sobre preço inicial de referência</option>
+              </select>
+            </label>
+          </div>
+          <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.07em] text-ink-soft">Abrir recorte em Processos</p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["criticos", "Críticos"],
+                ["renovar", "A Renovar"],
+                ["sem_saldo", "Sem saldo"],
+                ["andamento", "Andamento"],
+              ] as const).map(([action, label]) => (
+                <Link
+                  key={action}
+                  href={panoramaQuickHref(action, areaPanorama)}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[12px] font-semibold text-navy-800 transition-colors hover:border-navy-300 hover:bg-navy-50"
+                >
+                  {label}<ArrowUpRight size={12} aria-hidden="true" />
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p className="text-[12px] leading-relaxed text-ink-soft">
+          Os cards da semana atual também são clicáveis e abrem os processos correspondentes. O filtro de área é preservado nessa navegação.
+        </p>
+      </section>
 
       {/* Bloco 1: seis cards de resumo — semana anterior e semana atual. */}
       <section aria-labelledby="comparacao-semanal" className="space-y-5">
@@ -8822,7 +9024,7 @@ export default function PanoramaPage() {
           <ResumoCards
             titulo="Resumo das Atas Concluídas"
             status={`Status semana anterior ${formatShortDate(previousSnapshot.referenceDate)}`}
-            kpis={previousSnapshot.kpis}
+            kpis={previousResumoKpis ?? previousSnapshot.kpis}
             tone="anterior"
           />
         )}
@@ -8833,18 +9035,8 @@ export default function PanoramaPage() {
             titulo="Resumo das Atas Concluídas"
             status={`Status atual ${formatShortDate(currentSnapshot?.referenceDate)}`}
             tone="atual"
-            kpis={{
-              concluidasAtas: kpis.concluidosAtas,
-              concluidasItens: kpis.concluidosItens,
-              andamentoAtas: kpis.andamentoAtas,
-              andamentoItens: kpis.andamentoItens,
-              saldoItens: kpis.saldoItens,
-              consumidoItens: kpis.consumidoItens,
-              aVencerAtas: kpis.aVencerAtas,
-              aVencerItens: kpis.aVencerItens,
-              vencidasAtas: kpis.vencidasAtas,
-              vencidasItens: kpis.vencidasItens,
-            }}
+            kpis={currentResumoKpis}
+            hrefForCard={(card) => panoramaCardHref(card, areaPanorama)}
           />
         )}
       </section>
@@ -8858,7 +9050,7 @@ export default function PanoramaPage() {
         {ausente("atas-concluidas") ? (
           <BlocoAusente bloco="atas-concluidas" referencia={referencia} />
         ) : (
-          <AtasConcluidas dados={atasConcluidas} referencia={referencia} />
+          <AtasConcluidas dados={atasConcluidasVisual} referencia={referencia} />
         )}
       </section>
 
@@ -8886,7 +9078,7 @@ export default function PanoramaPage() {
                 ))}
                 <tr className="tbl-total-row font-bold">
                   <td className="px-5 py-3">TOTAL</td>
-                  <td className="px-5 py-3 text-right">{fmtCurrency((porArea as any[]).reduce((acc, a) => acc + a.valor, 0))}</td>
+                  <td className="px-5 py-3 text-right">{fmtCurrency(porAreaVisual.reduce((acc, a) => acc + Number(a.valor ?? 0), 0))}</td>
                 </tr>
               </tbody>
             </table>
@@ -8911,27 +9103,23 @@ export default function PanoramaPage() {
                     <td className="px-2 py-3">{fmtCurrency(a.valorSaving ?? a.valor)}</td>
                     <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_hist)}<br/>
-                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_hist_pct !== null && a.reducao_hist_pct !== undefined ? fmtNum(a.reducao_hist_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_hist / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{fmtNum(savingPct(Number(a.valorSaving ?? a.valor ?? 0), Number(a.saving_hist ?? 0), a.reducao_hist_pct))}%</span>
                     </td>
                     <td className="px-2 py-3 border-l border-line">
                       {fmtCurrency(a.saving_prop)}<br/>
-                      <span className="text-[11px] font-normal text-ink-soft">{a.reducao_prop_pct !== null && a.reducao_prop_pct !== undefined ? fmtNum(a.reducao_prop_pct) : (a.valorSaving > 0 ? fmtNum((a.saving_prop / a.valorSaving) * 100) : "0")}%</span>
+                      <span className="text-[11px] font-normal text-ink-soft">{fmtNum(savingPct(Number(a.valorSaving ?? a.valor ?? 0), Number(a.saving_prop ?? 0), a.reducao_prop_pct))}%</span>
                     </td>
                   </tr>
                 ))}
                 <tr className="tbl-total-row font-bold border-t border-line">
-                  <td className="px-2 py-3">{fmtCurrency(savingTotal?.valorSaving ?? (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))}</td>
+                  <td className="px-2 py-3">{fmtCurrency(valorSavingVisualTotal)}</td>
                   <td className="px-2 py-3 border-l border-line">
-                    {fmtCurrency(savingTotal?.saving_hist ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0))}<br/>
-                    <span className="text-[11px] font-normal">{savingTotal?.reducao_hist_pct !== null && savingTotal?.reducao_hist_pct !== undefined
-                      ? `${fmtNum(savingTotal.reducao_hist_pct)}%`
-                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_hist, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
+                    {fmtCurrency(savingHistVisualTotal)}<br/>
+                    <span className="text-[11px] font-normal">{fmtNum(savingPct(valorSavingVisualTotal, savingHistVisualTotal, savingVisual?.reducao_hist_pct))}%</span>
                   </td>
                   <td className="px-2 py-3 border-l border-line">
-                    {fmtCurrency(savingTotal?.saving_prop ?? (porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0))}<br/>
-                    <span className="text-[11px] font-normal">{savingTotal?.reducao_prop_pct !== null && savingTotal?.reducao_prop_pct !== undefined
-                      ? `${fmtNum(savingTotal.reducao_prop_pct)}%`
-                      : `${fmtNum((((porArea as any[]).reduce((acc, a) => acc + a.saving_prop, 0)) / Math.max(1, (porArea as any[]).reduce((acc, a) => acc + (a.valorSaving ?? a.valor), 0))) * 100)}%`}</span>
+                    {fmtCurrency(savingPropVisualTotal)}<br/>
+                    <span className="text-[11px] font-normal">{fmtNum(savingPct(valorSavingVisualTotal, savingPropVisualTotal, savingVisual?.reducao_prop_pct))}%</span>
                   </td>
                 </tr>
               </tbody>
@@ -8949,7 +9137,7 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="top-compradores" referencia={referencia} />
           ) : (
           <div className="grid gap-4 md:grid-cols-3">
-            {["INDIRETOS", "DIRETOS", "CAPEX"].map(area => {
+            {areasVisiveis.map(area => {
               const areaStats = (porArea as any[]).find(a => a.area.toUpperCase() === area) || { processos: 0 };
               const percent = areaPercent(area);
               const tCompradores = (topCompradores as any[]).filter(t => t.area.toUpperCase() === area);
@@ -8966,7 +9154,11 @@ export default function PanoramaPage() {
                     <ul className="space-y-1.5 text-[11px] divide-y divide-line/60">
                       {tCompradores.map(c => (
                         <li key={c.responsavel} className="flex justify-between items-center pt-1.5 first:pt-0 text-navy-800">
-                          <span className="font-bold text-navy-700 uppercase truncate pr-2">{c.responsavel}</span>
+                          <Link
+                            href={processosHref({ comprador: c.responsavel, area: area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : "CAPEX", origem: "comprador" })}
+                            className="truncate pr-2 font-bold uppercase text-navy-700 underline decoration-transparent underline-offset-2 transition-colors hover:text-accent-700 hover:decoration-current"
+                            title={`Abrir processos de ${c.responsavel}`}
+                          >{c.responsavel}</Link>
                           <span className="shrink-0 text-navy-950 font-semibold">{c.itens} ITENS | {c.atas} ATAS</span>
                         </li>
                       ))}
@@ -8985,7 +9177,7 @@ export default function PanoramaPage() {
             <BlocoAusente bloco="fornecedores" referencia={referencia} />
           ) : (
           <div className="card overflow-hidden overflow-x-auto text-[11px]">
-            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">FORNECEDORES GERAL</h3>
+            <h3 className="tbl-subhead px-3 py-3 text-center font-bold">{areaPanorama === "TODAS" ? "FORNECEDORES GERAL" : `FORNECEDORES — ${areaPanorama}`}</h3>
             <table className="w-full min-w-[720px] text-left">
               <thead>
                 <tr className="tbl-head text-center font-bold">
@@ -8997,14 +9189,22 @@ export default function PanoramaPage() {
                 </tr>
               </thead>
               <tbody className="tbl-body-themed divide-y divide-line text-center font-medium">
-                {(fornecedores as any[]).length === 0 ? (
+                {(fornecedoresVisual as any[]).length === 0 ? (
                   <tr><td colSpan={5} className="px-3 py-5 text-ink-soft">Nenhuma linha específica reconhecida.</td></tr>
-                ) : (fornecedores as any[]).map((f: any, index: number) => {
+                ) : (fornecedoresVisual as any[]).map((f: any, index: number) => {
                   const analysis = f.analise || (f.concentracao >= 15 ? "Alta Concentração" : f.concentracao >= 5 ? "Volume Médio" : "Pulverizado");
                   const analysisTone = analysis.toUpperCase().includes("ALTA") ? "tone-alta" : analysis.toUpperCase().includes("MÉDIO") || analysis.toUpperCase().includes("MEDIO") ? "tone-media" : "tone-pulv";
                   return (
                     <tr key={`${f.fornecedor}-${index}`}>
-                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">{f.fornecedor}</td>
+                      <td className="px-2 py-2 text-left uppercase text-navy-950 font-semibold">
+                        {f.fornecedor === "OUTROS FORNECEDORES" ? f.fornecedor : (
+                          <Link
+                            href={processosHref({ fornecedor: f.fornecedor, area: areaPanorama === "TODAS" ? undefined : areaPanorama === "INDIRETOS" ? "Indiretos" : areaPanorama === "DIRETOS" ? "Diretos" : "CAPEX", origem: "fornecedor" })}
+                            className="underline decoration-transparent underline-offset-2 transition-colors hover:text-accent-700 hover:decoration-current"
+                            title={`Abrir processos de ${f.fornecedor}`}
+                          >{f.fornecedor}</Link>
+                        )}
+                      </td>
                       <td className="px-2 py-2 border-l border-line">{fmtInt(f.atas)}</td>
                       <td className="px-2 py-2 border-l border-line">{fmtInt(f.itens)}</td>
                       <td className="px-2 py-2 border-l border-line">{fmtNum(f.concentracao)}%</td>
@@ -9016,7 +9216,7 @@ export default function PanoramaPage() {
             </table>
           </div>
           )}
-          {!ausente("fornecedores") && <FornecedoresAnalise fornecedores={fornecedores} />}
+          {!ausente("fornecedores") && areaPanorama === "TODAS" && <FornecedoresAnalise fornecedores={fornecedoresVisual} />}
         </div>
       </section>
 
@@ -9066,7 +9266,7 @@ export default function PanoramaPage() {
         {ausente("status-atas") ? (
           <BlocoAusente bloco="status-atas" referencia={referencia} />
         ) : (
-          <StatusAtas areas={statusAtas} referencia={referencia} />
+          <StatusAtas areas={statusAtas} referencia={referencia} areasVisiveis={areasVisiveis} />
         )}
       </section>
 
@@ -9085,9 +9285,7 @@ export default function PanoramaPage() {
               title={title}
               titleClass={titleClass}
               areaStats={[
-                { area: "INDIRETOS", bg: areaStyle("Indiretos").band, ...prevByBand("Indiretos", band) },
-                { area: "DIRETOS", bg: areaStyle("Diretos").band, ...prevByBand("Diretos", band) },
-                { area: "CAPEX", bg: areaStyle("CAPEX").band, ...prevByBand("CAPEX", band) },
+                ...areasVisiveis.map((area) => ({ area, bg: areaStyle(area).band, ...prevByBand(area, band) })),
               ]}
             />
           ))}
@@ -9098,9 +9296,7 @@ export default function PanoramaPage() {
         ) : (
           <PrevisaoMensal
             areas={[
-              { area: "INDIRETOS", bg: areaStyle("Indiretos").band, buckets: monthlyForArea("Indiretos") },
-              { area: "DIRETOS", bg: areaStyle("Diretos").band, buckets: monthlyForArea("Diretos") },
-              { area: "CAPEX", bg: areaStyle("CAPEX").band, buckets: monthlyForArea("CAPEX") },
+              ...areasVisiveis.map((area) => ({ area, bg: areaStyle(area).band, buckets: monthlyForArea(area) })),
             ]}
           />
         )}
@@ -9113,6 +9309,26 @@ export default function PanoramaPage() {
       </section>
     </div>
   );
+}
+
+function evolutionToResumo(evolution: any): ResumoKpis {
+  const value = (snake: string, camel: string) => evolution?.[snake] ?? evolution?.[camel] ?? null;
+  return {
+    concluidasAtas: value("concluidas_atas", "concluidasAtas"),
+    concluidasItens: value("concluidas_itens", "concluidasItens"),
+    andamentoAtas: value("andamento_atas", "andamentoAtas"),
+    andamentoItens: value("andamento_itens", "andamentoItens"),
+    saldoItens: value("saldo_itens", "saldoItens"),
+    consumidoItens: value("semsaldo_itens", "semSaldoItens"),
+    vencidasAtas: value("vencidas_atas", "vencidasAtas"),
+    vencidasItens: value("vencidas_itens", "vencidasItens"),
+    aVencerAtas: value("a_vencer_atas", "aVencerAtas"),
+    aVencerItens: value("a_vencer_itens", "aVencerItens"),
+  };
+}
+
+function snapshotKpisForArea(snapshot: DashboardSnapshotPayload, area: PanoramaAreaFilter): ResumoKpis {
+  return area === "TODAS" ? snapshot.kpis : evolutionToResumo(snapshot.evolucao[area]);
 }
 
 /* --- Componentes de Gráficos --- */
@@ -11466,130 +11682,220 @@ function ResumoItem({ label, children }: { label: string; children: React.ReactN
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
-  ArrowDown, ArrowUp, ArrowUpDown, CircleAlert, Download, ExternalLink, FileStack,
-  FunnelX, Printer, Search, X,
+  ArrowDown, ArrowUp, ArrowUpDown, BadgeDollarSign, CircleAlert, Download,
+  ExternalLink, FileStack, Filter, FunnelX, ListFilter, PackageCheck,
+  Printer, Search, SlidersHorizontal, TimerReset, X,
 } from "lucide-react";
 import clsx from "clsx";
-import { AreaTag, PageHeader, StatusBadge, situacaoChave } from "@/components/ui";
-import { KIND_LABEL, SITUACAO_LABEL, normText, type SituacaoChave } from "@/lib/domain";
+import { AreaTag, PageHeader } from "@/components/ui";
+import { KIND_LABEL } from "@/lib/domain";
 import { fmtCurrency, fmtDate, fmtDateTime, fmtInt, prazoRelativo } from "@/lib/format";
 import { buildCsv } from "@/lib/csv";
 import { listActiveProcessRows, STATIC_DATA_EVENT } from "@/lib/static-store";
+import {
+  activeExecutiveFilterCount,
+  EMPTY_EXECUTIVE_FILTERS,
+  filterExecutiveProcesses,
+  normalizeExecutiveProcesses,
+  relatedProcessQuery,
+  sortExecutiveProcesses,
+  summarizeExecutiveProcesses,
+  type ExecutiveFilters,
+  type ExecutiveProcess,
+  type ExecutiveSituation,
+} from "@/lib/process-executive";
 
 /* ------------------------------------------------------------------ */
+/* Opções executivas                                                   */
+/* ------------------------------------------------------------------ */
 
-interface Row {
-  id: string | number;
-  dataset_id: number;
-  area: string | null;
-  numero: string;
-  objeto: string;
-  unidade: string | null;
-  fornecedor: string | null;
-  responsavel: string | null;
-  etapa: string | null;
-  situacao_fonte: string | null;
-  situacao_norm: string | null;
-  data_inicio: string | null;
-  data_fim: string | null;
-  quantidade: number | null;
-  valor: number | null;
-  status_consumo: string | null;
-  saving_hist: number | null;
-  saving_prop: number | null;
-  status_renovacao: string | null;
-  data_previsao: string | null;
-  observacao: string | null;
-  link: string | null;
-  source_row: number | null;
-  extra: Record<string, string> | null;
-  dias: number | null;
-  situacao: SituacaoChave;
-  file_name: string;
-  kind: string;
-  natureza: string;
-  reference_date: string | null;
-  imported_at: string;
-}
+const SITUACOES = [
+  { key: "todas", label: "Todas as situações" },
+  { key: "vencido", label: "Vencido / atrasado" },
+  { key: "ate_15", label: "Até 15 dias (crítico)" },
+  { key: "16_30", label: "16 a 30 dias" },
+  { key: "ate_30", label: "Até 30 dias (acumulado)" },
+  { key: "31_60", label: "31 a 60 dias" },
+  { key: "61_100", label: "61 a 100 dias (Régua Giro)" },
+  { key: "a_renovar", label: "A Renovar SAP (≤ 100d)" },
+  { key: "acima_100", label: "Acima de 100 dias" },
+  { key: "sem_data", label: "Sem data prevista" },
+  { key: "concluido", label: "Concluído (histórico)" },
+  { key: "cancelado", label: "Cancelado (histórico)" },
+];
+
+const VALORES = [
+  { key: "todos", label: "Todos os valores" },
+  { key: "100k", label: "Acima de R$ 100 mil" },
+  { key: "500k", label: "Acima de R$ 500 mil" },
+  { key: "1m", label: "Acima de R$ 1 milhão" },
+  { key: "5m", label: "Acima de R$ 5 milhões" },
+  { key: "sem", label: "Sem valor informado" },
+];
+
+const SALDOS = [
+  { key: "todos", label: "Saldo: todos" },
+  { key: "com_saldo", label: "Com itens com saldo" },
+  { key: "sem_saldo", label: "100% sem saldo (ruptura)" },
+  { key: "com_esgotados", label: "Com itens esgotados" },
+  { key: "integral", label: "Com saldo integral" },
+  { key: "500k", label: "Saldo disponível ≥ R$ 500 mil" },
+];
+
+const ALERTAS = [
+  { key: "todos", label: "Todos os alertas" },
+  { key: "criticos", label: "Críticos imediatos (vencidos ou ≤ 15d)" },
+  { key: "a_renovar", label: "Carteira A Renovar (vigentes ≤ 100d)" },
+  { key: "itens_esgotados", label: "Atas vigentes com itens esgotados" },
+  { key: "sem_saldo", label: "Atas vigentes 100% sem saldo" },
+  { key: "andamento_atrasado", label: "Andamento atrasado ou sem previsão" },
+  { key: "sem_contrato", label: "Finalizados sem nº contrato SAP" },
+  { key: "por_valor", label: "SAP Por Valor (fora do padrão Qtd.)" },
+  { key: "por_quantidade", label: "SAP padrão Por Quantidade" },
+  { key: "fornecedor_multiplo", label: "Fornecedor com múltiplas atas (≥ 2)" },
+];
+
+const MODALIDADES_BASE = ["Ato Convocatório", "Cotação Simplificada", "Dispensa", "Exclusividade", "Inexigibilidade", "Ata / Catálogo", "Não informada"];
+const SORTS = [
+  { key: "prazo", label: "Menor prazo" },
+  { key: "valor", label: "Maior valor R$" },
+  { key: "valor_disponivel", label: "Maior saldo R$" },
+  { key: "saving", label: "Maior saving R$" },
+  { key: "quantidade", label: "Maior quantidade de itens" },
+];
+const QUICK_ALERTS = [
+  { key: "todos", label: "Todos" },
+  { key: "criticos", label: "Críticos" },
+  { key: "a_renovar", label: "A Renovar" },
+  { key: "itens_esgotados", label: "Itens esgotados" },
+  { key: "sem_saldo", label: "100% sem saldo" },
+  { key: "andamento_atrasado", label: "Andamento atrasado" },
+];
+const ORIGENS: Record<string, string> = {
+  "card-concluidas": "Atas concluídas (válidas)",
+  "card-andamento": "Atas em andamento",
+  "card-saldo": "Itens com saldo nos contratos válidos",
+  "card-sem_saldo": "Itens sem saldo nos contratos válidos",
+  "card-vencidas": "Atas vencidas sem ação",
+  "card-a_vencer": "Atas a vencer",
+  "atalho-criticos": "Críticos imediatos",
+  "atalho-renovar": "Carteira A Renovar",
+  "atalho-sem-saldo": "Atas vigentes com itens esgotados",
+  "atalho-andamento": "Atas em andamento",
+  comprador: "Comprador selecionado no Panorama",
+  fornecedor: "Fornecedor selecionado no Panorama",
+  processo: "Processo e vínculos",
+  "saldo-executivo": "Processos com saldo no recorte",
+  "saving-executivo": "Processos com saving no recorte",
+};
+
+const SITUACAO_LABEL: Record<ExecutiveSituation, string> = {
+  vencido: "Vencido",
+  ate_15: "Crítico ≤15d",
+  "16_30": "16 a 30d",
+  "31_60": "31 a 60d",
+  "61_100": "A Renovar ≤100d",
+  acima_100: "Vigente >100d",
+  sem_data: "Sem data",
+  concluido: "Concluído",
+  cancelado: "Cancelado",
+};
 
 interface Facets {
-  areas: { area: string; total: number }[];
-  etapas: { etapa: string; total: number }[];
-  naturezas: { natureza: string; total: number }[];
+  areas: { value: string; total: number }[];
+  etapas: { value: string; total: number }[];
+  naturezas: { value: string; total: number }[];
+  compradores: { value: string; total: number }[];
+  modalidades: { value: string; total: number }[];
+  grupos: { value: string; total: number }[];
+  fornecedores: { value: string; total: number }[];
 }
-
-const SORTS = [
-  { key: "data_fim", label: "Prazo / vigência" },
-  { key: "numero", label: "Nº do processo" },
-  { key: "objeto", label: "Objeto" },
-  { key: "area", label: "Área" },
-  { key: "fornecedor", label: "Fornecedor" },
-  { key: "responsavel", label: "Responsável" },
-  { key: "etapa", label: "Etapa" },
-  { key: "situacao", label: "Situação de prazo" },
-  { key: "valor", label: "Valor estimado" },
-  { key: "quantidade", label: "Qtd. de itens" },
-];
-
-const SITUACOES: { key: string; label: string }[] = [
-  { key: "todas", label: "Todas as situações" },
-  { key: "vencido", label: "Vencido" },
-  { key: "a_vencer", label: "A vencer (30 dias)" },
-  { key: "em_dia", label: "No prazo" },
-  { key: "sem_data", label: "Sem data de prazo" },
-  { key: "concluido", label: "Concluído" },
-  { key: "cancelado", label: "Cancelado" },
-];
 
 /* ------------------------------------------------------------------ */
 
 export function ProcessosBrowser() {
   const sp = useSearchParams();
-  const [q, setQ] = useState(sp.get("q") ?? "");
-  const [qDebounced, setQDebounced] = useState(q);
-  const [area, setArea] = useState(sp.get("area") ?? "todas");
-  const [natureza, setNatureza] = useState(sp.get("natureza") ?? "todas");
-  const [situacao, setSituacao] = useState(sp.get("situacao") ?? "todas");
-  const [etapa, setEtapa] = useState(sp.get("etapa") ?? "todas");
-  const [sort, setSort] = useState(sp.get("sort") ?? "data_fim");
-  const [dir, setDir] = useState<"asc" | "desc">(sp.get("dir") === "desc" ? "desc" : "asc");
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<ExecutiveFilters>(() => ({
+    ...EMPTY_EXECUTIVE_FILTERS,
+    q: sp.get("q") ?? "",
+    area: sp.get("area") ?? "todas",
+    natureza: sp.get("natureza") ?? "todas",
+    situacao: sp.get("situacao") ?? "todas",
+    etapa: sp.get("etapa") ?? "todas",
+    comprador: sp.get("comprador") ?? "todos",
+    valor: sp.get("valor") ?? "todos",
+    saldo: sp.get("saldo") ?? "todos",
+    modalidade: sp.get("modalidade") ?? "todas",
+    grupo: sp.get("grupo") ?? "todas",
+    fornecedor: sp.get("fornecedor") ?? "todos",
+    alerta: sp.get("alerta") ?? "todos",
+    carteira: sp.get("carteira") ?? "todas",
+    saving: sp.get("saving") ?? "todos",
+    mes: sp.get("mes") ?? "todos",
+  }));
+  const [qDebounced, setQDebounced] = useState(filters.q);
+  const [sort, setSort] = useState(sp.get("sort") ?? "prazo");
+  const [dir, setDir] = useState<"asc" | "desc">(sp.get("dir") === "desc" || ["valor", "valor_disponivel", "saving", "quantidade"].includes(sp.get("sort") ?? "") ? "desc" : "asc");
+  const [page, setPage] = useState(Math.max(1, Number(sp.get("page") ?? 1) || 1));
   const [pageSize, setPageSize] = useState(25);
+  const [origem, setOrigem] = useState<string | null>(sp.get("origem"));
+  const [advancedOpen, setAdvancedOpen] = useState(() => ["comprador", "valor", "saldo", "modalidade", "grupo", "fornecedor", "carteira", "saving", "mes"].some((key) => sp.get(key)));
 
-  const [allRows, setAllRows] = useState<Row[] | null>(null);
+  const [allRows, setAllRows] = useState<ExecutiveProcess[] | null>(null);
   const [facets, setFacets] = useState<Facets | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [detalhe, setDetalhe] = useState<Row | null>(null);
+  const [detalhe, setDetalhe] = useState<ExecutiveProcess | null>(null);
+  const lastWrittenSearch = useRef<string | null>(null);
+
+  const sincronizarParametros = useCallback(() => {
+    setFilters({
+      ...EMPTY_EXECUTIVE_FILTERS,
+      q: sp.get("q") ?? "", area: sp.get("area") ?? "todas", natureza: sp.get("natureza") ?? "todas",
+      situacao: sp.get("situacao") ?? "todas", etapa: sp.get("etapa") ?? "todas", comprador: sp.get("comprador") ?? "todos",
+      valor: sp.get("valor") ?? "todos", saldo: sp.get("saldo") ?? "todos", modalidade: sp.get("modalidade") ?? "todas",
+      grupo: sp.get("grupo") ?? "todas", fornecedor: sp.get("fornecedor") ?? "todos", alerta: sp.get("alerta") ?? "todos",
+      carteira: sp.get("carteira") ?? "todas", saving: sp.get("saving") ?? "todos", mes: sp.get("mes") ?? "todos",
+    });
+    const nextQ = sp.get("q") ?? "";
+    setQDebounced(nextQ);
+    const nextSort = sp.get("sort") ?? "prazo";
+    setSort(nextSort);
+    setDir(sp.get("dir") === "desc" || ["valor", "valor_disponivel", "saving", "quantidade"].includes(nextSort) ? "desc" : "asc");
+    setPage(Math.max(1, Number(sp.get("page") ?? 1) || 1));
+    setOrigem(sp.get("origem"));
+    setAdvancedOpen(["comprador", "valor", "saldo", "modalidade", "grupo", "fornecedor", "carteira", "saving", "mes"].some((key) => sp.get(key)));
+  }, [sp]);
 
   useEffect(() => {
-    const t = setTimeout(() => setQDebounced(q), 300);
-    return () => clearTimeout(t);
-  }, [q]);
+    if (lastWrittenSearch.current === sp.toString()) return;
+    sincronizarParametros();
+  }, [sp, sincronizarParametros]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQDebounced(filters.q), 300);
+    return () => clearTimeout(timer);
+  }, [filters.q]);
 
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro(null);
     try {
-      const data = await listActiveProcessRows();
+      const data = normalizeExecutiveProcesses(await listActiveProcessRows());
       setAllRows(data);
-      const areaCount = new Map<string, number>();
-      const etapaCount = new Map<string, number>();
-      const naturezaCount = new Map<string, number>();
-      for (const row of data) {
-        const rowArea = row.area ?? "Não informado";
-        areaCount.set(rowArea, (areaCount.get(rowArea) ?? 0) + 1);
-        if (row.etapa) etapaCount.set(row.etapa, (etapaCount.get(row.etapa) ?? 0) + 1);
-        if (row.natureza) naturezaCount.set(row.natureza, (naturezaCount.get(row.natureza) ?? 0) + 1);
-      }
       setFacets({
-        areas: [...areaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([area, total]) => ({ area, total })),
-        etapas: [...etapaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([etapa, total]) => ({ etapa, total })),
-        naturezas: [...naturezaCount.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([natureza, total]) => ({ natureza, total })),
+        areas: facet(data, (row) => row.area ?? "Não informado"),
+        etapas: facet(data, (row) => row.etapa),
+        naturezas: facet(data, (row) => row.natureza),
+        compradores: facet(data, (row) => row.responsavel),
+        modalidades: facet(data, (row) => row.modalidade),
+        grupos: facet(data, (row) => row.grupo && row.grupo !== "Não classificado" ? row.grupo : null),
+        fornecedores: facet(data, (row) => row.fornecedorPrincipal),
       });
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Erro ao carregar processos locais.");
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : "Erro ao carregar processos locais.");
       setAllRows([]);
     } finally {
       setLoading(false);
@@ -11604,81 +11910,63 @@ export function ProcessosBrowser() {
     return () => window.removeEventListener(STATIC_DATA_EVENT, onUpdate);
   }, [carregar]);
 
-  const filteredRows = useMemo(() => {
-    if (!allRows) return [];
-    const query = normText(qDebounced);
-    const filtered = allRows.filter((row) => {
-      if (query) {
-        const searchable = normText([
-          row.numero, row.objeto, row.area, row.unidade, row.fornecedor, row.responsavel,
-          row.etapa, row.situacao_fonte, row.status_consumo, row.status_renovacao,
-          row.observacao, ...Object.values(row.extra ?? {}),
-        ].filter(Boolean).join(" "));
-        if (!searchable.includes(query)) return false;
-      }
-      if (area !== "todas" && (row.area ?? "Não informado") !== area) return false;
-      if (natureza !== "todas" && row.natureza !== natureza) return false;
-      if (situacao !== "todas" && row.situacao !== situacao) return false;
-      if (etapa !== "todas" && row.etapa !== etapa) return false;
-      return true;
-    });
-
-    const getSortValue = (row: Row): string | number => {
-      if (sort === "situacao") return row.situacao;
-      if (sort === "valor") return row.valor ?? Number.POSITIVE_INFINITY;
-      if (sort === "quantidade") return row.quantidade ?? Number.POSITIVE_INFINITY;
-      if (sort === "data_fim") return row.data_fim ?? "9999-12-31";
-      return String(row[sort as keyof Row] ?? "");
-    };
-    filtered.sort((a, b) => {
-      const av = getSortValue(a);
-      const bv = getSortValue(b);
-      const comparison = typeof av === "number" && typeof bv === "number"
-        ? av - bv
-        : String(av).localeCompare(String(bv), "pt-BR", { numeric: true, sensitivity: "base" });
-      return dir === "asc" ? comparison : -comparison;
-    });
-    return filtered;
-  }, [allRows, qDebounced, area, natureza, situacao, etapa, sort, dir]);
-
+  const effectiveFilters = useMemo(() => ({ ...filters, q: qDebounced }), [filters, qDebounced]);
+  const filteredBase = useMemo(() => filterExecutiveProcesses(allRows ?? [], effectiveFilters), [allRows, effectiveFilters]);
+  const filteredRows = useMemo(() => sortExecutiveProcesses(filteredBase, sort, dir), [filteredBase, sort, dir]);
+  const summary = useMemo(() => summarizeExecutiveProcesses(filteredRows, effectiveFilters), [filteredRows, effectiveFilters]);
   const total = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const activePage = Math.min(page, totalPages);
   const rows = useMemo(() => filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize), [filteredRows, activePage, pageSize]);
+  const filtrosAtivos = activeExecutiveFilterCount(effectiveFilters);
+  const semBase = !loading && allRows !== null && allRows.length === 0;
+  const mesOptions = useMemo(() => monthFilterOptions(allRows ?? []), [allRows]);
 
   useEffect(() => {
     const params = new URLSearchParams();
-    if (qDebounced) params.set("q", qDebounced);
-    if (area !== "todas") params.set("area", area);
-    if (natureza !== "todas") params.set("natureza", natureza);
-    if (situacao !== "todas") params.set("situacao", situacao);
-    if (etapa !== "todas") params.set("etapa", etapa);
-    if (sort !== "data_fim") params.set("sort", sort);
+    for (const [key, value] of Object.entries(effectiveFilters)) {
+      const defaultValue = EMPTY_EXECUTIVE_FILTERS[key as keyof ExecutiveFilters];
+      if (value !== defaultValue) params.set(key, value);
+    }
+    if (sort !== "prazo") params.set("sort", sort);
     if (dir !== "asc") params.set("dir", dir);
     if (page > 1) params.set("page", String(page));
+    if (origem) params.set("origem", origem);
     const prefix = window.location.pathname.includes("/processos") ? window.location.pathname.split("/processos")[0] : "";
-    const qs = params.toString();
-    window.history.replaceState(null, "", `${prefix}/processos/${qs ? `?${qs}` : ""}`);
-  }, [qDebounced, area, natureza, situacao, etapa, sort, dir, page]);
+    const query = params.toString();
+    lastWrittenSearch.current = query;
+    window.history.replaceState(null, "", `${prefix}/processos/${query ? `?${query}` : ""}`);
+  }, [effectiveFilters, sort, dir, page, origem]);
 
-  const filtrosAtivos =
-    (qDebounced ? 1 : 0) + (area !== "todas" ? 1 : 0) + (natureza !== "todas" ? 1 : 0) + (situacao !== "todas" ? 1 : 0) + (etapa !== "todas" ? 1 : 0);
-  const semBase = !loading && allRows !== null && total === 0 && filtrosAtivos === 0;
-
-  function limparFiltros() {
-    setQ("");
-    setArea("todas");
-    setNatureza("todas");
-    setSituacao("todas");
-    setEtapa("todas");
+  function setFilter<K extends keyof ExecutiveFilters>(key: K, value: ExecutiveFilters[K]) {
+    setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
   }
 
-  function alternarOrdenacao(col: string) {
-    if (sort === col) setDir((d) => (d === "asc" ? "desc" : "asc"));
+  function aplicarRecorte(next: ExecutiveFilters, nextSort = "prazo", nextDir: "asc" | "desc" = "asc", nextOrigem: string | null = null) {
+    setFilters(next);
+    setQDebounced(next.q);
+    setSort(nextSort);
+    setDir(nextDir);
+    setOrigem(nextOrigem);
+    setPage(1);
+    if (next.saldo !== "todos" || next.saving !== "todos" || next.carteira !== "todas") setAdvancedOpen(true);
+  }
+
+  function limparFiltros() {
+    aplicarRecorte({ ...EMPTY_EXECUTIVE_FILTERS });
+  }
+
+  function filtrarRelacionados(row: ExecutiveProcess) {
+    aplicarRecorte({ ...EMPTY_EXECUTIVE_FILTERS, q: relatedProcessQuery(row) }, "prazo", "asc", "processo");
+    setDetalhe(null);
+  }
+
+  function alternarOrdenacao(column: string) {
+    if (sort === column) setDir((current) => current === "asc" ? "desc" : "asc");
     else {
-      setSort(col);
-      setDir("asc");
+      setSort(column);
+      setDir(["valor", "valor_disponivel", "saving", "quantidade"].includes(column) ? "desc" : "asc");
     }
     setPage(1);
   }
@@ -11686,668 +11974,424 @@ export function ProcessosBrowser() {
   function exportar() {
     const max = 5000;
     const data = filteredRows.slice(0, max);
-    const body = data.map((r) => [
-      r.numero, r.objeto, r.area, r.unidade, r.fornecedor, r.responsavel, r.etapa,
-      r.situacao_fonte, SITUACAO_LABEL[r.situacao], r.status_consumo ?? "",
-      r.saving_hist ?? "", r.saving_prop ?? "", r.status_renovacao ?? "",
-      r.data_previsao ? fmtDate(r.data_previsao) : "", r.data_inicio ? fmtDate(r.data_inicio) : "",
-      r.data_fim ? fmtDate(r.data_fim) : "", r.quantidade ?? "", r.valor ?? "", r.observacao ?? "", r.link ?? "",
-      r.file_name, r.imported_at ? fmtDateTime(r.imported_at) : "",
+    const body = data.map((row) => [
+      row.numero, row.ariba ?? "", row.cw.join(" / "), row.natureza, row.objeto, row.area,
+      row.fornecedor ?? "", row.responsavel ?? "", row.gestor ?? "", row.grupo ?? "", row.etapa ?? "",
+      SITUACAO_LABEL[row.situacaoExecutiva], row.data_inicio ?? "", row.data_fim ?? "", row.quantidade ?? "",
+      row.valor ?? "", row.valorDisponivel, row.savingMapeado, row.tipoDocSap ?? "", row.modalidade ?? "",
+      row.status_renovacao ?? "", row.observacao ?? "", row.link ?? "", row.file_name, fmtDateTime(row.imported_at),
     ]);
     if (filteredRows.length > max) body.push([`AVISO: exportação limitada a ${max.toLocaleString("pt-BR")} linhas. Aplique mais filtros para exportar o restante.`]);
     const csv = buildCsv([
-      "Nº processo", "Objeto", "Área", "Unidade", "Fornecedor", "Responsável", "Etapa", "Situação (fonte)",
-      "Situação de prazo", "Status de Consumo", "Saving Histórico (R$)", "Saving Proposta (R$)", "Status Renovação",
-      "Previsão", "Abertura", "Prazo/Vigência", "Qtd. itens", "Valor estimado (R$)", "Observações", "Link", "Arquivo de origem", "Importado em",
+      "Nº processo", "Projeto Ariba", "CW", "Natureza", "Objeto", "Área", "Fornecedor", "Comprador", "Gestor", "Categoria", "Etapa",
+      "Régua Giro", "Abertura", "Prazo/Vigência", "Qtd. itens", "Valor (R$)", "Saldo disponível (R$)", "Saving (R$)",
+      "Tipo documento SAP", "Modalidade", "Status Renovação", "Observações", "Link", "Arquivo de origem", "Importado em",
     ], body);
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `giro-de-atas-processos-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `giro-de-atas-processos-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
     URL.revokeObjectURL(url);
   }
+
+  const activeChips = filterChips(effectiveFilters);
 
   return (
     <>
       <PageHeader
-        overline="Consulta"
-        title="Processos e atas"
-        description="Pesquise em número, objeto, fornecedor, responsável, etapa, unidade e observações das bases ativas."
+        overline="Visão Analítica & Governança"
+        title="Processos, Vigência e Saldo de Atas"
+        description="Consulte toda a base por contrato, CW, Ariba, fornecedor, comprador, prazo, saldo e alertas executivos. Clique em um processo para abrir seus detalhes e vínculos."
         actions={
           <>
-            <a
-              href="#exportar"
-              onClick={(e) => { e.preventDefault(); exportar(); }}
-              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-              title="Exporta o recorte filtrado completo (até 5.000 linhas) em CSV"
-              data-no-print
-            >
-              <Download size={15} aria-hidden="true" />
-              <span className="hidden sm:inline">Exportar CSV</span>
-              <span className="sm:hidden">CSV</span>
-            </a>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="hidden min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 sm:inline-flex"
-              data-no-print
-            >
-              <Printer size={15} aria-hidden="true" />
-              Imprimir
+            <button type="button" onClick={exportar} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50" data-no-print>
+              <Download size={15} aria-hidden="true" /><span className="hidden sm:inline">Exportar CSV</span><span className="sm:hidden">CSV</span>
+            </button>
+            <button type="button" onClick={() => window.print()} className="hidden min-h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 sm:inline-flex" data-no-print>
+              <Printer size={15} aria-hidden="true" />Imprimir
             </button>
           </>
         }
       />
 
-      {/* Barra de filtros */}
-      <section aria-label="Filtros" className="card mb-4 p-4" data-no-print>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_170px_170px_190px_170px]">
-          <div className="relative">
-            <label htmlFor="f-busca" className="sr-only">
-              Pesquisar processos
-            </label>
-            <Search size={17} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500" />
-            <input
-              id="f-busca"
-              type="search"
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Buscar por nº, objeto, fornecedor, responsável…"
-              className="min-h-11 w-full rounded-xl border border-line bg-surface pl-10 pr-9 text-[14px] text-ink placeholder:text-neutral-500 hover:border-navy-300"
-            />
-            {q && (
-              <button
-                type="button"
-                onClick={() => setQ("")}
-                className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-ink"
-                aria-label="Limpar pesquisa"
-              >
-                <X size={15} />
-              </button>
-            )}
+      <section aria-label="Filtros executivos" className="card mb-4 overflow-hidden" data-no-print>
+        <div className="border-b border-line px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-[13px] font-bold text-navy-900"><ListFilter size={16} aria-hidden="true" /> Recortes rápidos</div>
+            <button type="button" onClick={() => setAdvancedOpen((open) => !open)} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-[12px] font-semibold text-navy-800 hover:bg-navy-50" aria-expanded={advancedOpen}>
+              <SlidersHorizontal size={13} aria-hidden="true" />{advancedOpen ? "Ocultar filtros avançados" : "Filtros avançados"}
+            </button>
           </div>
-          <SelectFiltro
-            id="f-area"
-            label="Área"
-            value={area}
-            onChange={(v) => {
-              setArea(v);
-              setPage(1);
-            }}
-            options={[
-              { key: "todas", label: "Todas as áreas" },
-              ...(facets?.areas.map((a) => ({ key: a.area, label: `${a.area} (${a.total})` })) ?? [
-                { key: "Indiretos", label: "Indiretos" },
-                { key: "Diretos", label: "Diretos" },
-                { key: "CAPEX", label: "CAPEX" },
-              ]),
-            ]}
-          />
-          <SelectFiltro
-            id="f-natureza"
-            label="Natureza"
-            value={natureza}
-            onChange={(v) => {
-              setNatureza(v);
-              setPage(1);
-            }}
-            options={[
-              { key: "todas", label: "Todas as naturezas" },
-              ...(facets?.naturezas.map((item) => ({
-                key: item.natureza,
-                label: `${item.natureza === "snapshot" ? "Snapshot" : "Operacional"} (${item.total})`,
-              })) ?? [
-                { key: "operacional", label: "Operacional" },
-                { key: "snapshot", label: "Snapshot" },
-              ]),
-            ]}
-          />
-          <SelectFiltro
-            id="f-situacao"
-            label="Situação de prazo"
-            value={situacao}
-            onChange={(v) => {
-              setSituacao(v);
-              setPage(1);
-            }}
-            options={SITUACOES}
-          />
-          <SelectFiltro
-            id="f-etapa"
-            label="Etapa"
-            value={etapa}
-            onChange={(v) => {
-              setEtapa(v);
-              setPage(1);
-            }}
-            options={[
-              { key: "todas", label: "Todas as etapas" },
-              ...(facets?.etapas.map((e) => ({ key: e.etapa, label: `${e.etapa} (${e.total})` })) ?? []),
-            ]}
-          />
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Alertas rápidos">
+            {QUICK_ALERTS.map((alert) => (
+              <button
+                key={alert.key}
+                type="button"
+                onClick={() => setFilter("alerta", alert.key)}
+                aria-pressed={filters.alerta === alert.key}
+                className={clsx(
+                  "min-h-9 rounded-full border px-3.5 text-[12px] font-semibold transition-colors",
+                  filters.alerta === alert.key ? "border-accent-600 bg-accent-600 text-white" : "border-line bg-surface text-navy-800 hover:border-navy-300 hover:bg-navy-50",
+                )}
+              >{alert.label}</button>
+            ))}
+          </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {filtrosAtivos > 0 && (
-              <button
-                type="button"
-                onClick={limparFiltros}
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-              >
-                <FunnelX size={14} aria-hidden="true" />
-                Limpar filtros ({filtrosAtivos})
-              </button>
-            )}
+
+        <div className="space-y-3 p-4">
+          <div className="relative">
+            <label htmlFor="f-busca" className="mb-1.5 block text-[12px] font-semibold text-navy-900">Busca livre — contrato, CW, Ariba, objeto ou fornecedor</label>
+            <Search size={17} aria-hidden="true" className="pointer-events-none absolute bottom-3.5 left-3.5 text-neutral-500" />
+            <input
+              id="f-busca" type="search" value={filters.q} onChange={(event) => setFilter("q", event.target.value)}
+              placeholder="Ex.: nº do contrato, CW, projeto Ariba, fornecedor ou objeto…"
+              className="min-h-11 w-full rounded-xl border border-line bg-surface pl-10 pr-10 text-[14px] text-ink placeholder:text-neutral-500 hover:border-navy-300"
+            />
+            {filters.q && <button type="button" onClick={() => setFilter("q", "")} className="absolute bottom-1.5 right-2 grid h-8 w-8 place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-ink" aria-label="Limpar pesquisa"><X size={15} /></button>}
           </div>
-          <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
-            <label htmlFor="f-ordenar" className="font-medium sm:hidden">
-              Ordenar por
-            </label>
-            <select
-              id="f-ordenar"
-              value={`${sort}:${dir}`}
-              onChange={(e) => {
-                const [s, d] = e.target.value.split(":");
-                setSort(s);
-                setDir(d as "asc" | "desc");
-                setPage(1);
-              }}
-              className="min-h-9 rounded-lg border border-line bg-surface px-2 text-[12.5px] font-medium text-ink sm:hidden"
-            >
-              {SORTS.map((s) => (
-                <option key={`${s.key}:asc`} value={`${s.key}:asc`}>
-                  {s.label} (crescente)
-                </option>
-              ))}
-              {SORTS.map((s) => (
-                <option key={`${s.key}:desc`} value={`${s.key}:desc`}>
-                  {s.label} (decrescente)
-                </option>
-              ))}
-            </select>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <SelectFiltro id="f-area" label="Área" value={filters.area} onChange={(value) => setFilter("area", value)} options={[{ key: "todas", label: "Todas as áreas" }, ...facetOptions(facets?.areas)]} />
+            <SelectFiltro id="f-natureza" label="Natureza" value={filters.natureza} onChange={(value) => setFilter("natureza", value)} options={[{ key: "todas", label: "Todas as naturezas" }, ...facetOptions(facets?.naturezas)]} />
+            <SelectFiltro id="f-situacao" label="Situação / Régua Giro" value={filters.situacao} onChange={(value) => setFilter("situacao", value)} options={SITUACOES} />
+            <SelectFiltro id="f-etapa" label="Etapa" value={filters.etapa} onChange={(value) => setFilter("etapa", value)} options={[{ key: "todas", label: "Todas as etapas" }, ...facetOptions(facets?.etapas)]} />
+            <SelectFiltro id="f-ordenar" label="Ordenação executiva" value={`${sort}:${dir}`} onChange={(value) => { const [nextSort, nextDir] = value.split(":"); setSort(nextSort); setDir(nextDir as "asc" | "desc"); setPage(1); }} options={SORTS.map((item) => ({ key: `${item.key}:${item.key === "prazo" ? "asc" : "desc"}`, label: item.label }))} />
+          </div>
+
+          {advancedOpen && (
+            <div className="grid gap-3 border-t border-line pt-3 sm:grid-cols-2 lg:grid-cols-4">
+              <SelectFiltro id="f-comprador" label="Comprador" value={filters.comprador} onChange={(value) => setFilter("comprador", value)} options={[{ key: "todos", label: "Todos os compradores" }, ...facetOptions(facets?.compradores)]} />
+              <SelectFiltro id="f-fornecedor" label="Fornecedor" value={filters.fornecedor} onChange={(value) => setFilter("fornecedor", value)} options={[{ key: "todos", label: "Todos os fornecedores" }, ...facetOptions(facets?.fornecedores)]} />
+              <SelectFiltro id="f-grupo" label="Categoria / grupo" value={filters.grupo} onChange={(value) => setFilter("grupo", value)} options={[{ key: "todas", label: "Todas as categorias" }, ...facetOptions(facets?.grupos)]} />
+              <SelectFiltro id="f-modalidade" label="Modalidade" value={filters.modalidade} onChange={(value) => setFilter("modalidade", value)} options={[{ key: "todas", label: "Todas as modalidades" }, ...modalidadeOptions(facets?.modalidades)]} />
+              <SelectFiltro id="f-valor" label="Materialidade" value={filters.valor} onChange={(value) => setFilter("valor", value)} options={VALORES} />
+              <SelectFiltro id="f-saldo" label="Saldo e ruptura" value={filters.saldo} onChange={(value) => setFilter("saldo", value)} options={SALDOS} />
+              <SelectFiltro id="f-alerta" label="Alerta de governança" value={filters.alerta} onChange={(value) => setFilter("alerta", value)} options={ALERTAS} />
+              <SelectFiltro id="f-carteira" label="Carteira dos cards" value={filters.carteira} onChange={(value) => setFilter("carteira", value)} options={[{ key: "todas", label: "Todas as carteiras" }, { key: "concluidas", label: "Concluídas válidas" }, { key: "a_vencer", label: "A vencer / renovar" }, { key: "vencidas", label: "Vencidas sem ação" }]} />
+              <SelectFiltro id="f-saving" label="Saving" value={filters.saving} onChange={(value) => setFilter("saving", value)} options={[{ key: "todos", label: "Com ou sem saving" }, { key: "com", label: "Somente com saving mapeado" }]} />
+              <SelectFiltro id="f-mes" label="Previsão de conclusão" value={filters.mes} onChange={(value) => setFilter("mes", value)} options={mesOptions} />
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[12px] text-ink-soft">{filtrosAtivos > 0 ? `${filtrosAtivos} ${filtrosAtivos === 1 ? "filtro ativo" : "filtros ativos"}` : "Todos os processos das bases ativas"}</p>
+            {filtrosAtivos > 0 && <button type="button" onClick={limparFiltros} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-navy-800 hover:bg-navy-50"><FunnelX size={14} aria-hidden="true" />Limpar filtros</button>}
           </div>
         </div>
       </section>
 
-      {/* Contagem acessível */}
-      <p aria-live="polite" role="status" className="mb-3 text-[13px] font-medium text-ink-soft">
-        {loading
-          ? "Carregando processos…"
-          : erro
-            ? "Erro ao carregar processos."
-            : total === 0
-              ? "Nenhum processo encontrado."
-              : `${fmtInt(total)} ${total === 1 ? "processo encontrado" : "processos encontrados"}${filtrosAtivos > 0 ? " com os filtros ativos" : " nas bases ativas"}.`}
-      </p>
-
-      {/* Conteúdo */}
-      {erro ? (
-        <div className="card flex flex-col items-center gap-3 border-danger-600/30 p-10 text-center" role="alert">
-          <CircleAlert size={28} className="text-danger-600" aria-hidden="true" />
-          <p className="text-[14.5px] font-semibold text-danger-700">{erro}</p>
-          <button
-            type="button"
-            onClick={carregar}
-            className="btn-brand min-h-10 rounded-xl px-4 text-[13.5px] font-semibold transition-colors"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      ) : loading && rows === null ? (
-        <div className="card space-y-2.5 p-4" aria-busy="true" aria-label="Carregando">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="skeleton h-14 w-full" />
+      {(origem || activeChips.length > 0) && (
+        <div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Filtros aplicados" data-no-print>
+          {origem && <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-100 px-3 py-1.5 text-[12px] font-bold text-accent-700"><Filter size={12} aria-hidden="true" />{ORIGENS[origem] ?? "Recorte executivo"}</span>}
+          {activeChips.map((chip) => (
+            <button key={chip.key} type="button" onClick={() => setFilter(chip.key, EMPTY_EXECUTIVE_FILTERS[chip.key])} className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-[11.5px] font-semibold text-navy-800 hover:border-danger-300 hover:bg-danger-50" title={`Remover filtro ${chip.label}`}>
+              {chip.label}<X size={12} aria-hidden="true" />
+            </button>
           ))}
         </div>
-      ) : semBase ? (
-        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
-          <FileStack size={30} className="text-navy-400" aria-hidden="true" />
-          <h2 className="font-display text-[17px] font-bold text-navy-950">Nenhuma base ativa no momento</h2>
-          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
-            Importe uma planilha na página <a href="/importar" className="font-semibold text-navy-700 underline underline-offset-2">Importar</a> para
-            pesquisar processos.
-          </p>
-        </div>
-      ) : rows !== null && rows.length === 0 ? (
-        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
-          <Search size={30} className="text-navy-400" aria-hidden="true" />
-          <h2 className="font-display text-[17px] font-bold text-navy-950">Nenhum resultado para os filtros aplicados</h2>
-          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">
-            Revise a grafia, remova filtros ou amplie a situação de prazo. A busca cobre número, objeto, fornecedor,
-            responsável, etapa, unidade e observações.
-          </p>
-          <button
-            type="button"
-            onClick={limparFiltros}
-            className="mt-1 inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13.5px] font-semibold text-navy-800 hover:bg-navy-50"
-          >
-            <FunnelX size={15} aria-hidden="true" />
-            Limpar filtros
-          </button>
-        </div>
-      ) : (
-        rows && (
-          <>
-            {/* Tabela (desktop e tablet) */}
-            <div className={clsx("card hidden overflow-hidden md:block", loading && "opacity-60")}>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[880px] text-[13.5px]">
-                  <caption className="sr-only">
-                    Lista de processos das bases ativas{total > 0 ? ` — ${fmtInt(total)} resultados` : ""}
-                  </caption>
-                  <thead>
-                    <tr className="border-b border-line bg-navy-50/60 text-left">
-                      <Th col="numero" label="Nº processo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
-                      <Th col="objeto" label="Objeto" sort={sort} dir={dir} onSort={alternarOrdenacao} className="min-w-[220px]" />
-                      <Th col="area" label="Área" sort={sort} dir={dir} onSort={alternarOrdenacao} />
-                      <Th col="responsavel" label="Responsável" sort={sort} dir={dir} onSort={alternarOrdenacao} />
-                      <Th col="data_fim" label="Prazo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
-                      <Th col="situacao" label="Situação" sort={sort} dir={dir} onSort={alternarOrdenacao} />
-                      <Th col="valor" label="Valor est." sort={sort} dir={dir} onSort={alternarOrdenacao} className="text-right" numeric />
-                      <th scope="col" className="px-3 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-soft">
-                        <span className="sr-only">Ações</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.id} className="border-b border-line/60 transition-colors last:border-0 hover:bg-navy-50/40">
-                        <td className="px-3 py-3 align-top">
-                          <span className="font-semibold text-navy-800">{r.numero}</span>
-                          {r.etapa && <span className="mt-0.5 block text-[11.5px] text-ink-soft">{r.etapa}</span>}
-                        </td>
-                        <td className="max-w-[300px] px-3 py-3 align-top">
-                          <span className="line-clamp-2 text-[13px] leading-snug text-ink" title={r.objeto}>
-                            {r.objeto}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <AreaTag area={r.area} />
-                        </td>
-                        <td className="max-w-[140px] truncate px-3 py-3 align-top text-ink" title={r.responsavel ?? ""}>
-                          {r.responsavel ?? <span className="text-neutral-500">—</span>}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-3 align-top">
-                          {r.data_fim ? (
-                            <>
-                              <span className="tnum font-medium text-ink">{fmtDate(r.data_fim)}</span>
-                              {r.dias !== null && r.situacao !== "concluido" && r.situacao !== "cancelado" && (
-                                <span
-                                  className={clsx(
-                                    "tnum mt-0.5 block text-[11.5px] font-semibold",
-                                    r.dias < 0 ? "text-danger-700" : r.dias <= 30 ? "text-warn-700" : "text-ink-soft",
-                                  )}
-                                >
-                                  {prazoRelativo(r.dias)}
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-neutral-500">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <StatusBadge situacao={situacaoChave(r.situacao)} />
-                        </td>
-                        <td className="tnum whitespace-nowrap px-3 py-3 text-right align-top font-semibold text-ink">
-                          {r.valor !== null ? fmtCurrency(r.valor) : <span className="font-normal text-neutral-500">—</span>}
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <button
-                            type="button"
-                            onClick={() => setDetalhe(r)}
-                            className="min-h-9 rounded-lg border border-line px-3 text-[12px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-                            aria-label={`Ver detalhes do processo ${r.numero}`}
-                          >
-                            Detalhes
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Cartões (celular) */}
-            <ul className={clsx("space-y-3 md:hidden", loading && "opacity-60")} aria-label="Lista de processos">
-              {rows.map((r) => (
-                <li key={r.id} className="card p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-navy-800">{r.numero}</p>
-                      <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-ink">{r.objeto}</p>
-                    </div>
-                    <StatusBadge situacao={situacaoChave(r.situacao)} />
-                  </div>
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px]">
-                    <div>
-                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Área</dt>
-                      <dd className="mt-0.5"><AreaTag area={r.area} /></dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Prazo</dt>
-                      <dd className="tnum mt-0.5 font-medium text-ink">
-                        {r.data_fim ? fmtDate(r.data_fim) : "—"}
-                        {r.dias !== null && r.situacao !== "concluido" && r.situacao !== "cancelado" && (
-                          <span className={clsx("ml-1 text-[11px]", r.dias < 0 ? "text-danger-700" : "text-ink-soft")}>
-                            ({prazoRelativo(r.dias)})
-                          </span>
-                        )}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Responsável</dt>
-                      <dd className="mt-0.5 text-ink">{r.responsavel ?? "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-ink-soft">Valor est.</dt>
-                      <dd className="tnum mt-0.5 font-medium text-ink">{r.valor !== null ? fmtCurrency(r.valor) : "—"}</dd>
-                    </div>
-                  </dl>
-                  <button
-                    type="button"
-                    onClick={() => setDetalhe(r)}
-                    className="mt-3 min-h-10 w-full rounded-xl border border-line text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50"
-                    aria-label={`Ver detalhes do processo ${r.numero}`}
-                  >
-                    Ver detalhes
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            {/* Paginação */}
-            <nav
-              className="mt-4 flex flex-wrap items-center justify-between gap-3"
-              aria-label="Paginação dos resultados"
-              data-no-print
-            >
-              <div className="flex items-center gap-2 text-[13px] text-ink-soft">
-                <label htmlFor="f-tamanho" className="font-medium">
-                  Por página:
-                </label>
-                <select
-                  id="f-tamanho"
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="min-h-9 rounded-lg border border-line bg-surface px-2 font-semibold text-ink"
-                >
-                  {[10, 25, 50, 100].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={activePage <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(1, Math.min(p, totalPages) - 1))}
-                  className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Anterior
-                </button>
-                <span className="tnum px-1 text-[13px] font-medium text-ink-soft">
-                  Página {fmtInt(activePage)} de {fmtInt(totalPages)}
-                </span>
-                <button
-                  type="button"
-                  disabled={activePage >= totalPages || loading}
-                  onClick={() => setPage((p) => Math.min(totalPages, Math.min(p, totalPages) + 1))}
-                  className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Próxima
-                </button>
-              </div>
-            </nav>
-            <p className="mt-2 text-[12px] text-ink-soft" data-no-print>
-              A exportação em CSV ignora a paginação e inclui todo o recorte filtrado (até 5.000 linhas, com aviso no
-              arquivo se houver corte). A impressão reproduz esta tela.
-            </p>
-          </>
-        )
       )}
 
-      <DetalheDialog row={detalhe} onClose={() => setDetalhe(null)} />
+      {allRows && allRows.length > 0 && (
+        <section aria-label="Indicadores do recorte" className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-no-print>
+          <SummaryCard icon={<FileStack size={17} />} label="Processos no recorte" value={fmtInt(summary.processos)} detail={`${fmtInt(summary.itens)} ${summary.itemLabel}`} hint="Ver todos os processos" onClick={limparFiltros} />
+          <SummaryCard icon={<BadgeDollarSign size={17} />} label="Valor contratado / estimado" value={fmtCurrency(summary.valor)} detail="Materialidade total filtrada" hint="Ordenar por maior valor" onClick={() => { setSort("valor"); setDir("desc"); setPage(1); }} />
+          <SummaryCard icon={<PackageCheck size={17} />} label="Saldo vigente disponível" value={fmtCurrency(summary.saldo)} detail={`${fmtInt(summary.comItensEsgotados)} ata(s) com item esgotado`} hint="Filtrar processos com saldo" tone="ok" onClick={() => aplicarRecorte({ ...effectiveFilters, saldo: "com_saldo" }, "valor_disponivel", "desc", "saldo-executivo")} />
+          <SummaryCard icon={<BadgeDollarSign size={17} />} label="Saving mapeado" value={fmtCurrency(summary.saving)} detail="Economia registrada na base" hint="Filtrar e ordenar por saving" tone="info" onClick={() => aplicarRecorte({ ...effectiveFilters, saving: "com" }, "saving", "desc", "saving-executivo")} />
+          <SummaryCard icon={<TimerReset size={17} />} label="Termômetro de prazo" value={`${fmtInt(summary.criticos)} críticos`} detail={`${fmtInt(summary.janela16a100)} na janela 16–100d`} hint="Filtrar críticos imediatos" tone="danger" onClick={() => aplicarRecorte({ ...effectiveFilters, alerta: "criticos" }, "prazo", "asc", "atalho-criticos")} />
+        </section>
+      )}
+
+      <p aria-live="polite" role="status" className="mb-3 text-[13px] font-medium text-ink-soft">
+        {loading ? "Carregando processos…" : erro ? "Erro ao carregar processos." : total === 0 ? "Nenhum processo encontrado." : `Exibindo ${fmtInt(total)} de ${fmtInt(allRows?.length ?? 0)} registros · ${SORTS.find((item) => item.key === sort)?.label ?? "Ordenação personalizada"}.`}
+      </p>
+
+      {erro ? (
+        <div className="card flex flex-col items-center gap-3 border-danger-600/30 p-10 text-center" role="alert">
+          <CircleAlert size={28} className="text-danger-600" aria-hidden="true" /><p className="text-[14.5px] font-semibold text-danger-700">{erro}</p>
+          <button type="button" onClick={carregar} className="btn-brand min-h-10 rounded-xl px-4 text-[13.5px] font-semibold">Tentar novamente</button>
+        </div>
+      ) : loading && allRows === null ? (
+        <div className="card space-y-2.5 p-4" aria-busy="true" aria-label="Carregando">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="skeleton h-14 w-full" />)}</div>
+      ) : semBase ? (
+        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <FileStack size={30} className="text-navy-400" aria-hidden="true" /><h2 className="font-display text-[17px] font-bold text-navy-950">Nenhuma base ativa no momento</h2>
+          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">Importe a pasta consolidada na página <Link href="/importar" className="font-semibold text-navy-700 underline underline-offset-2">Importar</Link> para pesquisar processos.</p>
+        </div>
+      ) : total === 0 ? (
+        <div className="card flex flex-col items-center gap-3 px-6 py-14 text-center">
+          <Search size={30} className="text-navy-400" aria-hidden="true" /><h2 className="font-display text-[17px] font-bold text-navy-950">Nenhum resultado para os filtros aplicados</h2>
+          <p className="max-w-md text-[13.5px] leading-relaxed text-ink-soft">Revise a combinação de filtros ou limpe o recorte para restaurar todos os processos.</p>
+          <button type="button" onClick={limparFiltros} className="mt-1 inline-flex min-h-10 items-center gap-2 rounded-xl border border-line px-4 text-[13.5px] font-semibold text-navy-800 hover:bg-navy-50"><FunnelX size={15} />Limpar filtros</button>
+        </div>
+      ) : (
+        <>
+          <div className={clsx("card hidden overflow-hidden lg:block", loading && "opacity-60")}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1260px] text-[12.5px]">
+                <caption className="sr-only">Processos das bases ativas — {fmtInt(total)} resultados</caption>
+                <thead><tr className="border-b border-line bg-navy-50/60 text-left">
+                  <Th col="numero" label="Nº / Etapa / SAP" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                  <Th col="objeto" label="Objeto / Categoria / Fornecedor" sort={sort} dir={dir} onSort={alternarOrdenacao} className="min-w-[280px]" />
+                  <Th col="area" label="Célula" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                  <Th col="responsavel" label="Comprador / Saldo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                  <Th col="data_fim" label="Prazo" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                  <Th col="situacao" label="Régua Giro" sort={sort} dir={dir} onSort={alternarOrdenacao} />
+                  <Th col="valor" label="Valor / Saldo R$" sort={sort} dir={dir} onSort={alternarOrdenacao} className="text-right" />
+                  <th scope="col" className="px-3 py-3"><span className="sr-only">Ações</span></th>
+                </tr></thead>
+                <tbody>{rows.map((row) => <ProcessTableRow key={row.id} row={row} onDetails={() => setDetalhe(row)} />)}</tbody>
+              </table>
+            </div>
+          </div>
+
+          <ul className={clsx("space-y-3 lg:hidden", loading && "opacity-60")} aria-label="Lista de processos">
+            {rows.map((row) => <ProcessMobileCard key={row.id} row={row} onDetails={() => setDetalhe(row)} />)}
+          </ul>
+
+          <nav className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-label="Paginação dos resultados" data-no-print>
+            <div className="flex items-center gap-2 text-[13px] text-ink-soft"><label htmlFor="f-tamanho">Por página:</label>
+              <select id="f-tamanho" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="min-h-9 rounded-lg border border-line bg-surface px-2 font-semibold text-ink">{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={activePage <= 1 || loading} onClick={() => setPage((current) => Math.max(1, Math.min(current, totalPages) - 1))} className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 hover:bg-navy-50 disabled:opacity-40">Anterior</button>
+              <span className="tnum px-1 text-[13px] text-ink-soft">Página {fmtInt(activePage)} de {fmtInt(totalPages)}</span>
+              <button type="button" disabled={activePage >= totalPages || loading} onClick={() => setPage((current) => Math.min(totalPages, Math.min(current, totalPages) + 1))} className="min-h-10 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold text-navy-800 hover:bg-navy-50 disabled:opacity-40">Próxima</button>
+            </div>
+          </nav>
+          <p className="mt-2 text-[12px] text-ink-soft" data-no-print>A exportação inclui todo o recorte filtrado, sem depender da paginação.</p>
+        </>
+      )}
+
+      <DetalheDialog row={detalhe} onClose={() => setDetalhe(null)} onFilterRelated={filtrarRelacionados} />
     </>
   );
 }
 
 /* ------------------------------------------------------------------ */
+/* Linhas e indicadores                                                */
+/* ------------------------------------------------------------------ */
 
-function Th({
-  col,
-  label,
-  sort,
-  dir,
-  onSort,
-  className,
-  numeric = false,
-}: {
-  col: string;
-  label: string;
-  sort: string;
-  dir: "asc" | "desc";
-  onSort: (col: string) => void;
-  className?: string;
-  numeric?: boolean;
-}) {
+function SummaryCard({ icon, label, value, detail, hint, onClick, tone = "navy" }: { icon: React.ReactNode; label: string; value: string; detail: string; hint: string; onClick: () => void; tone?: "navy" | "ok" | "info" | "danger" }) {
+  return (
+    <button type="button" onClick={onClick} className="group rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-navy-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500" title={hint}>
+      <span className={clsx("mb-3 inline-grid h-8 w-8 place-items-center rounded-lg", tone === "ok" && "bg-ok-100 text-ok-700", tone === "info" && "bg-navy-100 text-navy-700", tone === "danger" && "bg-danger-100 text-danger-700", tone === "navy" && "bg-navy-100 text-navy-700")} aria-hidden="true">{icon}</span>
+      <span className="block text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink-soft">{label}</span>
+      <span className={clsx("mt-1 block break-words text-[18px] font-extrabold leading-tight", tone === "ok" && "text-ok-700", tone === "danger" && "text-danger-700", (tone === "navy" || tone === "info") && "text-navy-950")}>{value}</span>
+      <span className="mt-1 block text-[11px] leading-snug text-ink-soft">{detail}</span>
+      <span className="mt-2 block text-[10.5px] font-semibold text-accent-700 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">{hint} →</span>
+    </button>
+  );
+}
+
+function ProcessTableRow({ row, onDetails }: { row: ExecutiveProcess; onDetails: () => void }) {
+  return (
+    <tr className="border-b border-line/60 align-top transition-colors last:border-0 hover:bg-navy-50/40">
+      <td className="px-3 py-3">
+        <button type="button" onClick={onDetails} className="text-left font-bold text-navy-800 underline decoration-transparent underline-offset-2 hover:text-accent-700 hover:decoration-current">{row.numero}</button>
+        {row.ariba && !row.numero.includes(row.ariba) && <span className="mt-0.5 block text-[10.5px] font-semibold text-navy-600">Ariba {row.ariba}</span>}
+        {row.cw.length > 0 && <span className="mt-0.5 block text-[10.5px] text-ink-soft">{row.cw.join(" / ")}</span>}
+        <span className="mt-1 block font-semibold text-ink">{row.etapa ?? "—"}</span>
+        <span className="mt-0.5 block text-[10px] text-ink-soft">{row.natureza}</span>
+        {row.tipoDocSap && <span className={clsx("mt-1.5 inline-flex rounded px-1.5 py-0.5 text-[9.5px] font-bold", row.tipoDocSap === "Por Quantidade" ? "bg-ok-100 text-ok-700" : "bg-warn-100 text-warn-700")}>SAP: {row.tipoDocSap}</span>}
+      </td>
+      <td className="max-w-[330px] px-3 py-3">
+        <span className="font-semibold leading-snug text-ink">{row.objeto}</span>
+        {row.grupo && row.grupo !== "Não classificado" && <span className="mt-1.5 inline-flex rounded bg-navy-100 px-2 py-0.5 text-[10px] font-bold text-navy-700">{row.grupo}</span>}
+        {row.fornecedor && <span className="mt-1.5 block text-[11px] text-ink"><strong>Fornecedor:</strong> {row.fornecedor} {row.qtdAtasFornecedor >= 2 && <span className="ml-1 rounded-full bg-warn-100 px-1.5 py-0.5 text-[9.5px] font-bold text-warn-700">{row.qtdAtasFornecedor} atas SAP</span>}</span>}
+        <span className="mt-1 block text-[10.5px] text-ink-soft">{row.modalidade ?? "Não informada"}{row.data_inicio ? ` · Início: ${fmtDate(row.data_inicio)}` : ""}</span>
+      </td>
+      <td className="px-3 py-3 text-center"><AreaTag area={row.area} /></td>
+      <td className="px-3 py-3">
+        <span className="font-semibold text-ink">{row.responsavel ?? "—"}</span>
+        {row.gestor && <span className="mt-0.5 block text-[10.5px] text-ink-soft">Gestor: {row.gestor}</span>}
+        {row.consumo && <span className="mt-1 block text-[10.5px] font-semibold text-navy-600">{row.consumo}</span>}
+        <SaldoBadge row={row} />
+      </td>
+      <td className="whitespace-nowrap px-3 py-3"><Prazo row={row} /></td>
+      <td className="px-3 py-3 text-center"><PrazoBadge situacao={row.situacaoExecutiva} /></td>
+      <td className="whitespace-nowrap px-3 py-3 text-right">
+        <span className="block font-bold text-navy-950">{row.valor !== null ? fmtCurrency(row.valor) : "—"}</span>
+        {row.quantidade !== null && <span className="mt-0.5 block text-[10.5px] text-ink-soft">{fmtInt(row.quantidade)} itens</span>}
+        {row.valorDisponivel > 0 && <span className="mt-0.5 block text-[10px] font-semibold text-ok-700">Saldo: {fmtCurrency(row.valorDisponivel)}</span>}
+        {row.savingMapeado > 0 && <span className="mt-0.5 block text-[10px] font-semibold text-navy-600">Saving: {fmtCurrency(row.savingMapeado)}</span>}
+      </td>
+      <td className="px-3 py-3"><button type="button" onClick={onDetails} className="min-h-9 rounded-lg border border-line px-3 text-[11.5px] font-semibold text-navy-800 hover:bg-navy-50">Detalhes</button></td>
+    </tr>
+  );
+}
+
+function ProcessMobileCard({ row, onDetails }: { row: ExecutiveProcess; onDetails: () => void }) {
+  return (
+    <li className="card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0"><button type="button" onClick={onDetails} className="text-left font-bold text-navy-800">{row.numero}</button><p className="mt-1 text-[13px] font-semibold leading-snug text-ink">{row.objeto}</p>{row.ariba && <p className="mt-1 text-[11px] text-navy-600">Ariba {row.ariba}</p>}</div>
+        <PrazoBadge situacao={row.situacaoExecutiva} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2"><AreaTag area={row.area} /><span className="rounded-full bg-navy-100 px-2.5 py-1 text-[11px] font-semibold text-navy-700">{row.natureza}</span>{row.tipoDocSap && <span className="rounded-full bg-warn-100 px-2.5 py-1 text-[11px] font-semibold text-warn-700">SAP {row.tipoDocSap}</span>}</div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-[12.5px]">
+        <div><dt className="text-[10.5px] font-bold uppercase text-ink-soft">Comprador</dt><dd className="mt-0.5">{row.responsavel ?? "—"}</dd></div>
+        <div><dt className="text-[10.5px] font-bold uppercase text-ink-soft">Prazo</dt><dd className="mt-0.5"><Prazo row={row} /></dd></div>
+        <div><dt className="text-[10.5px] font-bold uppercase text-ink-soft">Valor</dt><dd className="mt-0.5 font-semibold">{row.valor !== null ? fmtCurrency(row.valor) : "—"}</dd></div>
+        <div><dt className="text-[10.5px] font-bold uppercase text-ink-soft">Saldo</dt><dd className="mt-0.5 font-semibold text-ok-700">{row.valorDisponivel > 0 ? fmtCurrency(row.valorDisponivel) : "—"}</dd></div>
+      </dl>
+      {row.fornecedor && <p className="mt-3 text-[11.5px] text-ink"><strong>Fornecedor:</strong> {row.fornecedor}</p>}
+      <button type="button" onClick={onDetails} className="mt-3 min-h-10 w-full rounded-xl border border-line text-[13px] font-semibold text-navy-800 hover:bg-navy-50">Ver detalhes e vínculos</button>
+    </li>
+  );
+}
+
+function Prazo({ row }: { row: ExecutiveProcess }) {
+  if (!row.data_fim) return <span className="text-neutral-500">—</span>;
+  return (
+    <><span className="tnum font-semibold text-ink">{fmtDate(row.data_fim)}</span>
+      {row.diasExecutivo !== null && row.situacao_norm === null && <span className={clsx("tnum mt-0.5 block text-[10.5px] font-semibold", row.diasExecutivo < 0 ? "text-danger-700" : row.diasExecutivo <= 30 ? "text-warn-700" : "text-ink-soft")}>{prazoRelativo(row.diasExecutivo)}</span>}
+    </>
+  );
+}
+
+function SaldoBadge({ row }: { row: ExecutiveProcess }) {
+  if (row.saldoStatus === "sem_saldo") return <span className="mt-1.5 inline-flex rounded-full bg-danger-100 px-2 py-0.5 text-[10px] font-bold text-danger-700">100% sem saldo</span>;
+  if (row.saldoStatus === "parcial") return <span className="mt-1.5 inline-flex rounded-full bg-warn-100 px-2 py-0.5 text-[10px] font-bold text-warn-700">{row.qtdConsumidos} item(ns) sem saldo</span>;
+  return null;
+}
+
+function PrazoBadge({ situacao }: { situacao: ExecutiveSituation }) {
+  const style = situacao === "vencido" || situacao === "ate_15" ? "bg-danger-100 text-danger-700 border-danger-200"
+    : situacao === "16_30" || situacao === "31_60" ? "bg-warn-100 text-warn-700 border-warn-200"
+      : situacao === "61_100" ? "bg-purple-100 text-purple-700 border-purple-200"
+        : situacao === "acima_100" ? "bg-ok-100 text-ok-700 border-ok-200"
+          : situacao === "concluido" ? "bg-navy-100 text-navy-700 border-navy-200" : "bg-neutral-100 text-neutral-600 border-line";
+  return <span className={clsx("inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-bold", style)}>{SITUACAO_LABEL[situacao]}</span>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Filtros auxiliares                                                  */
+/* ------------------------------------------------------------------ */
+
+function facet(rows: ExecutiveProcess[], select: (row: ExecutiveProcess) => string | null): { value: string; total: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const value = select(row)?.trim();
+    if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([value, total]) => ({ value, total }));
+}
+
+function facetOptions(values: { value: string; total: number }[] | undefined) {
+  return (values ?? []).map((item) => ({ key: item.value, label: `${item.value} (${item.total})` }));
+}
+
+function modalidadeOptions(values: { value: string; total: number }[] | undefined) {
+  const counts = new Map((values ?? []).map((item) => [item.value, item.total]));
+  for (const value of MODALIDADES_BASE) if (!counts.has(value)) counts.set(value, 0);
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR")).map(([value, total]) => ({ key: value, label: total > 0 ? `${value} (${total})` : value }));
+}
+
+function monthFilterOptions(rows: ExecutiveProcess[]): { key: string; label: string }[] {
+  const months = [...new Set(rows
+    .filter((row) => row.natureza === "Atas em Andamento" && row.data_previsao)
+    .map((row) => row.data_previsao!.slice(0, 7))
+    .filter((value) => /^\d{4}-\d{2}$/.test(value)))].sort();
+  const names = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  return [
+    { key: "todos", label: "Todas as previsões" },
+    { key: "vencidas", label: "Vencida / sem previsão" },
+    ...months.map((value) => {
+      const [year, month] = value.split("-").map(Number);
+      return { key: value, label: `${names[month - 1]}/${year}` };
+    }),
+  ];
+}
+
+function filterChips(filters: ExecutiveFilters): Array<{ key: keyof ExecutiveFilters; label: string }> {
+  const labels: Partial<Record<keyof ExecutiveFilters, string>> = {
+    area: "Área", natureza: "Natureza", situacao: "Situação", etapa: "Etapa", comprador: "Comprador",
+    valor: "Valor", saldo: "Saldo", modalidade: "Modalidade", grupo: "Categoria", fornecedor: "Fornecedor",
+    alerta: "Alerta", carteira: "Carteira", saving: "Saving", mes: "Previsão",
+  };
+  const valueLabels = new Map<string, string>([
+    ...SITUACOES, ...VALORES, ...SALDOS, ...ALERTAS,
+    { key: "concluidas", label: "Concluídas válidas" }, { key: "a_vencer", label: "A vencer / renovar" }, { key: "vencidas", label: "Vencidas sem ação" },
+    { key: "com", label: "Somente com saving" },
+  ].map((item) => [item.key, item.label]));
+  const chips: Array<{ key: keyof ExecutiveFilters; label: string }> = [];
+  if (filters.q) chips.push({ key: "q", label: `Busca: ${filters.q}` });
+  for (const [key, label] of Object.entries(labels) as Array<[keyof ExecutiveFilters, string]>) {
+    const value = filters[key];
+    if (value === EMPTY_EXECUTIVE_FILTERS[key]) continue;
+    const valueLabel = key === "mes" && value === "vencidas" ? "Vencida / sem previsão" : valueLabels.get(value) ?? value;
+    chips.push({ key, label: `${label}: ${valueLabel}` });
+  }
+  return chips;
+}
+
+function SelectFiltro({ id, label, value, onChange, options }: { id: string; label: string; value: string; onChange: (value: string) => void; options: { key: string; label: string }[] }) {
+  const safeOptions = options.some((option) => option.key === value) ? options : [{ key: value, label: value }, ...options];
+  return (
+    <label htmlFor={id} className="min-w-0 text-[12px] font-semibold text-navy-900"><span className="mb-1.5 block truncate" title={label}>{label}</span>
+      <select id={id} value={value} onChange={(event) => onChange(event.target.value)} className="min-h-10 w-full rounded-xl border border-line bg-surface px-3 text-[12.5px] font-medium text-ink hover:border-navy-300">
+        {safeOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function Th({ col, label, sort, dir, onSort, className }: { col: string; label: string; sort: string; dir: "asc" | "desc"; onSort: (column: string) => void; className?: string }) {
   const active = sort === col;
   return (
-    <th
-      scope="col"
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : undefined}
-      className={clsx("px-3 py-3", className)}
-    >
-      <button
-        type="button"
-        onClick={() => onSort(col)}
-        className={clsx(
-          "inline-flex min-h-8 items-center gap-1 rounded-md text-[11px] font-bold uppercase tracking-[0.08em] transition-colors",
-          active ? "text-navy-800" : "text-ink-soft hover:text-navy-800",
-        )}
-      >
-        {label}
-        {active ? (
-          dir === "asc" ? (
-            <ArrowUp size={12} aria-hidden="true" />
-          ) : (
-            <ArrowDown size={12} aria-hidden="true" />
-          )
-        ) : (
-          <ArrowUpDown size={12} aria-hidden="true" className="opacity-50" />
-        )}
-        <span className="sr-only">
-          {active ? (dir === "asc" ? " (ordem crescente — clique para inverter)" : " (ordem decrescente — clique para inverter)") : " (clique para ordenar)"}
-        </span>
+    <th scope="col" aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : undefined} className={clsx("px-3 py-3", className)}>
+      <button type="button" onClick={() => onSort(col)} className={clsx("inline-flex min-h-8 items-center gap-1 rounded-md text-[10.5px] font-bold uppercase tracking-[0.06em]", active ? "text-navy-800" : "text-ink-soft hover:text-navy-800")}>
+        {label}{active ? dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : <ArrowUpDown size={12} className="opacity-50" />}
       </button>
-      {numeric && <span className="sr-only">valores monetários em reais</span>}
     </th>
   );
 }
 
-function SelectFiltro({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { key: string; label: string }[];
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="sr-only">
-        {label}
-      </label>
-      <select
-        id={id}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={label}
-        className="min-h-11 w-full rounded-xl border border-line bg-surface px-3 text-[13.5px] font-medium text-ink hover:border-navy-300"
-      >
-        {options.map((o) => (
-          <option key={o.key} value={o.key}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
-/* Diálogo de detalhes                                                  */
+/* Diálogo de detalhes e vínculos                                      */
 /* ------------------------------------------------------------------ */
 
-function DetalheDialog({ row, onClose }: { row: Row | null; onClose: () => void }) {
+function DetalheDialog({ row, onClose, onFilterRelated }: { row: ExecutiveProcess | null; onClose: () => void; onFilterRelated: (row: ExecutiveProcess) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
-
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (row && !el.open) {
-      el.showModal();
-      const closeBtn = el.querySelector<HTMLElement>("[data-close]");
-      closeBtn?.focus();
-    } else if (!row && el.open) {
-      el.close();
-    }
+    const element = ref.current;
+    if (!element) return;
+    if (row && !element.open) {
+      element.showModal();
+      element.querySelector<HTMLElement>("[data-close]")?.focus();
+    } else if (!row && element.open) element.close();
   }, [row]);
-
   if (!row) return <dialog ref={ref} className="hidden" aria-hidden="true" />;
-
   const extras = Object.entries(row.extra ?? {});
-
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      className="max-h-[88dvh] w-[min(720px,94vw)] overflow-hidden rounded-2xl border border-line bg-surface p-0 shadow-[var(--shadow-pop)]"
-      aria-labelledby="detalhe-titulo"
-    >
+    <dialog ref={ref} onClose={onClose} className="max-h-[90dvh] w-[min(780px,94vw)] overflow-hidden rounded-2xl border border-line bg-surface p-0 shadow-[var(--shadow-pop)]" aria-labelledby="detalhe-titulo">
       <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
-        <div className="min-w-0">
-          <p className="overline mb-1">Processo {row.numero}</p>
-          <h2 id="detalhe-titulo" className="font-display text-[17px] font-bold leading-snug text-navy-950">
-            {row.objeto}
-          </h2>
-        </div>
-        <button
-          type="button"
-          data-close
-          onClick={() => ref.current?.close()}
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line text-ink transition-colors hover:bg-neutral-100/60"
-          aria-label="Fechar detalhes"
-        >
-          <X size={18} />
-        </button>
+        <div className="min-w-0"><p className="overline mb-1">Processo {row.numero}</p><h2 id="detalhe-titulo" className="font-display text-[18px] font-bold leading-snug text-navy-950">{row.objeto}</h2></div>
+        <button type="button" data-close onClick={() => ref.current?.close()} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line text-ink hover:bg-neutral-100/60" aria-label="Fechar detalhes"><X size={18} /></button>
       </div>
-
-      <div className="max-h-[calc(88dvh-140px)] overflow-y-auto px-6 py-5">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusBadge situacao={situacaoChave(row.situacao)} />
-          <AreaTag area={row.area} />
-          {row.etapa && <span className="rounded-full bg-navy-100 px-2.5 py-1 text-[12px] font-semibold text-navy-700">Etapa: {row.etapa}</span>}
+      <div className="max-h-[calc(90dvh-140px)] overflow-y-auto px-6 py-5">
+        <div className="mb-4 flex flex-wrap items-center gap-2"><PrazoBadge situacao={row.situacaoExecutiva} /><AreaTag area={row.area} /><span className="rounded-full bg-navy-100 px-2.5 py-1 text-[12px] font-semibold text-navy-700">{row.natureza}</span>{row.etapa && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[12px] font-semibold text-neutral-700">{row.etapa}</span>}</div>
+        <div className="mb-5 rounded-xl border border-accent-200 bg-accent-50 p-4">
+          <p className="text-[12.5px] leading-relaxed text-ink">Abra somente este processo e os registros vinculados pelo mesmo contrato ou projeto Ariba.</p>
+          <button type="button" onClick={() => { ref.current?.close(); onFilterRelated(row); }} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-accent-600 px-3.5 text-[12.5px] font-bold text-white hover:bg-accent-700"><Filter size={14} />Filtrar processo e vínculos</button>
         </div>
-
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-          <Field label="Prazo / vigência">
-            {row.data_fim ? (
-              <>
-                <span className="tnum font-semibold">{fmtDate(row.data_fim)}</span>
-                {row.dias !== null && row.situacao !== "concluido" && row.situacao !== "cancelado" && (
-                  <span className={clsx("tnum ml-2 text-[12.5px]", row.dias < 0 ? "font-semibold text-danger-700" : "text-ink-soft")}>
-                    ({prazoRelativo(row.dias)})
-                  </span>
-                )}
-              </>
-            ) : (
-              "Não informado"
-            )}
-          </Field>
-          <Field label="Abertura / publicação">{row.data_inicio ? fmtDate(row.data_inicio) : "Não informado"}</Field>
-          <Field label="Situação declarada na fonte">{row.situacao_fonte ?? "Não informada"}</Field>
-          <Field label="Situação de prazo (calculada hoje)">{SITUACAO_LABEL[situacaoChave(row.situacao)]}</Field>
-          <Field label="Responsável">{row.responsavel ?? "Não informado"}</Field>
-          <Field label="Fornecedor">{row.fornecedor ?? "Não informado"}</Field>
-          <Field label="Unidade / solicitante">{row.unidade ?? "Não informada"}</Field>
-          <Field label="Quantidade de itens">{row.quantidade !== null ? fmtInt(row.quantidade) : "Não informada"}</Field>
-          <Field label="Valor estimado">
-            <span className="tnum font-bold">{row.valor !== null ? fmtCurrency(row.valor) : "Não informado"}</span>
-          </Field>
-          <Field label="Status de Consumo">{row.status_consumo ?? "Não informado"}</Field>
-          <Field label="Status Renovação">{row.status_renovacao ?? "Não informado"}</Field>
-          <Field label="Previsão de Conclusão">{row.data_previsao ? fmtDate(row.data_previsao) : "Não informada"}</Field>
-          <Field label="Saving Histórico">
-            {row.saving_hist !== null ? fmtCurrency(row.saving_hist) : "Não informado"}
-          </Field>
-          <Field label="Saving Sob Proposta">
-            {row.saving_prop !== null ? fmtCurrency(row.saving_prop) : "Não informado"}
-          </Field>
-          {row.link && (
-            <Field label="Link">
-              <a
-                href={row.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 break-all font-semibold text-navy-700 underline underline-offset-2 hover:text-navy-900"
-              >
-                Abrir documento
-                <ExternalLink size={13} aria-hidden="true" />
-                <span className="sr-only">(abre em nova guia)</span>
-              </a>
-            </Field>
-          )}
+          <Field label="Projeto Ariba">{row.ariba ?? "Não informado"}</Field><Field label="CW">{row.cw.length ? row.cw.join(" / ") : "Não informado"}</Field>
+          <Field label="Prazo / vigência"><Prazo row={row} /></Field><Field label="Abertura / publicação">{row.data_inicio ? fmtDate(row.data_inicio) : "Não informado"}</Field>
+          <Field label="Responsável">{row.responsavel ?? "Não informado"}</Field><Field label="Gestor">{row.gestor ?? "Não informado"}</Field>
+          <Field label="Fornecedor">{row.fornecedor ?? "Não informado"}</Field><Field label="Categoria / grupo">{row.grupo ?? "Não informado"}</Field>
+          <Field label="Modalidade">{row.modalidade ?? "Não informada"}</Field><Field label="Tipo de documento SAP">{row.tipoDocSap ?? "Não informado"}</Field>
+          <Field label="Quantidade de itens">{row.quantidade !== null ? fmtInt(row.quantidade) : "Não informada"}</Field><Field label="Valor estimado"><span className="tnum font-bold">{row.valor !== null ? fmtCurrency(row.valor) : "Não informado"}</span></Field>
+          <Field label="Saldo disponível">{fmtCurrency(row.valorDisponivel)}</Field><Field label="Saving mapeado">{fmtCurrency(row.savingMapeado)}</Field>
+          <Field label="Itens com saldo">{fmtInt(row.qtdComSaldo)}</Field><Field label="Itens consumidos / sem saldo">{fmtInt(row.qtdConsumidos)}</Field>
+          <Field label="Status Renovação">{row.status_renovacao ?? "Não informado"}</Field><Field label="Previsão de Conclusão">{row.data_previsao ? fmtDate(row.data_previsao) : "Não informada"}</Field>
+          <Field label="Saving Histórico">{row.saving_hist !== null ? fmtCurrency(row.saving_hist) : "Não informado"}</Field><Field label="Saving Sob Proposta">{row.saving_prop !== null ? fmtCurrency(row.saving_prop) : "Não informado"}</Field>
+          {row.link && <Field label="Link"><a href={row.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 break-all font-semibold text-navy-700 underline underline-offset-2">Abrir documento<ExternalLink size={13} /></a></Field>}
         </dl>
-
-        <div className="mt-5">
-          <h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-soft">Observações</h3>
-          <p className="mt-1.5 rounded-xl bg-canvas px-4 py-3 text-[13.5px] leading-relaxed text-ink">
-            {row.observacao?.trim() ? row.observacao : "Nenhuma observação registrada na base."}
-          </p>
-        </div>
-
-        {extras.length > 0 && (
-          <details className="mt-5">
-            <summary className="cursor-pointer rounded-md text-[13px] font-semibold text-navy-700 underline decoration-navy-300 underline-offset-2 hover:text-navy-900">
-              Campos originais da planilha não mapeados ({extras.length})
-            </summary>
-            <dl className="mt-3 space-y-2 rounded-xl border border-line p-4 text-[13px]">
-              {extras.map(([k, v]) => (
-                <div key={k} className="grid gap-1 sm:grid-cols-[180px_1fr]">
-                  <dt className="font-semibold text-ink-soft">{k}</dt>
-                  <dd className="break-words text-ink">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        )}
-
+        <div className="mt-5"><h3 className="text-[12px] font-bold uppercase tracking-[0.08em] text-ink-soft">Observações</h3><p className="mt-1.5 rounded-xl bg-canvas px-4 py-3 text-[13.5px] leading-relaxed text-ink">{row.observacao?.trim() || "Nenhuma observação registrada na base."}</p></div>
+        {extras.length > 0 && <details className="mt-5"><summary className="cursor-pointer rounded-md text-[13px] font-semibold text-navy-700 underline underline-offset-2">Campos originais da planilha ({extras.length})</summary><dl className="mt-3 space-y-2 rounded-xl border border-line p-4 text-[13px]">{extras.map(([key, value]) => <div key={key} className="grid gap-1 sm:grid-cols-[180px_1fr]"><dt className="font-semibold text-ink-soft">{key}</dt><dd className="break-words text-ink">{value}</dd></div>)}</dl></details>}
         <div className="mt-5 rounded-xl border border-line bg-navy-50/60 px-4 py-3 text-[12.5px] leading-relaxed text-ink-soft">
-          <p className="font-semibold text-ink">Origem deste registro</p>
-          <p className="mt-0.5">
-            Arquivo <strong className="text-ink">{row.file_name}</strong>
-            {row.source_row ? ` · linha ${fmtInt(row.source_row)} da planilha` : ""} · base do tipo{" "}
-            {KIND_LABEL[row.kind as keyof typeof KIND_LABEL] ?? row.kind} (
-            {row.natureza === "snapshot" ? "snapshot semanal" : "base operacional"})
-            {row.reference_date ? ` · referência ${fmtDate(row.reference_date)}` : ""} · importada em{" "}
-            {fmtDateTime(row.imported_at)}.
-          </p>
+          <p className="font-semibold text-ink">Origem deste registro</p><p className="mt-0.5">Arquivo <strong className="text-ink">{row.file_name}</strong>{row.source_row ? ` · linha ${fmtInt(row.source_row)} da importação` : ""} · {KIND_LABEL[row.kind as keyof typeof KIND_LABEL] ?? row.kind} · {row.natureza}{row.reference_date ? ` · referência ${fmtDate(row.reference_date)}` : ""} · importada em {fmtDateTime(row.imported_at)}.</p>
         </div>
       </div>
     </dialog>
@@ -12355,12 +12399,7 @@ function DetalheDialog({ row, onClose }: { row: Row | null; onClose: () => void 
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[11.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">{label}</dt>
-      <dd className="mt-1 text-[14px] leading-snug text-ink">{children}</dd>
-    </div>
-  );
+  return <div><dt className="text-[11.5px] font-bold uppercase tracking-[0.07em] text-ink-soft">{label}</dt><dd className="mt-1 text-[14px] leading-snug text-ink">{children}</dd></div>;
 }
 ````
 
@@ -12369,8 +12408,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 ````tsx
 "use client";
 
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 import clsx from "clsx";
 import { fmtInt } from "@/lib/format";
+import type { PanoramaCardKey } from "@/lib/process-links";
 
 /**
  * Seis cards de resumo (espelho da página do SharePoint): uma linha para a
@@ -12391,6 +12433,7 @@ export type ResumoKpis = {
 };
 
 type CardSpec = {
+  key: PanoramaCardKey;
   titulo: string;
   cor: string;
   atas?: keyof ResumoKpis;
@@ -12399,12 +12442,12 @@ type CardSpec = {
 
 /* Cores dos valores iguais às dos cards do SharePoint. */
 const CARDS: CardSpec[] = [
-  { titulo: "ATA CONCLUÍDAS (VÁLIDAS)", cor: "#1e8e3e", atas: "concluidasAtas", itens: "concluidasItens" },
-  { titulo: "ATAS EM ANDAMENTO", cor: "#1a56db", atas: "andamentoAtas", itens: "andamentoItens" },
-  { titulo: "ITENS COM SALDO (VÁLIDOS)", cor: "#0e8c8c", itens: "saldoItens" },
-  { titulo: "ITENS SEM SALDO (VÁLIDOS)", cor: "#e8870e", itens: "consumidoItens" },
-  { titulo: "ATAS VENCIDAS", cor: "#d93025", atas: "vencidasAtas", itens: "vencidasItens" },
-  { titulo: "ATAS A VENCER", cor: "#7a3fe0", atas: "aVencerAtas", itens: "aVencerItens" },
+  { key: "concluidas", titulo: "ATA CONCLUÍDAS (VÁLIDAS)", cor: "#1e8e3e", atas: "concluidasAtas", itens: "concluidasItens" },
+  { key: "andamento", titulo: "ATAS EM ANDAMENTO", cor: "#1a56db", atas: "andamentoAtas", itens: "andamentoItens" },
+  { key: "saldo", titulo: "ITENS COM SALDO (VÁLIDOS)", cor: "#0e8c8c", itens: "saldoItens" },
+  { key: "sem_saldo", titulo: "ITENS SEM SALDO (VÁLIDOS)", cor: "#e8870e", itens: "consumidoItens" },
+  { key: "vencidas", titulo: "ATAS VENCIDAS", cor: "#d93025", atas: "vencidasAtas", itens: "vencidasItens" },
+  { key: "a_vencer", titulo: "ATAS A VENCER", cor: "#7a3fe0", atas: "aVencerAtas", itens: "aVencerItens" },
 ];
 
 export function ResumoCards({
@@ -12412,6 +12455,7 @@ export function ResumoCards({
   status,
   kpis,
   tone,
+  hrefForCard,
 }: {
   /** Ex.: “Resumo das Atas Concluídas”. */
   titulo: string;
@@ -12419,6 +12463,8 @@ export function ResumoCards({
   status: string;
   kpis: ResumoKpis;
   tone: "anterior" | "atual";
+  /** Somente a leitura atual possui processos completos para drill-through. */
+  hrefForCard?: (card: PanoramaCardKey) => string;
 }) {
   const anterior = tone === "anterior";
   return (
@@ -12431,14 +12477,14 @@ export function ResumoCards({
         {CARDS.map((card) => {
           const atas = card.atas ? kpis[card.atas] : undefined;
           const itens = kpis[card.itens];
-          return (
-            <div
-              key={card.titulo}
-              className={clsx(
-                "flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
-                anterior ? "resumo-card-prev" : "resumo-card-curr",
-              )}
-            >
+          const href = hrefForCard?.(card.key);
+          const classes = clsx(
+            "group flex min-h-[112px] flex-col items-center justify-center rounded-xl border px-2 py-3 text-center",
+            anterior ? "resumo-card-prev" : "resumo-card-curr",
+            href && "transition-all hover:-translate-y-0.5 hover:border-navy-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500",
+          );
+          const content = (
+            <>
               <p className="text-[11px] font-bold uppercase leading-tight text-navy-950">{card.titulo}</p>
               <div className="mt-2 space-y-0.5 text-[15px] font-extrabold leading-tight" style={{ color: card.cor }}>
                 {card.atas && (
@@ -12450,6 +12496,20 @@ export function ResumoCards({
                   <span className="tabular-nums">{valor(itens)}</span> ITENS
                 </p>
               </div>
+              {href && (
+                <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-navy-600 opacity-75 transition-opacity group-hover:opacity-100">
+                  Ver processos <ArrowUpRight size={11} aria-hidden="true" />
+                </span>
+              )}
+            </>
+          );
+          return href ? (
+            <Link key={card.key} href={href} className={classes} aria-label={`${card.titulo}: abrir processos filtrados`}>
+              {content}
+            </Link>
+          ) : (
+            <div key={card.key} className={classes}>
+              {content}
             </div>
           );
         })}
@@ -12475,13 +12535,15 @@ const AREAS: SnapshotArea[] = ["INDIRETOS", "DIRETOS", "CAPEX"];
 export function StatusAtas({
   areas,
   referencia,
+  areasVisiveis = AREAS,
 }: {
   areas: Record<SnapshotArea, SnapshotStatusAtasArea | null>;
   referencia: string | null;
+  areasVisiveis?: SnapshotArea[];
 }) {
   return (
     <div className="space-y-6">
-      {AREAS.map((area) => {
+      {areasVisiveis.map((area) => {
         const status = areas[area];
         const style = areaStyle(area);
         return (
@@ -13550,6 +13612,7 @@ export function extractConsolidatedGiro(
       else if (days !== null && days <= 100) category = "aVencer";
       else category = "concluidas";
     }
+    contract.carteira = category === "aVencer" ? "a_vencer" : category;
     if (metricSets[contract.area]) metricSets[contract.area][category].push(contract);
   }
 
@@ -13844,7 +13907,27 @@ export function extractConsolidatedGiro(
         "Itens com saldo": contract.comSaldo,
         "Itens consumidos": contract.consumido,
         "Saldo disponível": contract.valorDisp,
+        "Carteira do Panorama": contract.carteira,
       }),
+      giro: {
+        natureza: "Contratos Vigentes",
+        ariba: info?.ariba ?? null,
+        cw: [...contract.cws],
+        fornecedorPrincipal: contract.fornecedores[0] ?? null,
+        gestor: contract.gestor || null,
+        grupo: contract.grupo || null,
+        modalidade: contract.modalidade || null,
+        tipoDocSap: contract.tipoDoc || null,
+        saldoStatus: contract.consumido > 0 && contract.comSaldo === 0 ? "sem_saldo" : contract.consumido > 0 ? "parcial" : "integral",
+        qtdComSaldo: contract.comSaldo,
+        qtdConsumidos: contract.consumido,
+        semContratoSap: false,
+        valorDisponivel: contract.valorDisp,
+        savingMapeado: info ? round2(Math.max(info.sh || 0, info.sp || 0)) : 0,
+        consumo: [contract.comSaldo ? `${contract.comSaldo} c/ saldo` : "", contract.consumido ? `${contract.consumido} consum.` : ""].filter(Boolean).join(" · ") || null,
+        carteira: contract.carteira ?? null,
+        itemKeys: contract.items.map((item: Rec) => item.sap ? `SAP:${item.sap}` : `ITEM:${item.contrato}:${item.item}`),
+      },
     }, `CONTRATO:${contract.contrato}`);
   }
 
@@ -13882,7 +13965,27 @@ export function extractConsolidatedGiro(
         "Grupo de mercadorias": negotiation.grupo,
         Modalidade: negotiation.modalidade,
         "Prazo de conclusão": negotiation.prazo,
+        "Sem contrato SAP": negotiation.sn === "concluido" && linked.length === 0 ? "Sim" : "",
       }),
+      giro: {
+        natureza: negotiation.sn ? "Histórico (Finaliz./Canc.)" : "Atas em Andamento",
+        ariba: negotiation.ariba || null,
+        cw: [...cws],
+        fornecedorPrincipal: suppliers[0] ?? null,
+        gestor: null,
+        grupo: negotiation.grupo || null,
+        modalidade: negotiation.modalidade || null,
+        tipoDocSap: null,
+        saldoStatus: "na",
+        qtdComSaldo: 0,
+        qtdConsumidos: 0,
+        semContratoSap: negotiation.sn === "concluido" && linked.length === 0,
+        valorDisponivel: 0,
+        savingMapeado: negotiation.savingHist > 0 ? negotiation.savingHist : negotiation.savingProp > 0 ? negotiation.savingProp : 0,
+        consumo: negotiation.prazo || null,
+        carteira: null,
+        itemKeys: [],
+      },
     }, `NEGOCIACAO:${negotiation.ariba}|${negotiation.descricao}`);
   }
 
@@ -16820,6 +16923,28 @@ export interface Issue {
   severity: "error" | "warning";
 }
 
+export interface GiroProcessMetadata {
+  natureza?: "Atas em Andamento" | "Contratos Vigentes" | "Histórico (Finaliz./Canc.)" | string;
+  ariba?: string | null;
+  cw?: string[];
+  fornecedorPrincipal?: string | null;
+  gestor?: string | null;
+  grupo?: string | null;
+  modalidade?: string | null;
+  tipoDocSap?: string | null;
+  saldoStatus?: "sem_saldo" | "parcial" | "integral" | "na";
+  qtdComSaldo?: number;
+  qtdConsumidos?: number;
+  semContratoSap?: boolean;
+  valorDisponivel?: number | null;
+  savingMapeado?: number | null;
+  consumo?: string | null;
+  /** Classe exata usada pelos seis cards do Panorama para contratos SAP. */
+  carteira?: "concluidas" | "a_vencer" | "vencidas" | null;
+  /** Chaves SAP usadas para contar itens distintos sem duplicar contratos. */
+  itemKeys?: string[];
+}
+
 export interface CleanRecord {
   numero: string;
   objeto: string;
@@ -16842,6 +16967,8 @@ export interface CleanRecord {
   observacao: string | null;
   link: string | null;
   extra: Record<string, string>;
+  /** Metadados enriquecidos da pasta consolidada; ausente em bases legadas. */
+  giro?: GiroProcessMetadata;
   rowHash: string;
   sourceRow: number;
 }
@@ -17174,6 +17301,435 @@ export function suggestMapping(headers: string[]): Suggestion {
 
   const unmappedHeaders = headers.filter((h) => !byHeader[h]);
   return { mapping, byHeader, confidence, unmappedHeaders };
+}
+````
+
+## `src/lib/process-executive.ts`
+
+````typescript
+import { normText } from "./domain";
+import type { ProcessRow } from "./static-store";
+
+export type ExecutiveSituation =
+  | "vencido"
+  | "ate_15"
+  | "16_30"
+  | "31_60"
+  | "61_100"
+  | "acima_100"
+  | "sem_data"
+  | "concluido"
+  | "cancelado";
+
+export type CarteiraPanorama = "concluidas" | "a_vencer" | "vencidas";
+export type SaldoStatus = "sem_saldo" | "parcial" | "integral" | "na";
+
+export interface ExecutiveProcess extends ProcessRow {
+  ariba: string | null;
+  cw: string[];
+  fornecedorPrincipal: string | null;
+  qtdAtasFornecedor: number;
+  gestor: string | null;
+  grupo: string | null;
+  modalidade: string | null;
+  tipoDocSap: string | null;
+  saldoStatus: SaldoStatus;
+  qtdComSaldo: number;
+  qtdConsumidos: number;
+  semContratoSap: boolean;
+  valorDisponivel: number;
+  savingMapeado: number;
+  consumo: string | null;
+  carteira: CarteiraPanorama | null;
+  itemKeys: string[];
+  temDataFim: boolean;
+  diasExecutivo: number | null;
+  situacaoExecutiva: ExecutiveSituation;
+  prazoSort: number;
+  buscaExecutiva: string;
+}
+
+export interface ExecutiveFilters {
+  q: string;
+  area: string;
+  natureza: string;
+  situacao: string;
+  etapa: string;
+  comprador: string;
+  valor: string;
+  saldo: string;
+  modalidade: string;
+  grupo: string;
+  fornecedor: string;
+  alerta: string;
+  carteira: string;
+  saving: string;
+  mes: string;
+}
+
+export const EMPTY_EXECUTIVE_FILTERS: ExecutiveFilters = {
+  q: "",
+  area: "todas",
+  natureza: "todas",
+  situacao: "todas",
+  etapa: "todas",
+  comprador: "todos",
+  valor: "todos",
+  saldo: "todos",
+  modalidade: "todas",
+  grupo: "todas",
+  fornecedor: "todos",
+  alerta: "todos",
+  carteira: "todas",
+  saving: "todos",
+  mes: "todos",
+};
+
+function numeric(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  let text = raw.replace(/R\$\s?/gi, "").replace(/\s/g, "");
+  if (text.includes(",")) text = text.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, "");
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function integer(value: unknown): number {
+  return Math.round(numeric(value));
+}
+
+function text(value: unknown): string | null {
+  const result = String(value ?? "").trim();
+  return result || null;
+}
+
+function supplierName(value: string | null): string {
+  return String(value ?? "").replace(/\s*\(\d+\)\s*$/, "").trim();
+}
+
+function daysFromToday(iso: string | null): number | null {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)));
+  return Math.round((target - today) / 86400000);
+}
+
+function activeRenewal(row: ProcessRow): boolean {
+  const status = normText(row.status_renovacao ?? "");
+  return Boolean(status) && !status.includes("renovado") && !status.includes("nao renovar");
+}
+
+function normalizeCarteira(value: unknown): CarteiraPanorama | null {
+  const explicit = normText(String(value ?? "")).replace(/\s+/g, "_");
+  if (explicit === "concluidas" || explicit === "vencidas") return explicit;
+  if (explicit === "a_vencer" || explicit === "avencer") return "a_vencer";
+  return null;
+}
+
+function deriveCarteira(row: ProcessRow, dias: number | null): CarteiraPanorama | null {
+  if (row.natureza !== "Contratos Vigentes") return null;
+  const explicit = normalizeCarteira(row.extra?.["Carteira do Panorama"]);
+  if (explicit) return explicit;
+  const renewal = activeRenewal(row);
+  const etapa = String(row.etapa ?? "").toUpperCase();
+  if (etapa === "VENCIDO") return renewal ? "a_vencer" : "vencidas";
+  if (etapa === "RENOVAR" || renewal) return "a_vencer";
+  if (etapa === "VÁLIDO" || etapa === "VALIDO") return "concluidas";
+  if (dias !== null && dias < 0) return renewal ? "a_vencer" : "vencidas";
+  if (dias !== null && dias <= 100) return "a_vencer";
+  return "concluidas";
+}
+
+function situationOf(row: ProcessRow, dias: number | null): ExecutiveSituation {
+  if (row.situacao_norm === "concluido") return "concluido";
+  if (row.situacao_norm === "cancelado") return "cancelado";
+  if (!row.data_fim) return "sem_data";
+  const days = dias ?? 0;
+  const etapa = String(row.etapa ?? "").toUpperCase();
+  if (days < 0 || etapa === "VENCIDO") return "vencido";
+  if (days <= 15) return "ate_15";
+  if (days <= 30) return "16_30";
+  if (days <= 60) return "31_60";
+  if (days <= 100 || etapa === "RENOVAR") return "61_100";
+  return "acima_100";
+}
+
+/** Normaliza registros novos e antigos sem exigir nova importação para os filtros básicos. */
+export function normalizeExecutiveProcesses(rows: ProcessRow[]): ExecutiveProcess[] {
+  const supplierCounts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.natureza !== "Contratos Vigentes") continue;
+    const suppliers = new Set(String(row.fornecedor ?? "").split(" / ").map(supplierName).filter(Boolean));
+    for (const supplier of suppliers) supplierCounts.set(supplier, (supplierCounts.get(supplier) ?? 0) + 1);
+  }
+
+  return rows.map((row) => {
+    const metadata = row.giro ?? {};
+    const dias = row.data_fim ? (row.dias ?? daysFromToday(row.data_fim)) : null;
+    const qtdComSaldo = metadata.qtdComSaldo ?? (row.extra?.["Itens com saldo"] !== undefined
+      ? integer(row.extra["Itens com saldo"])
+      : row.status_consumo === "Com Saldo" ? row.quantidade ?? 0 : 0);
+    const qtdConsumidos = metadata.qtdConsumidos ?? (row.extra?.["Itens consumidos"] !== undefined
+      ? integer(row.extra["Itens consumidos"])
+      : row.status_consumo === "Consumido" ? row.quantidade ?? 0 : 0);
+    const saldoStatus: SaldoStatus = metadata.saldoStatus
+      ?? (qtdConsumidos > 0 && qtdComSaldo === 0 ? "sem_saldo" : qtdConsumidos > 0 ? "parcial" : row.natureza === "Contratos Vigentes" ? "integral" : "na");
+    const fornecedorPrincipal = metadata.fornecedorPrincipal ?? text(supplierName(String(row.fornecedor ?? "").split(" / ")[0] ?? ""));
+    const savingMapeado = metadata.savingMapeado ?? (row.natureza === "Contratos Vigentes"
+      ? Math.max(0, row.saving_hist ?? 0, row.saving_prop ?? 0)
+      : (row.saving_hist ?? 0) > 0 ? row.saving_hist ?? 0 : Math.max(0, row.saving_prop ?? 0));
+    const situacaoExecutiva = situationOf(row, dias);
+    const prazoSort = row.situacao_norm === "concluido" ? 200000 - (dias ?? 0)
+      : row.situacao_norm === "cancelado" ? 300000
+        : !row.data_fim ? 99999 : dias ?? 99999;
+    const ariba = metadata.ariba ?? text(row.extra?.["N° Projeto Ariba"]);
+    const cw = metadata.cw ?? String(row.extra?.CW ?? "").split(" / ").map((value) => value.trim()).filter(Boolean);
+    const gestor = metadata.gestor ?? text(row.extra?.Gestor);
+    const grupo = metadata.grupo ?? text(row.extra?.["Grupo de mercadorias"]);
+    const modalidade = metadata.modalidade ?? text(row.extra?.Modalidade) ?? "Não informada";
+    const tipoDocSap = metadata.tipoDocSap ?? text(row.extra?.["Tipo de documento SAP"]);
+    const consumo = metadata.consumo ?? text(row.extra?.Consumo)
+      ?? ([qtdComSaldo ? `${qtdComSaldo} c/ saldo` : "", qtdConsumidos ? `${qtdConsumidos} consum.` : ""].filter(Boolean).join(" · ") || null);
+    const search = normText([
+      row.numero, ariba, ...cw, row.objeto, row.area, row.natureza, row.fornecedor,
+      row.responsavel, gestor, grupo, row.etapa, tipoDocSap, consumo, modalidade,
+      row.situacao_fonte, row.status_consumo, row.status_renovacao, row.observacao,
+      ...Object.values(row.extra ?? {}),
+    ].filter(Boolean).join(" "));
+
+    return {
+      ...row,
+      ariba,
+      cw,
+      fornecedorPrincipal,
+      qtdAtasFornecedor: fornecedorPrincipal ? supplierCounts.get(fornecedorPrincipal) ?? 0 : 0,
+      gestor,
+      grupo,
+      modalidade,
+      tipoDocSap,
+      saldoStatus,
+      qtdComSaldo,
+      qtdConsumidos,
+      semContratoSap: metadata.semContratoSap ?? row.extra?.["Sem contrato SAP"] === "Sim",
+      valorDisponivel: metadata.valorDisponivel ?? numeric(row.extra?.["Saldo disponível"]),
+      savingMapeado,
+      consumo,
+      carteira: normalizeCarteira(metadata.carteira) ?? deriveCarteira(row, dias),
+      itemKeys: metadata.itemKeys ?? [],
+      temDataFim: Boolean(row.data_fim),
+      diasExecutivo: dias,
+      situacaoExecutiva,
+      prazoSort,
+      buscaExecutiva: search,
+    };
+  });
+}
+
+function same(selected: string, actual: string | null, all: string): boolean {
+  return selected === all || String(actual ?? "") === selected;
+}
+
+function matchesSituation(row: ExecutiveProcess, selected: string): boolean {
+  const situation = row.situacaoExecutiva;
+  if (selected === "todas") return true;
+  if (selected === "a_renovar") {
+    return row.natureza === "Contratos Vigentes"
+      && (String(row.etapa ?? "").toUpperCase() === "RENOVAR" || (row.temDataFim && (row.diasExecutivo ?? -1) >= 0 && (row.diasExecutivo ?? 101) <= 100));
+  }
+  if (selected === "ate_30") return situation === "ate_15" || situation === "16_30";
+  // Compatibilidade com URLs da versão anterior do site.
+  if (selected === "a_vencer") return situation === "ate_15" || situation === "16_30";
+  if (selected === "em_dia") return ["31_60", "61_100", "acima_100"].includes(situation);
+  return situation === selected;
+}
+
+function matchesAlert(row: ExecutiveProcess, selected: string): boolean {
+  if (selected === "todos") return true;
+  const situation = row.situacaoExecutiva;
+  const contracts = row.natureza === "Contratos Vigentes";
+  const etapa = String(row.etapa ?? "").toUpperCase();
+  if (selected === "criticos") return situation === "vencido" || situation === "ate_15";
+  if (selected === "a_renovar") return matchesSituation(row, "a_renovar");
+  if (selected === "itens_esgotados") return contracts && etapa !== "VENCIDO" && (row.saldoStatus === "sem_saldo" || row.saldoStatus === "parcial");
+  if (selected === "sem_saldo") return contracts && etapa !== "VENCIDO" && row.saldoStatus === "sem_saldo";
+  if (selected === "andamento_atrasado") return row.natureza === "Atas em Andamento" && (!row.temDataFim || (row.diasExecutivo ?? 0) < 0);
+  if (selected === "sem_contrato") return row.situacao_norm === "concluido" && row.semContratoSap;
+  if (selected === "por_valor") return contracts && row.tipoDocSap === "Por Valor";
+  if (selected === "por_quantidade") return contracts && row.tipoDocSap === "Por Quantidade";
+  if (selected === "fornecedor_multiplo") return contracts && row.qtdAtasFornecedor >= 2;
+  return true;
+}
+
+export function filterExecutiveProcesses(rows: ExecutiveProcess[], filters: ExecutiveFilters): ExecutiveProcess[] {
+  const query = normText(filters.q.trim());
+  return rows.filter((row) => {
+    if (query && !row.buscaExecutiva.includes(query)) return false;
+    if (!same(filters.area, row.area, "todas")) return false;
+    if (!same(filters.natureza, row.natureza, "todas")) return false;
+    if (!same(filters.comprador, row.responsavel, "todos")) return false;
+    if (!same(filters.etapa, row.etapa, "todas")) return false;
+    if (!same(filters.modalidade, row.modalidade, "todas")) return false;
+    if (!same(filters.grupo, row.grupo, "todas")) return false;
+    if (filters.fornecedor !== "todos") {
+      const selected = normText(supplierName(filters.fornecedor));
+      const primary = normText(row.fornecedorPrincipal ?? "");
+      const full = normText(row.fornecedor ?? "");
+      if (primary !== selected && !full.includes(selected)) return false;
+    }
+    if (!matchesSituation(row, filters.situacao)) return false;
+    if (filters.carteira !== "todas" && row.carteira !== filters.carteira) return false;
+    if (filters.saving === "com" && row.savingMapeado <= 0) return false;
+    if (filters.mes !== "todos") {
+      if (row.natureza !== "Atas em Andamento") return false;
+      if (filters.mes === "vencidas") {
+        if (row.data_previsao && row.data_previsao >= (row.reference_date ?? "")) return false;
+      } else if (!row.data_previsao?.startsWith(filters.mes)) return false;
+    }
+    if (filters.valor === "100k" && (row.valor ?? 0) < 100000) return false;
+    if (filters.valor === "500k" && (row.valor ?? 0) < 500000) return false;
+    if (filters.valor === "1m" && (row.valor ?? 0) < 1000000) return false;
+    if (filters.valor === "5m" && (row.valor ?? 0) < 5000000) return false;
+    if (filters.valor === "sem" && (row.valor ?? 0) > 0) return false;
+    if (filters.saldo === "sem_saldo" && row.saldoStatus !== "sem_saldo") return false;
+    if (filters.saldo === "com_esgotados" && row.saldoStatus !== "sem_saldo" && row.saldoStatus !== "parcial") return false;
+    if (filters.saldo === "integral" && row.saldoStatus !== "integral") return false;
+    if (filters.saldo === "500k" && row.valorDisponivel < 500000) return false;
+    if (filters.saldo === "com_saldo" && row.qtdComSaldo <= 0) return false;
+    return matchesAlert(row, filters.alerta);
+  });
+}
+
+function sortValue(row: ExecutiveProcess, key: string): string | number | null {
+  if (key === "prazo") return row.prazoSort;
+  if (key === "valor") return row.valor;
+  if (key === "valor_disponivel") return row.valorDisponivel;
+  if (key === "saving") return row.savingMapeado;
+  if (key === "quantidade") return row.quantidade;
+  if (key === "data_fim") return row.data_fim;
+  if (key === "situacao") return row.situacaoExecutiva;
+  if (key === "fornecedor") return row.fornecedorPrincipal;
+  const value = row[key as keyof ExecutiveProcess];
+  return typeof value === "string" || typeof value === "number" ? value : null;
+}
+
+export function sortExecutiveProcesses(rows: ExecutiveProcess[], key: string, direction: "asc" | "desc"): ExecutiveProcess[] {
+  const result = [...rows];
+  result.sort((left, right) => {
+    const a = sortValue(left, key);
+    const b = sortValue(right, key);
+    if (a === null || a === undefined) return b === null || b === undefined ? 0 : 1;
+    if (b === null || b === undefined) return -1;
+    const comparison = typeof a === "number" && typeof b === "number"
+      ? a - b
+      : String(a).localeCompare(String(b), "pt-BR", { numeric: true, sensitivity: "base" });
+    return direction === "asc" ? comparison : -comparison;
+  });
+  return result;
+}
+
+export function distinctItemCount(rows: ExecutiveProcess[]): number {
+  const keys = new Set<string>();
+  let fallback = 0;
+  for (const row of rows) {
+    if (row.itemKeys.length > 0) row.itemKeys.forEach((key) => keys.add(key));
+    else fallback += row.quantidade ?? 0;
+  }
+  return keys.size + fallback;
+}
+
+export interface ExecutiveSummary {
+  processos: number;
+  itens: number;
+  itemLabel: string;
+  valor: number;
+  saldo: number;
+  saving: number;
+  criticos: number;
+  janela16a100: number;
+  comItensEsgotados: number;
+}
+
+export function summarizeExecutiveProcesses(rows: ExecutiveProcess[], filters: ExecutiveFilters): ExecutiveSummary {
+  const bySaldo = filters.saldo === "com_saldo" || filters.saldo === "com_esgotados";
+  const byCarteira = filters.carteira !== "todas";
+  const itens = filters.saldo === "com_saldo"
+    ? rows.reduce((sum, row) => sum + row.qtdComSaldo, 0)
+    : filters.saldo === "com_esgotados"
+      ? rows.reduce((sum, row) => sum + row.qtdConsumidos, 0)
+      : byCarteira ? distinctItemCount(rows) : rows.reduce((sum, row) => sum + (row.quantidade ?? 0), 0);
+  return {
+    processos: rows.length,
+    itens,
+    itemLabel: filters.saldo === "com_saldo" ? "itens com saldo" : filters.saldo === "com_esgotados" ? "itens sem saldo" : byCarteira ? "itens distintos SAP" : "itens somados",
+    valor: rows.reduce((sum, row) => sum + (row.valor ?? 0), 0),
+    saldo: rows.reduce((sum, row) => sum + row.valorDisponivel, 0),
+    saving: rows.reduce((sum, row) => sum + row.savingMapeado, 0),
+    criticos: rows.filter((row) => row.situacaoExecutiva === "vencido" || row.situacaoExecutiva === "ate_15").length,
+    janela16a100: rows.filter((row) => ["16_30", "31_60", "61_100"].includes(row.situacaoExecutiva)).length,
+    comItensEsgotados: rows.filter((row) => row.saldoStatus === "sem_saldo" || row.saldoStatus === "parcial").length,
+  };
+}
+
+export function relatedProcessQuery(row: ExecutiveProcess): string {
+  return row.ariba ?? row.numero.match(/\d{7,}/)?.[0] ?? row.numero;
+}
+
+export function activeExecutiveFilterCount(filters: ExecutiveFilters): number {
+  return Object.entries(filters).reduce((count, [key, value]) => {
+    const defaultValue = EMPTY_EXECUTIVE_FILTERS[key as keyof ExecutiveFilters];
+    return count + (value !== defaultValue ? 1 : 0);
+  }, 0);
+}
+
+export function isRenovacaoWindow(row: ExecutiveProcess): boolean {
+  return matchesSituation(row, "a_renovar");
+}
+````
+
+## `src/lib/process-links.ts`
+
+````typescript
+export type PanoramaCardKey = "concluidas" | "andamento" | "saldo" | "sem_saldo" | "vencidas" | "a_vencer";
+export type PanoramaAreaFilter = "TODAS" | "INDIRETOS" | "DIRETOS" | "CAPEX";
+
+export function processosHref(params: Record<string, string | null | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value && value.trim()) search.set(key, value);
+  }
+  const query = search.toString();
+  return `/processos${query ? `?${query}` : ""}`;
+}
+
+function areaParam(area?: string): string | undefined {
+  if (!area || area === "TODAS") return undefined;
+  return area === "INDIRETOS" ? "Indiretos" : area === "DIRETOS" ? "Diretos" : area === "CAPEX" ? "CAPEX" : area;
+}
+
+/** Drill-through dos cards atuais, usando a mesma carteira calculada no Panorama. */
+export function panoramaCardHref(card: PanoramaCardKey, area?: PanoramaAreaFilter | string): string {
+  const base: Record<string, string | undefined> = {
+    area: areaParam(area),
+    origem: `card-${card}`,
+    sort: "prazo",
+  };
+  if (card === "concluidas") return processosHref({ ...base, carteira: "concluidas" });
+  if (card === "andamento") return processosHref({ ...base, natureza: "Atas em Andamento" });
+  if (card === "saldo") return processosHref({ ...base, carteira: "concluidas", saldo: "com_saldo", sort: "valor_disponivel", dir: "desc" });
+  if (card === "sem_saldo") return processosHref({ ...base, carteira: "concluidas", saldo: "com_esgotados", sort: "valor", dir: "desc" });
+  if (card === "vencidas") return processosHref({ ...base, carteira: "vencidas" });
+  return processosHref({ ...base, carteira: "a_vencer" });
+}
+
+export function panoramaQuickHref(action: "criticos" | "renovar" | "sem_saldo" | "andamento", area?: PanoramaAreaFilter | string): string {
+  const areaValue = areaParam(area);
+  if (action === "criticos") return processosHref({ area: areaValue, alerta: "criticos", origem: "atalho-criticos", sort: "prazo" });
+  if (action === "renovar") return processosHref({ area: areaValue, natureza: "Contratos Vigentes", situacao: "a_renovar", alerta: "a_renovar", origem: "atalho-renovar", sort: "prazo" });
+  if (action === "sem_saldo") return processosHref({ area: areaValue, natureza: "Contratos Vigentes", saldo: "com_esgotados", alerta: "itens_esgotados", origem: "atalho-sem-saldo", sort: "valor", dir: "desc" });
+  return processosHref({ area: areaValue, natureza: "Atas em Andamento", origem: "atalho-andamento", sort: "prazo" });
 }
 ````
 
@@ -17832,6 +18388,7 @@ import {
   type DatasetNatureza,
   type ImportMode,
   type Issue,
+  type GiroProcessMetadata,
   type SituacaoChave,
 } from "@/lib/domain";
 import type { DashboardSnapshotPayload } from "@/lib/dashboard-snapshot";
@@ -17927,6 +18484,7 @@ export interface ProcessRow {
   link: string | null;
   source_row: number | null;
   extra: Record<string, string> | null;
+  giro?: GiroProcessMetadata | null;
   dias: number | null;
   situacao: SituacaoChave;
   file_name: string;
@@ -18122,13 +18680,14 @@ export async function listActiveProcessRows(): Promise<ProcessRow[]> {
         link: record.link,
         source_row: record.sourceRow,
         extra: record.extra,
+        giro: record.giro ?? null,
         dias: prazo.dias,
         situacao: prazo.chave,
         file_name: dataset.fileName,
         kind: dataset.kind,
         // Nas três bases consolidadas, a natureza pertence a cada registro;
         // nas importações antigas, permanece a natureza do dataset.
-        natureza: record.extra?.Natureza ?? dataset.natureza,
+        natureza: record.giro?.natureza ?? record.extra?.Natureza ?? dataset.natureza,
         reference_date: dataset.referenceDate,
         imported_at: dataset.importedAt,
       });
